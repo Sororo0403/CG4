@@ -9,6 +9,7 @@ class ModelRenderer;
 class SpriteRenderer;
 class TextureManager;
 class DirectXCommon;
+class SrvManager;
 
 #ifdef _DEBUG
 class ImguiManager;
@@ -24,6 +25,7 @@ struct SceneContext {
     SpriteRenderer *spriteRenderer = nullptr;
     TextureManager *texture = nullptr;
     DirectXCommon *dxCommon = nullptr;
+    SrvManager *srv = nullptr;
     float deltaTime = 0.0f;
 
 #ifdef _DEBUG

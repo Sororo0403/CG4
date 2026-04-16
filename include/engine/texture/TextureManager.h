@@ -41,6 +41,8 @@ class TextureManager {
     /// <returns>生成されたテクスチャのID</returns>
     uint32_t LoadFromMemory(const uint8_t *data, size_t size);
 
+    uint32_t CreateDebugCubemap(uint32_t faceSize = 4);
+
     /// <summary>
     /// ロード時に使った一時UploadBufferを解放
     /// </summary>
@@ -54,7 +56,7 @@ class TextureManager {
 
   private:
     // Create
-    uint32_t CreateTexture(const DirectX::Image *image,
+    uint32_t CreateTexture(const DirectX::Image *images, size_t imageCount,
                            const DirectX::TexMetadata &metadata);
 
   private:

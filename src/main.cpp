@@ -77,6 +77,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     sceneCtx.spriteRenderer = spriteManager.GetRenderer();
     sceneCtx.texture = &textureManager;
     sceneCtx.dxCommon = &dxCommon;
+    sceneCtx.srv = &srvManager;
 
     sceneCtx.deltaTime = 0.0f;
 
