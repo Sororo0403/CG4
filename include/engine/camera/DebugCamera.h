@@ -1,0 +1,28 @@
+#pragma once
+#include "Camera.h"
+#include "Input.h"
+#include <DirectXMath.h>
+
+class DebugCamera : public Camera {
+  public:
+    /// <summary>
+    /// 初期化処理
+    /// </summary>
+    /// <param name="aspect">アスペクト比</param>
+    void Initialize(float aspect);
+
+    /// <summary>
+    /// 更新処理
+    /// </summary>
+    /// <param name="input">Inputインスタンス</param>
+    /// <param name="deltaTime">前フレームからの経過時間(秒)</param>
+    void Update(const Input &input, float deltaTime);
+
+    // Setter
+    void SetMoveSpeed(float speed) { moveSpeed_ = speed; }
+
+  private:
+    float moveSpeed_ = 5.0f;
+    float mouseSensitivity_ = 0.002f;
+    float zoomSpeed_ = 0.01f;
+};
