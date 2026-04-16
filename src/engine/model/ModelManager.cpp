@@ -1,5 +1,4 @@
 #include "ModelManager.h"
-#include "Camera.h"
 #include "DirectXCommon.h"
 #include "MaterialManager.h"
 #include "SrvManager.h"
@@ -44,29 +43,6 @@ uint32_t ModelManager::Load(const std::wstring &path) {
     return modelId;
 }
 
-void ModelManager::Draw(uint32_t modelId, const Transform &transform,
-                        const Camera &camera) {
-    if (modelId >= models_.size()) {
-        return;
-    }
-
-    modelRenderer_.Draw(models_[modelId], transform, camera);
-}
-
-void ModelManager::SetDrawEffect(const ModelDrawEffect &effect) {
-    modelRenderer_.SetDrawEffect(effect);
-}
-
-void ModelManager::ClearDrawEffect() { modelRenderer_.ClearDrawEffect(); }
-
-void ModelManager::SetSceneLighting(const SceneLighting &lighting) {
-    modelRenderer_.SetSceneLighting(lighting);
-}
-
-void ModelManager::PreDraw() { modelRenderer_.PreDraw(); }
-
-void ModelManager::PostDraw() { modelRenderer_.PostDraw(); }
-
 void ModelManager::UpdateAnimation(uint32_t modelId, float deltaTime) {
     if (modelId >= models_.size()) {
         return;
@@ -94,6 +70,14 @@ bool ModelManager::IsAnimationFinished(uint32_t modelId) const {
 }
 
 Model *ModelManager::GetModel(uint32_t modelId) {
+    if (modelId >= models_.size()) {
+        return nullptr;
+    }
+
+    return &models_[modelId];
+}
+
+const Model *ModelManager::GetModel(uint32_t modelId) const {
     if (modelId >= models_.size()) {
         return nullptr;
     }

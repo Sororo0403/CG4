@@ -5,6 +5,7 @@
 #include <vector>
 
 class ModelManager;
+class ModelRenderer;
 
 class BaseParticleSystem {
   public:
@@ -17,8 +18,10 @@ class BaseParticleSystem {
     /// 初期化処理
     /// </summary>
     /// <param name="modelManager">ModelManagerインスタンス</param>
+    /// <param name="renderer">描画に使うModelRendererインスタンス</param>
     /// <param name="modelId">描画するモデルのID</param>
-    virtual void Initialize(ModelManager *modelManager, uint32_t modelId);
+    virtual void Initialize(ModelManager *modelManager, ModelRenderer *renderer,
+                            uint32_t modelId);
 
     /// <summary>
     /// 更新処理
@@ -38,6 +41,7 @@ class BaseParticleSystem {
     std::vector<Particle> particles_;
 
     ModelManager *modelManager_ = nullptr;
+    ModelRenderer *renderer_ = nullptr;
     uint32_t modelId_ = 0;
 
   protected:

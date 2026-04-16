@@ -5,6 +5,8 @@ class WinApp;
 class SoundManager;
 class ModelManager;
 class SpriteManager;
+class ModelRenderer;
+class SpriteRenderer;
 class TextureManager;
 class DirectXCommon;
 
@@ -18,6 +20,8 @@ struct SceneContext {
     SoundManager *sound = nullptr;
     ModelManager *model = nullptr;
     SpriteManager *sprite = nullptr;
+    ModelRenderer *modelRenderer = nullptr;
+    SpriteRenderer *spriteRenderer = nullptr;
     TextureManager *texture = nullptr;
     DirectXCommon *dxCommon = nullptr;
     float deltaTime = 0.0f;

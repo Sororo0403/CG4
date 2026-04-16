@@ -5,14 +5,12 @@
 #include "MeshManager.h"
 #include "Model.h"
 #include "ModelRenderer.h"
-#include "Transform.h"
 #include <string>
 #include <vector>
 
 class DirectXCommon;
 class SrvManager;
 class TextureManager;
-class Camera;
 
 class ModelManager {
   public:
@@ -31,29 +29,6 @@ class ModelManager {
     /// <param name="path">モデルファイルのパス</param>
     /// <returns>モデルID</returns>
     uint32_t Load(const std::wstring &path);
-
-    /// <summary>
-    /// モデルを描画する
-    /// </summary>
-    /// <param name="modelId">描画するモデルID</param>
-    /// <param name="transform">ワールド変換</param>
-    /// <param name="camera">描画に使用するカメラ</param>
-    void Draw(uint32_t modelId, const Transform &transform,
-              const Camera &camera);
-
-    void SetDrawEffect(const ModelDrawEffect &effect);
-    void ClearDrawEffect();
-    void SetSceneLighting(const SceneLighting &lighting);
-
-    /// <summary>
-    /// モデル描画前の共通処理
-    /// </summary>
-    void PreDraw();
-
-    /// <summary>
-    /// モデル描画後の後処理
-    /// </summary>
-    void PostDraw();
 
     /// <summary>
     /// モデルのアニメーションを更新する
@@ -84,6 +59,10 @@ class ModelManager {
     /// <param name="modelId">モデルID</param>
     /// <returns>Modelポインタ</returns>
     Model *GetModel(uint32_t modelId);
+    const Model *GetModel(uint32_t modelId) const;
+
+    ModelRenderer *GetRenderer() { return &modelRenderer_; }
+    const ModelRenderer *GetRenderer() const { return &modelRenderer_; }
 
   private:
     DirectXCommon *dxCommon_ = nullptr;

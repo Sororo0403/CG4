@@ -6,6 +6,7 @@
 #include <vector>
 
 class DirectXCommon;
+class SrvManager;
 class TextureManager;
 
 class SpriteManager {
@@ -22,32 +23,18 @@ class SpriteManager {
                     SrvManager *srvManager, int width, int height);
 
     /// <summary>
-    /// 描画処理
-    /// </summary>
-    /// <param name="id">描画するスプライトのid</param>
-    void Draw(uint32_t id);
-
-    /// <summary>
     /// スプライトを作成してidを返す
     /// </summary>
     /// <param name="filePath">作成するスプライトのファイルパス</param>
     /// <returns>スプライトid</returns>
     uint32_t Create(const std::wstring &filePath);
 
-    /// <summary>
-    /// 描画前処理
-    /// </summary>
-    void PreDraw();
-
-    /// <summary>
-    /// 描画後処理
-    /// </summary>
-    void PostDraw();
-
     // Getter
     Sprite &GetSprite(uint32_t id);
     const Sprite &GetSprite(uint32_t id) const;
     size_t GetCount() const { return sprites_.size(); }
+    SpriteRenderer *GetRenderer() { return &spriteRenderer_; }
+    const SpriteRenderer *GetRenderer() const { return &spriteRenderer_; }
 
   private:
     DirectXCommon *dxCommon_ = nullptr;

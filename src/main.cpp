@@ -2,10 +2,12 @@
 #include "GameScene.h"
 #include "Input.h"
 #include "ModelManager.h"
+#include "ModelRenderer.h"
 #include "SceneContext.h"
 #include "SceneManager.h"
 #include "SoundManager.h"
 #include "SpriteManager.h"
+#include "SpriteRenderer.h"
 #include "SrvManager.h"
 #include "TextureManager.h"
 #include "WinApp.h"
@@ -71,6 +73,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     sceneCtx.sound = &soundManager;
     sceneCtx.model = &modelManager;
     sceneCtx.sprite = &spriteManager;
+    sceneCtx.modelRenderer = modelManager.GetRenderer();
+    sceneCtx.spriteRenderer = spriteManager.GetRenderer();
     sceneCtx.texture = &textureManager;
     sceneCtx.dxCommon = &dxCommon;
 
