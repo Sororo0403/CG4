@@ -17,6 +17,7 @@ XMFLOAT3 ParseVector3(const json &node, const char *key) {
     }
 
     const json &array = node.at(key);
+
     return {
         array.at(0).get<float>(),
         array.at(2).get<float>(),
@@ -54,6 +55,12 @@ LevelObjectData ParseObject(const json &node) {
         throw std::runtime_error("object must be an object");
     }
 
+    if (node.contains("disabled")) {
+        if (node["disabled"].get<bool>()) {
+            return LevelObjectData{};
+        }
+    }
+
     if (!node.contains("type") || !node.at("type").is_string()) {
         throw std::runtime_error("object.type must be a string");
     }
@@ -73,9 +80,11 @@ LevelObjectData ParseObject(const json &node) {
             throw std::runtime_error("object.children must be an array");
         }
 
-        object.children.reserve(node.at("children").size());
         for (const json &child : node.at("children")) {
-            object.children.push_back(ParseObject(child));
+            LevelObjectData childObj = ParseObject(child);
+            if (!childObj.type.empty()) {
+                object.children.push_back(childObj);
+            }
         }
     }
 
@@ -107,10 +116,19 @@ LevelData LevelLoader::Load(const std::filesystem::path &path) {
 
     LevelData level{};
     level.name = root.at("name").get<std::string>();
-    level.objects.reserve(root.at("objects").size());
 
     for (const json &object : root.at("objects")) {
-        level.objects.push_back(ParseObject(object));
+        if (object.contains("disabled")) {
+            if (object["disabled"].get<bool>()) {
+                continue;
+            }
+        }
+
+        LevelObjectData obj = ParseObject(object);
+
+        if (!obj.type.empty()) {
+            level.objects.push_back(obj);
+        }
     }
 
     return level;
