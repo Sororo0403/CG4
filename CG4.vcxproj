@@ -64,7 +64,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(ProjectDir)include\app\scene;$(ProjectDir)include\engine\scene;$(ProjectDir)include\engine\particle;$(ProjectDir)include\engine\collision;$(ProjectDir)include\engine\input;$(ProjectDir)include\engine\camera;$(ProjectDir)include\engine\core;$(ProjectDir)include\engine\graphics;$(ProjectDir)include\engine\imgui;$(ProjectDir)include\engine\model;$(ProjectDir)include\engine\sound;$(ProjectDir)include\engine\sprite;$(ProjectDir)include\engine\texture;$(ProjectDir)externals\assimp\include;$(ProjectDir)externals\assimp\include\assimp;$(ProjectDir)externals\DirectX-Headers;$(ProjectDir)externals\DirectXTex;$(ProjectDir)externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include\app\scene;$(ProjectDir)include\engine\scene;$(ProjectDir)include\engine\particle;$(ProjectDir)include\engine\collision;$(ProjectDir)include\engine\input;$(ProjectDir)include\engine\camera;$(ProjectDir)include\engine\core;$(ProjectDir)include\engine\graphics;$(ProjectDir)include\engine\imgui;$(ProjectDir)include\engine\model;$(ProjectDir)include\engine\sound;$(ProjectDir)include\engine\sprite;$(ProjectDir)include\engine\texture;$(ProjectDir)externals;$(ProjectDir)externals\assimp\include;$(ProjectDir)externals\assimp\include\assimp;$(ProjectDir)externals\DirectX-Headers;$(ProjectDir)externals\DirectXTex;$(ProjectDir)externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
@@ -97,7 +97,7 @@ if exist "$(ProjectDir)externals\assimp\bin\assimp-vc145-mt.dll" (
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <TreatWarningAsError>false</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(ProjectDir)include\app\scene;$(ProjectDir)include\engine\scene;$(ProjectDir)include\engine\particle;$(ProjectDir)include\engine\collision;$(ProjectDir)include\engine\input;$(ProjectDir)include\engine\camera;$(ProjectDir)include\engine\core;$(ProjectDir)include\engine\graphics;$(ProjectDir)include\engine\imgui;$(ProjectDir)include\engine\model;$(ProjectDir)include\engine\sound;$(ProjectDir)include\engine\sprite;$(ProjectDir)include\engine\texture;$(ProjectDir)externals\assimp\include;$(ProjectDir)externals\assimp\include\assimp;$(ProjectDir)externals\DirectX-Headers;$(ProjectDir)externals\DirectXTex;$(ProjectDir)externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include\app\scene;$(ProjectDir)include\engine\scene;$(ProjectDir)include\engine\particle;$(ProjectDir)include\engine\collision;$(ProjectDir)include\engine\input;$(ProjectDir)include\engine\camera;$(ProjectDir)include\engine\core;$(ProjectDir)include\engine\graphics;$(ProjectDir)include\engine\imgui;$(ProjectDir)include\engine\model;$(ProjectDir)include\engine\sound;$(ProjectDir)include\engine\sprite;$(ProjectDir)include\engine\texture;$(ProjectDir)externals;$(ProjectDir)externals\assimp\include;$(ProjectDir)externals\assimp\include\assimp;$(ProjectDir)externals\DirectX-Headers;$(ProjectDir)externals\DirectXTex;$(ProjectDir)externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
@@ -130,6 +130,7 @@ if exist "$(ProjectDir)externals\assimp\bin\assimp-vc145-mt.dll" (
     <ClCompile Include="src\engine\collision\CollisionUtil.cpp" />
     <ClCompile Include="src\engine\particle\BaseParticleSystem.cpp" />
     <ClCompile Include="src\app\scene\GameScene.cpp" />
+    <ClCompile Include="src\engine\scene\LevelLoader.cpp" />
     <ClCompile Include="src\engine\scene\SceneManager.cpp" />
     <ClCompile Include="src\engine\input\Input.cpp" />
     <ClCompile Include="src\engine\sound\SoundManager.cpp" />
@@ -167,6 +168,7 @@ if exist "$(ProjectDir)externals\assimp\bin\assimp-vc145-mt.dll" (
     <ClInclude Include="include\engine\model\Model.h" />
     <ClInclude Include="include\engine\model\Vertex.h" />
     <ClInclude Include="include\app\scene\GameScene.h" />
+    <ClInclude Include="include\engine\scene\LevelLoader.h" />
     <ClInclude Include="include\engine\scene\SceneContext.h" />
     <ClInclude Include="include\engine\sprite\Sprite.h" />
     <ClInclude Include="include\engine\graphics\ShaderCompiler.h" />
