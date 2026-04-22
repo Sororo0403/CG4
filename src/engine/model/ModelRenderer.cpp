@@ -36,9 +36,17 @@ static void NormalizeInfluence(VertexInfluence &influence) {
     }
 }
 
-struct ConstBufferData {
+struct PerObjectConstBufferData {
     XMFLOAT4X4 matWVP;
     XMFLOAT4X4 matWorld;
+};
+
+struct SceneConstBufferData {
+    struct PointLightData {
+        XMFLOAT4 positionRange;
+        XMFLOAT4 colorIntensity;
+    };
+
     XMFLOAT4 cameraPos;
     XMFLOAT4 effectColor;
     XMFLOAT4 effectParams;
@@ -47,10 +55,7 @@ struct ConstBufferData {
     XMFLOAT4 fillLightDirection;
     XMFLOAT4 fillLightColor;
     XMFLOAT4 ambientColor;
-    XMFLOAT4 pointLight0PositionRange;
-    XMFLOAT4 pointLight0ColorIntensity;
-    XMFLOAT4 pointLight1PositionRange;
-    XMFLOAT4 pointLight1ColorIntensity;
+    PointLightData pointLights[2];
     XMFLOAT4 lightingParams;
 };
 
@@ -105,46 +110,51 @@ void ModelRenderer::Draw(const Model &model, const Transform &transform,
             return;
         }
 
-        auto *dst = reinterpret_cast<ConstBufferData *>(mappedCB_ +
-                                                        cbStride_ * drawIndex_);
-        XMStoreFloat4x4(&dst->matWVP, XMMatrixTranspose(wvp));
-        XMStoreFloat4x4(&dst->matWorld, XMMatrixTranspose(world));
-        dst->cameraPos = {camera.GetPosition().x, camera.GetPosition().y,
-                          camera.GetPosition().z, 1.0f};
-        dst->effectColor = currentEffect_.color;
-        dst->effectParams = {
+        auto *objectDst = reinterpret_cast<PerObjectConstBufferData *>(
+            mappedObjectCB_ + objectCbStride_ * drawIndex_);
+        auto *sceneDst = reinterpret_cast<SceneConstBufferData *>(
+            mappedSceneCB_ + sceneCbStride_ * drawIndex_);
+        XMStoreFloat4x4(&objectDst->matWVP, XMMatrixTranspose(wvp));
+        XMStoreFloat4x4(&objectDst->matWorld, XMMatrixTranspose(world));
+        sceneDst->cameraPos = {camera.GetPosition().x, camera.GetPosition().y,
+                               camera.GetPosition().z, 1.0f};
+        sceneDst->effectColor = currentEffect_.color;
+        sceneDst->effectParams = {
             currentEffect_.enabled ? currentEffect_.intensity : 0.0f,
             currentEffect_.fresnelPower,
             currentEffect_.noiseAmount,
             currentEffect_.time,
         };
-        dst->keyLightDirection = {
+        sceneDst->keyLightDirection = {
             currentLighting_.keyLightDirection.x,
             currentLighting_.keyLightDirection.y,
             currentLighting_.keyLightDirection.z,
             0.0f,
         };
-        dst->keyLightColor = currentLighting_.keyLightColor;
-        dst->fillLightDirection = {
+        sceneDst->keyLightColor = currentLighting_.keyLightColor;
+        sceneDst->fillLightDirection = {
             currentLighting_.fillLightDirection.x,
             currentLighting_.fillLightDirection.y,
             currentLighting_.fillLightDirection.z,
             0.0f,
         };
-        dst->fillLightColor = currentLighting_.fillLightColor;
-        dst->ambientColor = currentLighting_.ambientColor;
-        dst->pointLight0PositionRange =
-            currentLighting_.pointLight0PositionRange;
-        dst->pointLight0ColorIntensity =
-            currentLighting_.pointLight0ColorIntensity;
-        dst->pointLight1PositionRange =
-            currentLighting_.pointLight1PositionRange;
-        dst->pointLight1ColorIntensity =
-            currentLighting_.pointLight1ColorIntensity;
-        dst->lightingParams = currentLighting_.lightingParams;
+        sceneDst->fillLightColor = currentLighting_.fillLightColor;
+        sceneDst->ambientColor = currentLighting_.ambientColor;
+        for (size_t lightIndex = 0;
+             lightIndex < currentLighting_.pointLights.size(); ++lightIndex) {
+            sceneDst->pointLights[lightIndex].positionRange =
+                currentLighting_.pointLights[lightIndex].positionRange;
+            sceneDst->pointLights[lightIndex].colorIntensity =
+                currentLighting_.pointLights[lightIndex].colorIntensity;
+        }
+        sceneDst->lightingParams = currentLighting_.lightingParams;
 
-        D3D12_GPU_VIRTUAL_ADDRESS cbAddr =
-            constBuffer_->GetGPUVirtualAddress() + cbStride_ * drawIndex_;
+        D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr =
+            objectConstBuffer_->GetGPUVirtualAddress() +
+            objectCbStride_ * drawIndex_;
+        D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr =
+            sceneConstBuffer_->GetGPUVirtualAddress() +
+            sceneCbStride_ * drawIndex_;
 
         const Material &material =
             materialManager_->GetMaterial(subMesh.materialId);
@@ -161,13 +171,18 @@ void ModelRenderer::Draw(const Model &model, const Transform &transform,
         std::array<D3D12_VERTEX_BUFFER_VIEW, 2> vertexBufferViews = {
             mesh.vbView, subMesh.skinCluster.influenceBufferView};
 
-        cmd->SetGraphicsRootConstantBufferView(0, cbAddr);
+        cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
+        cmd->SetGraphicsRootConstantBufferView(1, sceneCbAddr);
         cmd->SetGraphicsRootConstantBufferView(
-            1, materialManager_->GetGPUVirtualAddress(subMesh.materialId));
+            2, materialManager_->GetGPUVirtualAddress(subMesh.materialId));
         cmd->SetGraphicsRootDescriptorTable(
-            2, textureManager_->GetGpuHandle(subMesh.textureId));
-        cmd->SetGraphicsRootDescriptorTable(3,
+            3, textureManager_->GetGpuHandle(subMesh.textureId));
+        cmd->SetGraphicsRootDescriptorTable(4,
                                             subMesh.skinCluster.paletteSrvGpuHandle);
+        if (hasEnvironmentTexture_) {
+            cmd->SetGraphicsRootDescriptorTable(
+                5, textureManager_->GetGpuHandle(environmentTextureId_));
+        }
 
         cmd->IASetVertexBuffers(0, static_cast<UINT>(vertexBufferViews.size()),
                                 vertexBufferViews.data());
@@ -359,36 +374,56 @@ void ModelRenderer::UpdateSkinClusters(Model &model) {
 }
 
 void ModelRenderer::CreateConstantBuffer() {
-    cbStride_ = Align256(sizeof(ConstBufferData));
-    UINT totalSize = cbStride_ * kMaxDraws;
+    objectCbStride_ = Align256(sizeof(PerObjectConstBufferData));
+    sceneCbStride_ = Align256(sizeof(SceneConstBufferData));
+    UINT objectTotalSize = objectCbStride_ * kMaxDraws;
+    UINT sceneTotalSize = sceneCbStride_ * kMaxDraws;
 
     CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
-    auto desc = CD3DX12_RESOURCE_DESC::Buffer(totalSize);
+    auto objectDesc = CD3DX12_RESOURCE_DESC::Buffer(objectTotalSize);
+    auto sceneDesc = CD3DX12_RESOURCE_DESC::Buffer(sceneTotalSize);
 
     ThrowIfFailed(dxCommon_->GetDevice()->CreateCommittedResource(
-                      &heap, D3D12_HEAP_FLAG_NONE, &desc,
+                      &heap, D3D12_HEAP_FLAG_NONE, &objectDesc,
                       D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                      IID_PPV_ARGS(&constBuffer_)),
-                  "CreateCommittedResource(ConstantBuffer) failed");
+                      IID_PPV_ARGS(&objectConstBuffer_)),
+                  "CreateCommittedResource(ObjectConstantBuffer) failed");
 
     ThrowIfFailed(
-        constBuffer_->Map(0, nullptr, reinterpret_cast<void **>(&mappedCB_)),
-        "ConstantBuffer Map failed");
+        objectConstBuffer_->Map(0, nullptr,
+                                reinterpret_cast<void **>(&mappedObjectCB_)),
+        "ObjectConstantBuffer Map failed");
+
+    ThrowIfFailed(dxCommon_->GetDevice()->CreateCommittedResource(
+                      &heap, D3D12_HEAP_FLAG_NONE, &sceneDesc,
+                      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                      IID_PPV_ARGS(&sceneConstBuffer_)),
+                  "CreateCommittedResource(SceneConstantBuffer) failed");
+
+    ThrowIfFailed(
+        sceneConstBuffer_->Map(0, nullptr,
+                               reinterpret_cast<void **>(&mappedSceneCB_)),
+        "SceneConstantBuffer Map failed");
 }
 
 void ModelRenderer::CreateRootSignature() {
-    CD3DX12_ROOT_PARAMETER params[4];
+    CD3DX12_ROOT_PARAMETER params[6];
 
     params[0].InitAsConstantBufferView(0);
-    params[1].InitAsConstantBufferView(2);
+    params[1].InitAsConstantBufferView(1);
+    params[2].InitAsConstantBufferView(2);
 
     CD3DX12_DESCRIPTOR_RANGE textureRange;
     textureRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-    params[2].InitAsDescriptorTable(1, &textureRange);
+    params[3].InitAsDescriptorTable(1, &textureRange);
 
     CD3DX12_DESCRIPTOR_RANGE matrixPaletteRange;
     matrixPaletteRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
-    params[3].InitAsDescriptorTable(1, &matrixPaletteRange);
+    params[4].InitAsDescriptorTable(1, &matrixPaletteRange);
+
+    CD3DX12_DESCRIPTOR_RANGE environmentRange;
+    environmentRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
+    params[5].InitAsDescriptorTable(1, &environmentRange);
 
     CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
 

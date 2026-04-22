@@ -18,4 +18,10 @@ struct ModelVSOutput
     float3 worldNormal : TEXCOORD2;
 };
 
+struct PointLight
+{
+    float4 positionRange;
+    float4 colorIntensity;
+};
+
 #endif // MODEL_HLSLI

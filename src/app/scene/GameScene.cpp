@@ -60,6 +60,8 @@ void GameScene::Initialize(const SceneContext &ctx) {
     LoadLevel(L"resources/levels/sample_level.json");
     ctx.dxCommon->EndUpload();
     ctx.texture->ReleaseUploadBuffers();
+
+    ctx.modelRenderer->SetEnvironmentTexture(skyboxTextureId_);
 }
 
 void GameScene::Update() {

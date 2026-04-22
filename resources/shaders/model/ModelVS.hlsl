@@ -1,22 +1,9 @@
 #include "Model.hlsli"
 
-cbuffer Transform : register(b0)
+cbuffer ObjectTransform : register(b0)
 {
     float4x4 matWVP;
     float4x4 matWorld;
-    float4 cameraPos;
-    float4 effectColor;
-    float4 effectParams;
-    float4 keyLightDirection;
-    float4 keyLightColor;
-    float4 fillLightDirection;
-    float4 fillLightColor;
-    float4 ambientColor;
-    float4 pointLight0PositionRange;
-    float4 pointLight0ColorIntensity;
-    float4 pointLight1PositionRange;
-    float4 pointLight1ColorIntensity;
-    float4 lightingParams;
 };
 
 struct Well

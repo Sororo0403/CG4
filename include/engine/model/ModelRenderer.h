@@ -4,6 +4,7 @@
 #include "Model.h"
 #include "Transform.h"
 #include <DirectXMath.h>
+#include <array>
 #include <d3d12.h>
 #include <wrl.h>
 
@@ -26,6 +27,14 @@ struct ModelDrawEffect {
 };
 
 /// <summary>
+/// 点光源1灯分のパラメータ
+/// </summary>
+struct PointLight {
+    DirectX::XMFLOAT4 positionRange = {0.0f, 2.0f, -1.0f, 8.0f};
+    DirectX::XMFLOAT4 colorIntensity = {1.0f, 0.55f, 0.35f, 1.1f};
+};
+
+/// <summary>
 /// シーン全体で共有するライティング定数
 /// </summary>
 struct SceneLighting {
@@ -36,10 +45,10 @@ struct SceneLighting {
     float padding1 = 0.0f;
     DirectX::XMFLOAT4 fillLightColor = {0.22f, 0.32f, 0.48f, 0.38f};
     DirectX::XMFLOAT4 ambientColor = {0.28f, 0.30f, 0.34f, 1.0f};
-    DirectX::XMFLOAT4 pointLight0PositionRange = {0.0f, 2.0f, -1.0f, 8.0f};
-    DirectX::XMFLOAT4 pointLight0ColorIntensity = {1.0f, 0.55f, 0.35f, 1.1f};
-    DirectX::XMFLOAT4 pointLight1PositionRange = {0.0f, 1.5f, 2.5f, 7.0f};
-    DirectX::XMFLOAT4 pointLight1ColorIntensity = {0.25f, 0.45f, 1.0f, 0.75f};
+    std::array<PointLight, 2> pointLights = {{
+        {{0.0f, 2.0f, -1.0f, 8.0f}, {1.0f, 0.55f, 0.35f, 1.1f}},
+        {{0.0f, 1.5f, 2.5f, 7.0f}, {0.25f, 0.45f, 1.0f, 0.75f}},
+    }};
     DirectX::XMFLOAT4 lightingParams = {48.0f, 0.30f, 2.8f, 0.22f};
 };
 
@@ -85,6 +94,18 @@ class ModelRenderer {
     void SetSceneLighting(const SceneLighting &lighting) {
         currentLighting_ = lighting;
     }
+    /// <summary>
+    /// 環境マップに使うキューブマップテクスチャを設定する
+    /// </summary>
+    /// <param name="textureId">キューブマップのテクスチャID</param>
+    void SetEnvironmentTexture(uint32_t textureId) {
+        environmentTextureId_ = textureId;
+        hasEnvironmentTexture_ = true;
+    }
+    /// <summary>
+    /// 環境マップを無効化する
+    /// </summary>
+    void ClearEnvironmentTexture() { hasEnvironmentTexture_ = false; }
     /// <summary>
     /// モデル用スキンクラスターGPUリソースを生成する
     /// </summary>
@@ -133,11 +154,16 @@ class ModelRenderer {
     Microsoft::WRL::ComPtr<ID3D12PipelineState> opaquePSO_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> transparentPSO_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> additivePSO_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> constBuffer_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> objectConstBuffer_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> sceneConstBuffer_;
 
     uint32_t drawIndex_ = 0;
-    uint32_t cbStride_ = 0;
-    uint8_t *mappedCB_ = nullptr;
+    uint32_t objectCbStride_ = 0;
+    uint32_t sceneCbStride_ = 0;
+    uint8_t *mappedObjectCB_ = nullptr;
+    uint8_t *mappedSceneCB_ = nullptr;
     ModelDrawEffect currentEffect_{};
     SceneLighting currentLighting_{};
+    uint32_t environmentTextureId_ = 0;
+    bool hasEnvironmentTexture_ = false;
 };
