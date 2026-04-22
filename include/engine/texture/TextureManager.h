@@ -11,8 +11,14 @@
 class DirectXCommon;
 class SrvManager;
 
+/// <summary>
+/// テクスチャ読み込みとSRV管理を担当する
+/// </summary>
 class TextureManager {
   private:
+    /// <summary>
+    /// テクスチャ本体と対応するSRV情報
+    /// </summary>
     struct Entry {
         Texture texture;
         uint32_t srvIndex = 0;
@@ -41,6 +47,11 @@ class TextureManager {
     /// <returns>生成されたテクスチャのID</returns>
     uint32_t LoadFromMemory(const uint8_t *data, size_t size);
 
+    /// <summary>
+    /// デバッグ用のキューブマップを生成する
+    /// </summary>
+    /// <param name="faceSize">各面の一辺サイズ</param>
+    /// <returns>生成されたテクスチャID</returns>
     uint32_t CreateDebugCubemap(uint32_t faceSize = 4);
 
     /// <summary>
@@ -48,14 +59,39 @@ class TextureManager {
     /// </summary>
     void ReleaseUploadBuffers();
 
-    // Getter
+    /// <summary>
+    /// テクスチャのGPUハンドルを取得する
+    /// </summary>
+    /// <param name="textureId">テクスチャID</param>
+    /// <returns>GPUディスクリプタハンドル</returns>
     D3D12_GPU_DESCRIPTOR_HANDLE GetGpuHandle(uint32_t textureId) const;
+    /// <summary>
+    /// テクスチャリソースを取得する
+    /// </summary>
+    /// <param name="textureId">テクスチャID</param>
+    /// <returns>ID3D12Resourceへのポインタ</returns>
     ID3D12Resource *GetResource(uint32_t textureId) const;
+    /// <summary>
+    /// テクスチャ幅を取得する
+    /// </summary>
+    /// <param name="id">テクスチャID</param>
+    /// <returns>テクスチャ幅</returns>
     uint32_t GetWidth(uint32_t id) const;
+    /// <summary>
+    /// テクスチャ高さを取得する
+    /// </summary>
+    /// <param name="id">テクスチャID</param>
+    /// <returns>テクスチャ高さ</returns>
     uint32_t GetHeight(uint32_t id) const;
 
   private:
-    // Create
+    /// <summary>
+    /// Image配列からGPUテクスチャを生成する
+    /// </summary>
+    /// <param name="images">画像配列</param>
+    /// <param name="imageCount">画像枚数</param>
+    /// <param name="metadata">テクスチャメタデータ</param>
+    /// <returns>生成されたテクスチャID</returns>
     uint32_t CreateTexture(const DirectX::Image *images, size_t imageCount,
                            const DirectX::TexMetadata &metadata);
 

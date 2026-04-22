@@ -3,6 +3,9 @@
 
 class SceneManager;
 
+/// <summary>
+/// すべてのシーン実装が継承する基底クラス
+/// </summary>
 class BaseScene {
   public:
     /// <summary>
@@ -26,7 +29,10 @@ class BaseScene {
     /// </summary>
     virtual void Draw() = 0;
 
-    // Setter
+    /// <summary>
+    /// シーンマネージャーを設定する
+    /// </summary>
+    /// <param name="sceneManager">関連付けるシーンマネージャー</param>
     void SetSceneManager(SceneManager *sceneManager) {
         sceneManager_ = sceneManager;
     }

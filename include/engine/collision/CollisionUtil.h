@@ -3,6 +3,9 @@
 #include "OBB.h"
 #include <DirectXMath.h>
 
+/// <summary>
+/// 各種当たり判定関数を提供する
+/// </summary>
 namespace CollisionUtil {
 
 /// <summary>

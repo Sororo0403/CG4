@@ -7,6 +7,11 @@
 
 namespace ShaderCompiler {
 
+/// <summary>
+/// シェーダーファイルの実在パスを探索する
+/// </summary>
+/// <param name="path">探索対象の相対または絶対パス</param>
+/// <returns>解決済みのシェーダーパス</returns>
 inline std::wstring ResolveShaderPath(const std::wstring &path) {
     namespace fs = std::filesystem;
 
@@ -48,6 +53,13 @@ inline std::wstring ResolveShaderPath(const std::wstring &path) {
     return path;
 }
 
+/// <summary>
+/// HLSLシェーダーをコンパイルする
+/// </summary>
+/// <param name="path">シェーダーファイルのパス</param>
+/// <param name="entry">エントリポイント名</param>
+/// <param name="target">シェーダーモデル</param>
+/// <returns>コンパイル済みシェーダーバイナリ</returns>
 inline Microsoft::WRL::ComPtr<ID3DBlob>
 Compile(const std::wstring &path, const std::string &entry,
         const std::string &target) {

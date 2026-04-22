@@ -12,6 +12,9 @@ class SrvManager;
 class MeshManager;
 class TextureManager;
 
+/// <summary>
+/// モデル描画時の一時エフェクト設定
+/// </summary>
 struct ModelDrawEffect {
     bool enabled = false;
     bool additiveBlend = false;
@@ -22,6 +25,9 @@ struct ModelDrawEffect {
     float time = 0.0f;
 };
 
+/// <summary>
+/// シーン全体で共有するライティング定数
+/// </summary>
 struct SceneLighting {
     DirectX::XMFLOAT3 keyLightDirection = {-0.35f, -1.0f, 0.25f};
     float padding0 = 0.0f;
@@ -37,16 +43,19 @@ struct SceneLighting {
     DirectX::XMFLOAT4 lightingParams = {48.0f, 0.30f, 2.8f, 0.22f};
 };
 
+/// <summary>
+/// モデル描画パイプラインと定数バッファ更新を担当する
+/// </summary>
 class ModelRenderer {
   public:
     /// <summary>
     /// 初期化処理
     /// </summary>
-    /// <param name="dxCommon"></param>
-    /// <param name="srvManager"></param>
-    /// <param name="meshManager"></param>
-    /// <param name="textureManager"></param>
-    /// <param name="materialManager"></param>
+    /// <param name="dxCommon">DirectX共通管理</param>
+    /// <param name="srvManager">SRV管理</param>
+    /// <param name="meshManager">メッシュ管理</param>
+    /// <param name="textureManager">テクスチャ管理</param>
+    /// <param name="materialManager">マテリアル管理</param>
     void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
                     MeshManager *meshManager, TextureManager *textureManager,
                     MaterialManager *materialManager);
@@ -60,12 +69,31 @@ class ModelRenderer {
     void Draw(const Model &model, const Transform &transform,
               const Camera &camera);
 
+    /// <summary>
+    /// 現在フレームの描画エフェクトを設定する
+    /// </summary>
+    /// <param name="effect">適用するエフェクト</param>
     void SetDrawEffect(const ModelDrawEffect &effect) { currentEffect_ = effect; }
+    /// <summary>
+    /// 描画エフェクト設定を初期状態へ戻す
+    /// </summary>
     void ClearDrawEffect() { currentEffect_ = ModelDrawEffect{}; }
+    /// <summary>
+    /// シーンライティングを設定する
+    /// </summary>
+    /// <param name="lighting">適用するライティング定数</param>
     void SetSceneLighting(const SceneLighting &lighting) {
         currentLighting_ = lighting;
     }
+    /// <summary>
+    /// モデル用スキンクラスターGPUリソースを生成する
+    /// </summary>
+    /// <param name="model">対象モデル</param>
     void CreateSkinClusters(Model &model);
+    /// <summary>
+    /// スキンクラスターのパレット内容を更新する
+    /// </summary>
+    /// <param name="model">対象モデル</param>
     void UpdateSkinClusters(Model &model);
 
     /// <summary>
@@ -79,9 +107,17 @@ class ModelRenderer {
     void PostDraw();
 
   private:
-    // Create
+    /// <summary>
+    /// ルートシグネチャを生成する
+    /// </summary>
     void CreateRootSignature();
+    /// <summary>
+    /// パイプラインステートを生成する
+    /// </summary>
     void CreatePipelineState();
+    /// <summary>
+    /// 定数バッファを生成する
+    /// </summary>
     void CreateConstantBuffer();
 
   private:

@@ -6,6 +6,9 @@
 
 class DirectXCommon;
 
+/// <summary>
+/// 頂点バッファとインデックスバッファをまとめたメッシュ情報
+/// </summary>
 struct Mesh {
     Microsoft::WRL::ComPtr<ID3D12Resource> vertexBuffer;
     Microsoft::WRL::ComPtr<ID3D12Resource> indexBuffer;
@@ -17,6 +20,9 @@ struct Mesh {
     uint32_t vertexStride = 0;
 };
 
+/// <summary>
+/// GPUメッシュリソースの生成と参照を管理する
+/// </summary>
 class MeshManager {
   public:
     /// <summary>
@@ -29,7 +35,7 @@ class MeshManager {
     /// Meshを作成する
     /// </summary>
     /// <param name="vertexData">頂点データへのポインタ</param>
-    /// <param name="vertexStride"><1頂点あたりのバイトサイズ/param>
+    /// <param name="vertexStride">1頂点あたりのバイトサイズ</param>
     /// <param name="vertexCount">頂点数</param>
     /// <param name="indexData">16bitインデックス配列</param>
     /// <param name="indexCount">インデックス数</param>
@@ -38,7 +44,11 @@ class MeshManager {
                         uint32_t vertexCount, const uint32_t *indexData,
                         uint32_t indexCount);
 
-    // Getter
+    /// <summary>
+    /// メッシュ情報を取得する
+    /// </summary>
+    /// <param name="meshId">メッシュID</param>
+    /// <returns>メッシュ情報</returns>
     const Mesh &GetMesh(uint32_t meshId) const;
 
   private:

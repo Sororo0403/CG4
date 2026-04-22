@@ -2,6 +2,9 @@
 #include <Windows.h>
 #include <string>
 
+/// <summary>
+/// Win32ウィンドウの生成とメッセージ処理を管理する
+/// </summary>
 class WinApp {
   public:
     /// <summary>
@@ -26,13 +29,26 @@ class WinApp {
     /// <returns>true: アプリケーション継続 / false: 終了要求あり</returns>
     bool ProcessMessage();
 
-    // Getter
+    /// <summary>
+    /// クライアント領域の幅を取得する
+    /// </summary>
+    /// <returns>クライアント領域の幅</returns>
     int GetWidth() const { return width_; }
+    /// <summary>
+    /// クライアント領域の高さを取得する
+    /// </summary>
+    /// <returns>クライアント領域の高さ</returns>
     int GetHeight() const { return height_; }
+    /// <summary>
+    /// ウィンドウハンドルを取得する
+    /// </summary>
+    /// <returns>ウィンドウハンドル</returns>
     HWND GetHwnd() const { return hwnd_; }
 
   private:
-    // ウィンドウプロシージャ
+    /// <summary>
+    /// ウィンドウプロシージャ
+    /// </summary>
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                                        LPARAM lParam);
 

@@ -7,6 +7,9 @@
 
 class DirectXCommon;
 
+/// <summary>
+/// マテリアル定数バッファの生成と参照を管理する
+/// </summary>
 class MaterialManager {
   public:
     /// <summary>
@@ -22,14 +25,30 @@ class MaterialManager {
     /// <returns>マテリアルのID</returns>
     uint32_t CreateMaterial(const Material &material);
 
-    // Setter
+    /// <summary>
+    /// 既存マテリアルの内容を更新する
+    /// </summary>
+    /// <param name="materialId">更新対象のマテリアルID</param>
+    /// <param name="material">設定するマテリアル値</param>
     void SetMaterial(uint32_t materialId, const Material &material);
 
-    // Getter
+    /// <summary>
+    /// GPU仮想アドレスを取得する
+    /// </summary>
+    /// <param name="materialId">対象マテリアルID</param>
+    /// <returns>定数バッファのGPU仮想アドレス</returns>
     D3D12_GPU_VIRTUAL_ADDRESS GetGPUVirtualAddress(uint32_t materialId) const;
+    /// <summary>
+    /// マテリアル情報を取得する
+    /// </summary>
+    /// <param name="materialId">対象マテリアルID</param>
+    /// <returns>マテリアル情報</returns>
     const Material &GetMaterial(uint32_t materialId) const;
 
   private:
+    /// <summary>
+    /// マテリアル1件分のGPUリソースを保持する
+    /// </summary>
     struct MaterialResource {
         Material material{};
         Microsoft::WRL::ComPtr<ID3D12Resource> resource;

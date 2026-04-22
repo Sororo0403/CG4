@@ -7,6 +7,9 @@
 class ModelManager;
 class ModelRenderer;
 
+/// <summary>
+/// モデル描画ベースのパーティクルシステム基底クラス
+/// </summary>
 class BaseParticleSystem {
   public:
     /// <summary>

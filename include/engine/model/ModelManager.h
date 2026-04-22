@@ -12,6 +12,9 @@ class DirectXCommon;
 class SrvManager;
 class TextureManager;
 
+/// <summary>
+/// モデル読み込みと描画関連サブシステムを統括する
+/// </summary>
 class ModelManager {
   public:
     /// <summary>
@@ -59,9 +62,22 @@ class ModelManager {
     /// <param name="modelId">モデルID</param>
     /// <returns>Modelポインタ</returns>
     Model *GetModel(uint32_t modelId);
+    /// <summary>
+    /// モデルデータを読み取り専用で取得する
+    /// </summary>
+    /// <param name="modelId">モデルID</param>
+    /// <returns>Modelポインタ</returns>
     const Model *GetModel(uint32_t modelId) const;
 
+    /// <summary>
+    /// 描画に使用するModelRendererを取得する
+    /// </summary>
+    /// <returns>ModelRendererへのポインタ</returns>
     ModelRenderer *GetRenderer() { return &modelRenderer_; }
+    /// <summary>
+    /// 描画に使用するModelRendererを読み取り専用で取得する
+    /// </summary>
+    /// <returns>ModelRendererへのポインタ</returns>
     const ModelRenderer *GetRenderer() const { return &modelRenderer_; }
 
   private:

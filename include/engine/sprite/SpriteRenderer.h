@@ -8,6 +8,9 @@ class DirectXCommon;
 class TextureManager;
 class SrvManager;
 
+/// <summary>
+/// 2Dスプライト描画パイプラインを管理する
+/// </summary>
 class SpriteRenderer {
   public:
     /// <summary>
@@ -38,13 +41,28 @@ class SpriteRenderer {
     void PostDraw();
 
   private:
-    // Create
+    /// <summary>
+    /// ルートシグネチャを生成する
+    /// </summary>
     void CreateRootSignature();
+    /// <summary>
+    /// パイプラインステートを生成する
+    /// </summary>
     void CreatePipelineState();
+    /// <summary>
+    /// 頂点バッファを生成する
+    /// </summary>
     void CreateVertexBuffer();
+    /// <summary>
+    /// 定数バッファを生成する
+    /// </summary>
     void CreateConstantBuffer();
 
-    // Update
+    /// <summary>
+    /// 投影行列を更新する
+    /// </summary>
+    /// <param name="width">描画領域の幅</param>
+    /// <param name="height">描画領域の高さ</param>
     void UpdateProjection(int width, int height);
 
   private:

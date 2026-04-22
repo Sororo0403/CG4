@@ -126,8 +126,6 @@ XMMATRIX Animator::MakeAnimatedLocalMatrix(const BoneInfo &bone,
         XMMatrixRotationQuaternion(q) *
         XMMatrixTranslation(pos.x, pos.y, pos.z);
 
-    // Preserve transforms that exist between this bone and its nearest bone
-    // parent (for example the imported Armature root scale on Mixamo glTFs).
     XMMATRIX adjustment = XMLoadFloat4x4(&bone.parentAdjustmentMatrix);
     return animatedLocal * adjustment;
 }

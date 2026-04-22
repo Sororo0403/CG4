@@ -111,6 +111,9 @@
     <Filter Include="src\app\scene">
       <UniqueIdentifier>{6df06332-d393-4577-9a22-2260e6a5b501}</UniqueIdentifier>
     </Filter>
+    <Filter Include="resources\shaders\skybox">
+      <UniqueIdentifier>{ee5d2c4b-212f-4f11-a82a-224e52ed54c7}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp">
@@ -181,6 +184,12 @@
     </ClCompile>
     <ClCompile Include="src\app\scene\GameScene.cpp">
       <Filter>src\app\scene</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\scene\LevelLoader.cpp">
+      <Filter>src\engine\scene</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\model\SkyboxRenderer.cpp">
+      <Filter>src\engine\model</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -292,6 +301,12 @@
     <ClInclude Include="include\app\scene\GameScene.h">
       <Filter>include\app\scene</Filter>
     </ClInclude>
+    <ClInclude Include="include\engine\model\SkyboxRenderer.h">
+      <Filter>include\engine\model</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\scene\LevelLoader.h">
+      <Filter>include\engine\scene</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="resources\shaders\model\ModelPS.hlsl">
@@ -306,6 +321,12 @@
     <FxCompile Include="resources\shaders\sprite\SpriteVS.hlsl">
       <Filter>resources\shaders\sprite</Filter>
     </FxCompile>
+    <FxCompile Include="resources\shaders\skybox\SkyboxPS.hlsl">
+      <Filter>resources\shaders\skybox</Filter>
+    </FxCompile>
+    <FxCompile Include="resources\shaders\skybox\SkyboxVS.hlsl">
+      <Filter>resources\shaders\skybox</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="resources\shaders\model\Model.hlsli">
@@ -313,6 +334,9 @@
     </None>
     <None Include="resources\shaders\sprite\Sprite.hlsli">
       <Filter>resources\shaders\sprite</Filter>
+    </None>
+    <None Include="resources\shaders\skybox\Skybox.hlsli">
+      <Filter>resources\shaders\skybox</Filter>
     </None>
   </ItemGroup>
 </Project>

@@ -2,6 +2,9 @@
 #include <Windows.h>
 #include <stdexcept>
 
+/// <summary>
+/// DirectX関連の共通ユーティリティ関数群
+/// </summary>
 namespace DxUtils {
 
 /// <summary>

@@ -6,6 +6,9 @@ class DirectXCommon;
 class SrvManager;
 class WinApp;
 
+/// <summary>
+/// ImGui の初期化とフレーム処理を管理する
+/// </summary>
 class ImguiManager {
   public:
     /// <summary>

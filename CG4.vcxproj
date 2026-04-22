@@ -122,7 +122,7 @@ if exist "$(ProjectDir)externals\assimp\bin\assimp-vc145-mt.dll" (
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\engine\graphics\DxUtils.cpp" />
-    <ClCompile Include="src\engine\graphics\SkyboxRenderer.cpp" />
+    <ClCompile Include="src\engine\model\SkyboxRenderer.cpp" />
     <ClCompile Include="src\engine\model\MaterialManager.cpp" />
     <ClCompile Include="src\engine\camera\DebugCamera.cpp" />
     <ClCompile Include="src\engine\model\Animator.cpp" />
@@ -163,7 +163,7 @@ if exist "$(ProjectDir)externals\assimp\bin\assimp-vc145-mt.dll" (
     <ClInclude Include="include\engine\graphics\DxHelpers.h" />
     <ClInclude Include="include\engine\graphics\DxUtils.h" />
     <ClInclude Include="include\engine\graphics\DirectXCommon.h" />
-    <ClInclude Include="include\engine\graphics\SkyboxRenderer.h" />
+    <ClInclude Include="include\engine\model\SkyboxRenderer.h" />
     <ClInclude Include="include\engine\core\WinApp.h" />
     <ClInclude Include="include\engine\model\Model.h" />
     <ClInclude Include="include\engine\model\Vertex.h" />

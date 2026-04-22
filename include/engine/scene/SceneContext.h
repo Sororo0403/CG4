@@ -15,6 +15,9 @@ class SrvManager;
 class ImguiManager;
 #endif // _DEBUG
 
+/// <summary>
+/// シーンが参照する各種システムへのアクセスポイントをまとめる
+/// </summary>
 struct SceneContext {
     Input *input = nullptr;
     WinApp *winApp = nullptr;

@@ -5,11 +5,17 @@
 #include <wrl.h>
 #include <xaudio2.h>
 
+/// <summary>
+/// PCM16形式のWAVデータを保持する
+/// </summary>
 struct WavData {
     WAVEFORMATEX format{};
     std::vector<BYTE> buffer;
 };
 
+/// <summary>
+/// XAudio2 を用いた音声読み込みと再生を管理する
+/// </summary>
 class SoundManager {
   public:
     /// <summary>
@@ -47,6 +53,9 @@ class SoundManager {
     Microsoft::WRL::ComPtr<IXAudio2> xAudio2_;
     IXAudio2MasteringVoice *masterVoice_ = nullptr;
 
+    /// <summary>
+    /// 読み込み済み音声1件分のデータ
+    /// </summary>
     struct SoundResource {
         WavData wav;
     };

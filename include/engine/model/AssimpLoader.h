@@ -8,6 +8,9 @@ class TextureManager;
 class MeshManager;
 class MaterialManager;
 
+/// <summary>
+/// Assimp を使ってモデルとアニメーションを読み込む
+/// </summary>
 class AssimpLoader {
   public:
     /// <summary>
@@ -49,10 +52,6 @@ class AssimpLoader {
     /// <param name="model">アニメーションを書き込むモデル</param>
     void LoadAnimation(const aiScene *scene, Model &model);
 
-    /// <summary>
-    /// 各頂点のボーンウェイトを正規化して合計が1.0になるように調整
-    /// </summary>
-    /// <param name="vertices">正規化する頂点配列</param>
   private:
     TextureManager *textureManager_ = nullptr;
     MeshManager *meshManager_ = nullptr;

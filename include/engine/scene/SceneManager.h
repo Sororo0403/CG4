@@ -4,6 +4,9 @@
 
 class BaseScene;
 
+/// <summary>
+/// シーンの切り替えと更新を管理する
+/// </summary>
 class SceneManager {
   public:
     /// <summary>

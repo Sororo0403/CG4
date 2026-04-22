@@ -4,6 +4,9 @@
 #include <dxgi1_6.h>
 #include <wrl.h>
 
+/// <summary>
+/// Direct3D 12 のデバイスと描画フレーム管理を担う
+/// </summary>
 class DirectXCommon {
   public:
     /// <summary>
@@ -39,26 +42,73 @@ class DirectXCommon {
     /// </summary>
     void WaitForGpu();
 
-    // Getter
+    /// <summary>
+    /// D3D12デバイスを取得する
+    /// </summary>
+    /// <returns>D3D12デバイス</returns>
     ID3D12Device *GetDevice() const { return device_.Get(); }
+    /// <summary>
+    /// コマンドキューを取得する
+    /// </summary>
+    /// <returns>コマンドキュー</returns>
     ID3D12CommandQueue *GetCommandQueue() const { return commandQueue_.Get(); }
+    /// <summary>
+    /// グラフィックスコマンドリストを取得する
+    /// </summary>
+    /// <returns>コマンドリスト</returns>
     ID3D12GraphicsCommandList *GetCommandList() const {
         return commandList_.Get();
     }
+    /// <summary>
+    /// スワップチェーンのバッファ数を取得する
+    /// </summary>
+    /// <returns>バックバッファ数</returns>
     UINT GetSwapChainBufferCount() const { return kSwapChainBufferCount; }
 
   private:
-    // Create
+    /// <summary>
+    /// DXGIファクトリを生成する
+    /// </summary>
     void CreateFactory();
+    /// <summary>
+    /// D3D12デバイスを生成する
+    /// </summary>
     void CreateDevice();
+    /// <summary>
+    /// コマンドキューを生成する
+    /// </summary>
     void CreateCommandQueue();
+    /// <summary>
+    /// コマンドアロケータを生成する
+    /// </summary>
     void CreateCommandAllocator();
+    /// <summary>
+    /// コマンドリストを生成する
+    /// </summary>
     void CreateCommandList();
+    /// <summary>
+    /// スワップチェーンを生成する
+    /// </summary>
     void CreateSwapChain(HWND hwnd, int width, int height);
+    /// <summary>
+    /// RTVヒープを生成する
+    /// </summary>
     void CreateRTV();
+    /// <summary>
+    /// ビューポートを設定する
+    /// </summary>
     void CreateViewport(int width, int height);
+    /// <summary>
+    /// シザー矩形を設定する
+    /// </summary>
     void CreateScissor(int width, int height);
+    /// <summary>
+    /// 深度ステンシルバッファを生成する
+    /// </summary>
     void CreateDepthStencil(int width, int height);
+    /// <summary>
+    /// GPU同期用フェンスを生成する
+    /// </summary>
     void CreateFence();
 
   private:

@@ -3,6 +3,9 @@
 #include "Input.h"
 #include <DirectXMath.h>
 
+/// <summary>
+/// 入力操作で自由移動できるデバッグ用カメラ
+/// </summary>
 class DebugCamera : public Camera {
   public:
     /// <summary>
@@ -18,7 +21,10 @@ class DebugCamera : public Camera {
     /// <param name="deltaTime">前フレームからの経過時間(秒)</param>
     void Update(const Input &input, float deltaTime);
 
-    // Setter
+    /// <summary>
+    /// 移動速度を設定する
+    /// </summary>
+    /// <param name="speed">設定する移動速度</param>
     void SetMoveSpeed(float speed) { moveSpeed_ = speed; }
 
   private:

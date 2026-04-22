@@ -44,9 +44,8 @@ Transform MatrixToTransform(const XMMATRIX &matrix) {
 void GameScene::Initialize(const SceneContext &ctx) {
     BaseScene::Initialize(ctx);
 
-    const float aspect =
-        static_cast<float>(ctx.winApp->GetWidth()) /
-        static_cast<float>(ctx.winApp->GetHeight());
+    const float aspect = static_cast<float>(ctx.winApp->GetWidth()) /
+                         static_cast<float>(ctx.winApp->GetHeight());
 
     camera_.Initialize(aspect);
     camera_.SetMode(CameraMode::Free);
@@ -92,7 +91,8 @@ uint32_t GameScene::LoadSkyboxTexture() {
 
     for (const wchar_t *path : kCandidates) {
         if (std::filesystem::exists(path)) {
-            return ctx_->texture->Load(path);
+            return ctx_->texture->Load(
+                L"resources/rostock_laage_airport_4k.dds");
         }
     }
 

@@ -2,6 +2,9 @@
 #include "Transform.h"
 #include <DirectXMath.h>
 
+/// <summary>
+/// パーティクル1個分の状態を保持する
+/// </summary>
 struct Particle {
     Transform tf;
 
