@@ -53,6 +53,11 @@ class Camera {
     /// </summary>
     /// <param name="mode">設定するモード</param>
     void SetMode(CameraMode mode) { mode_ = mode; }
+    /// <summary>
+    /// アスペクト比を設定する
+    /// </summary>
+    /// <param name="aspect">新しいアスペクト比</param>
+    void SetAspect(float aspect) { aspect_ = aspect; }
 
     /// <summary>
     /// ビュー行列を取得する

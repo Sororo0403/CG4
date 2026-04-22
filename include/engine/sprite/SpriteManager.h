@@ -50,6 +50,12 @@ class SpriteManager {
     /// <returns>スプライト数</returns>
     size_t GetCount() const { return sprites_.size(); }
     /// <summary>
+    /// 描画領域サイズに合わせて投影行列を更新する
+    /// </summary>
+    /// <param name="width">クライアント領域の幅</param>
+    /// <param name="height">クライアント領域の高さ</param>
+    void Resize(int width, int height);
+    /// <summary>
     /// 内部のSpriteRendererを取得する
     /// </summary>
     /// <returns>SpriteRendererへのポインタ</returns>

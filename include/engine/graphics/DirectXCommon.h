@@ -28,6 +28,13 @@ class DirectXCommon {
     void EndFrame();
 
     /// <summary>
+    /// 描画ターゲットと深度バッファを新しいサイズに合わせて再生成する
+    /// </summary>
+    /// <param name="width">クライアント領域の幅</param>
+    /// <param name="height">クライアント領域の高さ</param>
+    void Resize(int width, int height);
+
+    /// <summary>
     /// アップロード開始処理
     /// </summary>
     void BeginUpload();

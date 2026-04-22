@@ -24,9 +24,6 @@ LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
 
 void WinApp::Initialize(HINSTANCE hInstance, int nCmdShow, int width,
                         int height, const std::wstring &title) {
-    width_ = width;
-    height_ = height;
-
     WNDCLASS wc{};
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = hInstance;
@@ -40,15 +37,21 @@ void WinApp::Initialize(HINSTANCE hInstance, int nCmdShow, int width,
     }
 
     // ウィンドウ生成
+    RECT windowRect{0, 0, width, height};
+    AdjustWindowRect(&windowRect, WS_OVERLAPPEDWINDOW, FALSE);
+
     hwnd_ = CreateWindowEx(0, kClassName, title.c_str(), WS_OVERLAPPEDWINDOW,
-                           CW_USEDEFAULT, CW_USEDEFAULT, width, height, nullptr,
-                           nullptr, hInstance, nullptr);
+                           CW_USEDEFAULT, CW_USEDEFAULT,
+                           windowRect.right - windowRect.left,
+                           windowRect.bottom - windowRect.top, nullptr, nullptr,
+                           hInstance, nullptr);
 
     if (!hwnd_) {
         throw std::runtime_error("CreateWindowEx failed");
     }
 
     ShowWindow(hwnd_, nCmdShow);
+    UpdateClientSize();
 }
 
 bool WinApp::ProcessMessage() {
@@ -60,5 +63,30 @@ bool WinApp::ProcessMessage() {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
+    UpdateClientSize();
     return true;
+}
+
+int WinApp::GetWidth() const {
+    const_cast<WinApp *>(this)->UpdateClientSize();
+    return width_;
+}
+
+int WinApp::GetHeight() const {
+    const_cast<WinApp *>(this)->UpdateClientSize();
+    return height_;
+}
+
+void WinApp::UpdateClientSize() {
+    if (!hwnd_) {
+        return;
+    }
+
+    RECT clientRect{};
+    if (!GetClientRect(hwnd_, &clientRect)) {
+        return;
+    }
+
+    width_ = clientRect.right - clientRect.left;
+    height_ = clientRect.bottom - clientRect.top;
 }

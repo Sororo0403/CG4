@@ -6,6 +6,7 @@
 #include "TextureManager.h"
 #include "WinApp.h"
 #include <DirectXMath.h>
+#include <algorithm>
 #include <filesystem>
 #include <stdexcept>
 
@@ -80,6 +81,9 @@ void GameScene::Initialize(const SceneContext &ctx) {
 }
 
 void GameScene::Update() {
+    const float aspect = static_cast<float>(ctx_->winApp->GetWidth()) /
+                         static_cast<float>((std::max)(ctx_->winApp->GetHeight(), 1));
+    camera_.SetAspect(aspect);
     camera_.Update(*ctx_->input, ctx_->deltaTime);
     camera_.UpdateMatrices();
 

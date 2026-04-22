@@ -99,6 +99,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     // メインループ
     while (winApp.ProcessMessage()) {
+        const int currentWidth = winApp.GetWidth();
+        const int currentHeight = winApp.GetHeight();
+        if (currentWidth != width || currentHeight != height) {
+            width = currentWidth;
+            height = currentHeight;
+
+            if (width > 0 && height > 0) {
+                dxCommon.Resize(width, height);
+                spriteManager.Resize(width, height);
+            }
+        }
+
         // deltaTime計算
         LARGE_INTEGER currentTime;
         QueryPerformanceCounter(&currentTime);

@@ -28,6 +28,10 @@ uint32_t SpriteManager::Create(const std::wstring &filePath) {
     return static_cast<uint32_t>(sprites_.size() - 1);
 }
 
+void SpriteManager::Resize(int width, int height) {
+    spriteRenderer_.UpdateProjection(width, height);
+}
+
 Sprite &SpriteManager::GetSprite(uint32_t id) { return sprites_.at(id); }
 
 const Sprite &SpriteManager::GetSprite(uint32_t id) const {

@@ -40,6 +40,13 @@ class SpriteRenderer {
     /// </summary>
     void PostDraw();
 
+    /// <summary>
+    /// 投影行列を更新する
+    /// </summary>
+    /// <param name="width">描画領域の幅</param>
+    /// <param name="height">描画領域の高さ</param>
+    void UpdateProjection(int width, int height);
+
   private:
     /// <summary>
     /// ルートシグネチャを生成する
@@ -58,14 +65,6 @@ class SpriteRenderer {
     /// </summary>
     void CreateConstantBuffer();
 
-    /// <summary>
-    /// 投影行列を更新する
-    /// </summary>
-    /// <param name="width">描画領域の幅</param>
-    /// <param name="height">描画領域の高さ</param>
-    void UpdateProjection(int width, int height);
-
-  private:
     DirectXCommon *dxCommon_ = nullptr;
     TextureManager *textureManager_ = nullptr;
     SrvManager *srvManager_ = nullptr;

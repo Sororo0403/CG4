@@ -33,17 +33,23 @@ class WinApp {
     /// クライアント領域の幅を取得する
     /// </summary>
     /// <returns>クライアント領域の幅</returns>
-    int GetWidth() const { return width_; }
+    int GetWidth() const;
     /// <summary>
     /// クライアント領域の高さを取得する
     /// </summary>
     /// <returns>クライアント領域の高さ</returns>
-    int GetHeight() const { return height_; }
+    int GetHeight() const;
     /// <summary>
     /// ウィンドウハンドルを取得する
     /// </summary>
     /// <returns>ウィンドウハンドル</returns>
     HWND GetHwnd() const { return hwnd_; }
+
+  private:
+    /// <summary>
+    /// 現在のクライアント領域サイズを更新する
+    /// </summary>
+    void UpdateClientSize();
 
   private:
     /// <summary>

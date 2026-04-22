@@ -73,6 +73,32 @@ void DirectXCommon::EndFrame() {
     backBufferIndex_ = swapChain_->GetCurrentBackBufferIndex();
 }
 
+void DirectXCommon::Resize(int width, int height) {
+    if (!swapChain_ || width <= 0 || height <= 0) {
+        return;
+    }
+
+    WaitForGpu();
+
+    for (auto &backBuffer : backBuffers_) {
+        backBuffer.Reset();
+    }
+    depthBuffer_.Reset();
+
+    ThrowIfFailed(
+        swapChain_->ResizeBuffers(kSwapChainBufferCount, static_cast<UINT>(width),
+                                  static_cast<UINT>(height),
+                                  DXGI_FORMAT_R8G8B8A8_UNORM, 0),
+        "swapChain_->ResizeBuffers failed");
+
+    backBufferIndex_ = swapChain_->GetCurrentBackBufferIndex();
+
+    CreateRTV();
+    CreateViewport(width, height);
+    CreateScissor(width, height);
+    CreateDepthStencil(width, height);
+}
+
 void DirectXCommon::BeginUpload() {
     ThrowIfFailed(commandAllocator_->Reset(),
                   "commandAllocator_->Reset failed");
