@@ -200,6 +200,8 @@ Model AssimpLoader::Load(const std::string &path) {
 
         Material material{};
         material.color = {1, 1, 1, 1};
+        material.reflectionStrength = 0.18f;
+        material.reflectionFresnelStrength = 0.12f;
 
         aiColor4D diffuse;
 

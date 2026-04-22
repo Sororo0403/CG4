@@ -29,7 +29,9 @@ cbuffer Material : register(b2)
     float4 color;
     float4x4 uvTransform;
     int enableTexture;
-    float3 padding;
+    float reflectionStrength;
+    float reflectionFresnelStrength;
+    float padding;
 };
 
 float4 main(ModelVSOutput input) : SV_TARGET
@@ -101,7 +103,8 @@ float4 main(ModelVSOutput input) : SV_TARGET
 
     float3 reflectedVector = reflect(-viewDir, normal);
     float3 environmentColor = gEnvironmentTexture.Sample(samp0, reflectedVector).rgb;
-    float environmentStrength = 0.18f + rim * 0.12f;
+    float environmentStrength =
+        reflectionStrength + rim * reflectionFresnelStrength;
     finalColor.rgb += environmentColor * environmentStrength;
 
     float effectIntensity = effectParams.x;

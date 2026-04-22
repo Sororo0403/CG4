@@ -9,6 +9,10 @@
 #include <filesystem>
 #include <stdexcept>
 
+#ifdef _DEBUG
+#include "imgui.h"
+#endif // _DEBUG
+
 using namespace DirectX;
 
 namespace {
@@ -58,15 +62,30 @@ void GameScene::Initialize(const SceneContext &ctx) {
     ctx.dxCommon->BeginUpload();
     skyboxTextureId_ = LoadSkyboxTexture();
     LoadLevel(L"resources/levels/sample_level.json");
+    const std::filesystem::path sneakWalkPath = L"resources/models/sneakWalk.gltf";
+    if (std::filesystem::exists(sneakWalkPath)) {
+        sneakWalkModelId_ = ctx_->model->Load(sneakWalkPath.wstring());
+        hasSneakWalkModel_ = true;
+
+        sneakWalkTransform_.position = {0.0f, 0.0f, 0.0f};
+        sneakWalkTransform_.scale = {1.0f, 1.0f, 1.0f};
+        XMStoreFloat4(&sneakWalkTransform_.rotation,
+                      XMQuaternionIdentity());
+    }
     ctx.dxCommon->EndUpload();
     ctx.texture->ReleaseUploadBuffers();
 
+    ctx.modelRenderer->SetSceneLighting(sceneLighting_);
     ctx.modelRenderer->SetEnvironmentTexture(skyboxTextureId_);
 }
 
 void GameScene::Update() {
     camera_.Update(*ctx_->input, ctx_->deltaTime);
     camera_.UpdateMatrices();
+
+    if (hasSneakWalkModel_) {
+        ctx_->model->UpdateAnimation(sneakWalkModelId_, ctx_->deltaTime);
+    }
 }
 
 void GameScene::Draw() {
@@ -81,7 +100,19 @@ void GameScene::Draw() {
 
         ctx_->modelRenderer->Draw(*model, object.transform, camera_);
     }
+
+    if (hasSneakWalkModel_) {
+        const Model *sneakWalkModel = ctx_->model->GetModel(sneakWalkModelId_);
+        if (sneakWalkModel) {
+            ctx_->modelRenderer->Draw(*sneakWalkModel, sneakWalkTransform_,
+                                      camera_);
+        }
+    }
     ctx_->modelRenderer->PostDraw();
+
+#ifdef _DEBUG
+    DrawDebugUi();
+#endif // _DEBUG
 }
 
 uint32_t GameScene::LoadSkyboxTexture() {
@@ -140,3 +171,101 @@ void GameScene::InstantiateLevelObject(
         InstantiateLevelObject(child, baseDirectory, world);
     }
 }
+
+#ifdef _DEBUG
+void GameScene::DrawDebugUi() {
+    if (!ctx_ || !ctx_->model || !ctx_->modelRenderer) {
+        return;
+    }
+
+    ImGui::Begin("Model Debug");
+
+    ImGui::Text("sneakWalk");
+    ImGui::Separator();
+
+    ImGui::DragFloat3("Position", &sneakWalkTransform_.position.x, 0.05f);
+    ImGui::DragFloat3("Scale", &sneakWalkTransform_.scale.x, 0.01f, 0.01f,
+                      10.0f);
+
+    if (ImGui::CollapsingHeader("Scene Lighting",
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::DragFloat3("Key Direction", &sceneLighting_.keyLightDirection.x,
+                          0.01f, -1.0f, 1.0f);
+        ImGui::ColorEdit3("Key Color", &sceneLighting_.keyLightColor.x);
+        ImGui::DragFloat3("Fill Direction",
+                          &sceneLighting_.fillLightDirection.x, 0.01f, -1.0f,
+                          1.0f);
+        ImGui::ColorEdit3("Fill Color", &sceneLighting_.fillLightColor.x);
+        ImGui::SliderFloat("Fill Rim", &sceneLighting_.fillLightColor.w, 0.0f,
+                           2.0f);
+        ImGui::ColorEdit3("Ambient", &sceneLighting_.ambientColor.x);
+        ImGui::SliderFloat("Spec Power", &sceneLighting_.lightingParams.x, 1.0f,
+                           128.0f);
+        ImGui::SliderFloat("Spec Strength",
+                           &sceneLighting_.lightingParams.y, 0.0f, 2.0f);
+        ImGui::SliderFloat("Rim Power", &sceneLighting_.lightingParams.z, 0.5f,
+                           8.0f);
+        ImGui::SliderFloat("Wrap", &sceneLighting_.lightingParams.w, 0.0f,
+                           1.0f);
+
+        for (size_t lightIndex = 0; lightIndex < sceneLighting_.pointLights.size();
+             ++lightIndex) {
+            PointLight &pointLight = sceneLighting_.pointLights[lightIndex];
+            const std::string lightLabel =
+                "Point Light " + std::to_string(lightIndex);
+            if (ImGui::TreeNode(lightLabel.c_str())) {
+                ImGui::DragFloat3("Position##PointLight",
+                                  &pointLight.positionRange.x, 0.05f);
+                ImGui::SliderFloat("Range##PointLight",
+                                   &pointLight.positionRange.w, 0.1f,
+                                   30.0f);
+                ImGui::ColorEdit3("Color##PointLight",
+                                  &pointLight.colorIntensity.x);
+                ImGui::SliderFloat("Intensity##PointLight",
+                                   &pointLight.colorIntensity.w, 0.0f, 5.0f);
+                ImGui::TreePop();
+            }
+        }
+
+        ctx_->modelRenderer->SetSceneLighting(sceneLighting_);
+    }
+
+    if (hasSneakWalkModel_) {
+        const Model *model = ctx_->model->GetModel(sneakWalkModelId_);
+        if (model && ImGui::CollapsingHeader("Materials",
+                                             ImGuiTreeNodeFlags_DefaultOpen)) {
+            for (size_t subMeshIndex = 0; subMeshIndex < model->subMeshes.size();
+                 ++subMeshIndex) {
+                const ModelSubMesh &subMesh = model->subMeshes[subMeshIndex];
+                Material material = ctx_->model->GetMaterial(subMesh.materialId);
+                const std::string header =
+                    "SubMesh " + std::to_string(subMeshIndex);
+
+                if (!ImGui::TreeNode(header.c_str())) {
+                    continue;
+                }
+
+                bool changed = false;
+                bool enableTexture = material.enableTexture != 0;
+                changed |= ImGui::ColorEdit4("Base Color", &material.color.x);
+                changed |= ImGui::Checkbox("Enable Texture", &enableTexture);
+                changed |= ImGui::SliderFloat("Reflection",
+                                              &material.reflectionStrength, 0.0f,
+                                              1.0f);
+                changed |= ImGui::SliderFloat(
+                    "Fresnel Reflection",
+                    &material.reflectionFresnelStrength, 0.0f, 1.0f);
+
+                if (changed) {
+                    material.enableTexture = enableTexture ? 1 : 0;
+                    ctx_->model->SetMaterial(subMesh.materialId, material);
+                }
+
+                ImGui::TreePop();
+            }
+        }
+    }
+
+    ImGui::End();
+}
+#endif // _DEBUG

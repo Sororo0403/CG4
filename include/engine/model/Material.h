@@ -9,5 +9,7 @@ struct Material {
     DirectX::XMFLOAT4 color = {1.0f, 1.0f, 1.0f, 1.0f};
     DirectX::XMFLOAT4X4 uvTransform{};
     int32_t enableTexture = 1;
-    float padding[3] = {};
+    float reflectionStrength = 0.18f;
+    float reflectionFresnelStrength = 0.12f;
+    float padding = 0.0f;
 };

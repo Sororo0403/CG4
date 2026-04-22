@@ -2,6 +2,7 @@
 #include "BaseScene.h"
 #include "DebugCamera.h"
 #include "LevelLoader.h"
+#include "ModelRenderer.h"
 #include "SkyboxRenderer.h"
 #include "Transform.h"
 #include <DirectXMath.h>
@@ -55,6 +56,13 @@ class GameScene : public BaseScene {
                                 const std::filesystem::path &baseDirectory,
                                 const DirectX::XMMATRIX &parentWorld);
 
+#ifdef _DEBUG
+    /// <summary>
+    /// デバッグ用のImGuiパネルを描画する
+    /// </summary>
+    void DrawDebugUi();
+#endif // _DEBUG
+
     /// <summary>
     /// シーン上に配置したモデル情報
     /// </summary>
@@ -69,6 +77,10 @@ class GameScene : public BaseScene {
     DebugCamera camera_;
     SkyboxRenderer skyboxRenderer_;
     uint32_t skyboxTextureId_ = 0;
+    SceneLighting sceneLighting_{};
+    uint32_t sneakWalkModelId_ = 0;
+    bool hasSneakWalkModel_ = false;
+    Transform sneakWalkTransform_{};
     std::vector<PlacedObject> placedObjects_;
     std::unordered_map<std::wstring, uint32_t> modelCache_;
 };

@@ -70,6 +70,20 @@ class ModelManager {
     const Model *GetModel(uint32_t modelId) const;
 
     /// <summary>
+    /// マテリアル情報を取得する
+    /// </summary>
+    /// <param name="materialId">マテリアルID</param>
+    /// <returns>マテリアル情報</returns>
+    const Material &GetMaterial(uint32_t materialId) const;
+
+    /// <summary>
+    /// 既存マテリアルを更新する
+    /// </summary>
+    /// <param name="materialId">更新対象のマテリアルID</param>
+    /// <param name="material">設定するマテリアル値</param>
+    void SetMaterial(uint32_t materialId, const Material &material);
+
+    /// <summary>
     /// 描画に使用するModelRendererを取得する
     /// </summary>
     /// <returns>ModelRendererへのポインタ</returns>

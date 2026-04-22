@@ -84,3 +84,11 @@ const Model *ModelManager::GetModel(uint32_t modelId) const {
 
     return &models_[modelId];
 }
+
+const Material &ModelManager::GetMaterial(uint32_t materialId) const {
+    return materialManager_.GetMaterial(materialId);
+}
+
+void ModelManager::SetMaterial(uint32_t materialId, const Material &material) {
+    materialManager_.SetMaterial(materialId, material);
+}
