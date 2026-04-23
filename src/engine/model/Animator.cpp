@@ -36,8 +36,9 @@ bool Animator::IsFinished(const Model &model) const {
     return model.animationFinished;
 }
 
-XMFLOAT3 Animator::SampleVec3(const std::vector<AnimationKeyVec3> &keys,
-                              float time) {
+XMFLOAT3
+Animator::SampleVec3(const AnimationCurve<XMFLOAT3> &curve, float time) {
+    const std::vector<Keyframe<XMFLOAT3>> &keys = curve.keyframes;
     if (keys.empty()) {
         return {0.0f, 0.0f, 0.0f};
     }
@@ -64,8 +65,9 @@ XMFLOAT3 Animator::SampleVec3(const std::vector<AnimationKeyVec3> &keys,
     return keys.back().value;
 }
 
-XMFLOAT4 Animator::SampleQuat(const std::vector<AnimationKeyQuat> &keys,
-                              float time) {
+XMFLOAT4
+Animator::SampleQuat(const AnimationCurve<XMFLOAT4> &curve, float time) {
+    const std::vector<Keyframe<XMFLOAT4>> &keys = curve.keyframes;
     if (keys.empty()) {
         return {0.0f, 0.0f, 0.0f, 1.0f};
     }
@@ -103,21 +105,23 @@ XMFLOAT4 Animator::SampleQuat(const std::vector<AnimationKeyQuat> &keys,
 XMMATRIX Animator::MakeAnimatedLocalMatrix(const BoneInfo &bone,
                                            const AnimationClip &clip,
                                            float time) {
-    auto it = clip.channels.find(bone.name);
-    if (it == clip.channels.end()) {
+    auto it = clip.nodeAnimations.find(bone.name);
+    if (it == clip.nodeAnimations.end()) {
         return XMLoadFloat4x4(&bone.localBindMatrix);
     }
 
-    const BoneAnimation &anim = it->second;
+    const NodeAnimation &anim = it->second;
 
-    XMFLOAT3 pos = anim.positions.empty() ? XMFLOAT3{0.0f, 0.0f, 0.0f}
-                                          : SampleVec3(anim.positions, time);
+    XMFLOAT3 pos = anim.translate.keyframes.empty()
+                       ? XMFLOAT3{0.0f, 0.0f, 0.0f}
+                       : SampleVec3(anim.translate, time);
 
-    XMFLOAT3 scl = anim.scales.empty() ? XMFLOAT3{1.0f, 1.0f, 1.0f}
-                                       : SampleVec3(anim.scales, time);
+    XMFLOAT3 scl = anim.scale.keyframes.empty() ? XMFLOAT3{1.0f, 1.0f, 1.0f}
+                                                : SampleVec3(anim.scale, time);
 
-    XMFLOAT4 rot = anim.rotations.empty() ? XMFLOAT4{0.0f, 0.0f, 0.0f, 1.0f}
-                                          : SampleQuat(anim.rotations, time);
+    XMFLOAT4 rot = anim.rotate.keyframes.empty()
+                       ? XMFLOAT4{0.0f, 0.0f, 0.0f, 1.0f}
+                       : SampleQuat(anim.rotate, time);
 
     XMVECTOR q = XMQuaternionNormalize(XMLoadFloat4(&rot));
 
@@ -168,40 +172,38 @@ void Animator::ApplyBindPose(Model &model) {
 }
 
 void Animator::Update(Model &model, float deltaTime) {
-    if (model.bones.empty()) {
-        return;
-    }
-
-    const size_t boneCount = model.bones.size();
-
-    if (model.skeletonSpaceMatrices.size() != boneCount) {
-        model.skeletonSpaceMatrices.resize(boneCount);
-    }
-
-    if (model.finalBoneMatrices.size() != boneCount) {
-        model.finalBoneMatrices.resize(boneCount);
-    }
-
     if (model.currentAnimation.empty()) {
-        ApplyBindPose(model);
+        model.hasRootAnimation = false;
+        XMStoreFloat4x4(&model.rootAnimationMatrix, XMMatrixIdentity());
+        if (!model.bones.empty()) {
+            ApplyBindPose(model);
+        }
         return;
     }
 
     auto clipIt = model.animations.find(model.currentAnimation);
     if (clipIt == model.animations.end()) {
-        ApplyBindPose(model);
+        model.hasRootAnimation = false;
+        XMStoreFloat4x4(&model.rootAnimationMatrix, XMMatrixIdentity());
+        if (!model.bones.empty()) {
+            ApplyBindPose(model);
+        }
         return;
     }
 
     const AnimationClip &clip = clipIt->second;
 
     if (clip.duration <= 0.0f) {
-        ApplyBindPose(model);
+        model.hasRootAnimation = false;
+        XMStoreFloat4x4(&model.rootAnimationMatrix, XMMatrixIdentity());
+        if (!model.bones.empty()) {
+            ApplyBindPose(model);
+        }
         return;
     }
 
     if (model.isPlaying) {
-        model.animationTime += deltaTime * clip.ticksPerSecond;
+        model.animationTime += deltaTime;
 
         if (model.isLoop) {
             while (model.animationTime >= clip.duration) {
@@ -214,6 +216,46 @@ void Animator::Update(Model &model, float deltaTime) {
                 model.animationFinished = true;
             }
         }
+    }
+
+    if (model.bones.empty()) {
+        model.hasRootAnimation = false;
+        XMStoreFloat4x4(&model.rootAnimationMatrix, XMMatrixIdentity());
+
+        if (!clip.nodeAnimations.empty()) {
+            const NodeAnimation &rootAnim = clip.nodeAnimations.begin()->second;
+
+            XMFLOAT3 pos =
+                rootAnim.translate.keyframes.empty()
+                    ? XMFLOAT3{0.0f, 0.0f, 0.0f}
+                    : SampleVec3(rootAnim.translate, model.animationTime);
+            XMFLOAT3 scl = rootAnim.scale.keyframes.empty()
+                               ? XMFLOAT3{1.0f, 1.0f, 1.0f}
+                               : SampleVec3(rootAnim.scale, model.animationTime);
+            XMFLOAT4 rot =
+                rootAnim.rotate.keyframes.empty()
+                    ? XMFLOAT4{0.0f, 0.0f, 0.0f, 1.0f}
+                    : SampleQuat(rootAnim.rotate, model.animationTime);
+
+            XMMATRIX local =
+                XMMatrixScaling(scl.x, scl.y, scl.z) *
+                XMMatrixRotationQuaternion(XMQuaternionNormalize(XMLoadFloat4(&rot))) *
+                XMMatrixTranslation(pos.x, pos.y, pos.z);
+            XMStoreFloat4x4(&model.rootAnimationMatrix, local);
+            model.hasRootAnimation = true;
+        }
+
+        return;
+    }
+
+    const size_t boneCount = model.bones.size();
+
+    if (model.skeletonSpaceMatrices.size() != boneCount) {
+        model.skeletonSpaceMatrices.resize(boneCount);
+    }
+
+    if (model.finalBoneMatrices.size() != boneCount) {
+        model.finalBoneMatrices.resize(boneCount);
     }
 
     std::vector<XMMATRIX> localMatrices(boneCount);

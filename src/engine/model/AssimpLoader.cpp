@@ -21,6 +21,12 @@ static XMFLOAT4X4 ToMatrix(const aiMatrix4x4 &m) {
             m.a3, m.b3, m.c3, m.d3, m.a4, m.b4, m.c4, m.d4};
 }
 
+static float ToSeconds(double ticks, float ticksPerSecond) {
+    const float safeTicksPerSecond =
+        (ticksPerSecond > 0.0f) ? ticksPerSecond : 25.0f;
+    return static_cast<float>(ticks) / safeTicksPerSecond;
+}
+
 void AssimpLoader::Initialize(TextureManager *textureManager,
                               MeshManager *meshManager,
                               MaterialManager *materialManager) {
@@ -319,10 +325,8 @@ void AssimpLoader::LoadAnimation(const aiScene *scene, Model &model) {
         }
 
         AnimationClip clip{};
-
-        clip.duration = static_cast<float>(anim->mDuration);
-        clip.ticksPerSecond = static_cast<float>(
-            anim->mTicksPerSecond != 0.0 ? anim->mTicksPerSecond : 25.0);
+        const float ticksPerSecond = static_cast<float>(anim->mTicksPerSecond);
+        clip.duration = ToSeconds(anim->mDuration, ticksPerSecond);
 
         for (unsigned int i = 0; i < anim->mNumChannels; i++) {
             aiNodeAnim *channel = anim->mChannels[i];
@@ -330,31 +334,30 @@ void AssimpLoader::LoadAnimation(const aiScene *scene, Model &model) {
                 continue;
             }
 
-            BoneAnimation boneAnim;
+            NodeAnimation nodeAnim;
 
             for (unsigned int k = 0; k < channel->mNumPositionKeys; k++) {
                 const aiVectorKey &key = channel->mPositionKeys[k];
-                boneAnim.positions.push_back(
-                    {static_cast<float>(key.mTime),
-                     XMFLOAT3{key.mValue.x, key.mValue.y, key.mValue.z}});
+                nodeAnim.translate.keyframes.push_back(
+                    {ToSeconds(key.mTime, ticksPerSecond),
+                     {key.mValue.x, key.mValue.y, key.mValue.z}});
             }
 
             for (unsigned int k = 0; k < channel->mNumRotationKeys; k++) {
                 const aiQuatKey &key = channel->mRotationKeys[k];
-                boneAnim.rotations.push_back(
-                    {static_cast<float>(key.mTime),
-                     XMFLOAT4{key.mValue.x, key.mValue.y, key.mValue.z,
-                              key.mValue.w}});
+                nodeAnim.rotate.keyframes.push_back(
+                    {ToSeconds(key.mTime, ticksPerSecond),
+                     {key.mValue.x, key.mValue.y, key.mValue.z, key.mValue.w}});
             }
 
             for (unsigned int k = 0; k < channel->mNumScalingKeys; k++) {
                 const aiVectorKey &key = channel->mScalingKeys[k];
-                boneAnim.scales.push_back(
-                    {static_cast<float>(key.mTime),
-                     XMFLOAT3{key.mValue.x, key.mValue.y, key.mValue.z}});
+                nodeAnim.scale.keyframes.push_back(
+                    {ToSeconds(key.mTime, ticksPerSecond),
+                     {key.mValue.x, key.mValue.y, key.mValue.z}});
             }
 
-            clip.channels[channel->mNodeName.C_Str()] = boneAnim;
+            clip.nodeAnimations[channel->mNodeName.C_Str()] = nodeAnim;
         }
 
         std::string animName = anim->mName.C_Str();

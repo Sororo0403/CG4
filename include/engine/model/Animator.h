@@ -35,16 +35,16 @@ class Animator {
     /// <param name="keys">補間対象のキー列</param>
     /// <param name="time">サンプリング時刻</param>
     /// <returns>補間後のベクトル値</returns>
-    DirectX::XMFLOAT3 SampleVec3(const std::vector<AnimationKeyVec3> &keys,
-                                 float time);
+    DirectX::XMFLOAT3
+    SampleVec3(const AnimationCurve<DirectX::XMFLOAT3> &curve, float time);
     /// <summary>
     /// クォータニオンキーを補間して値を取得する
     /// </summary>
     /// <param name="keys">補間対象のキー列</param>
     /// <param name="time">サンプリング時刻</param>
     /// <returns>補間後のクォータニオン値</returns>
-    DirectX::XMFLOAT4 SampleQuat(const std::vector<AnimationKeyQuat> &keys,
-                                 float time);
+    DirectX::XMFLOAT4
+    SampleQuat(const AnimationCurve<DirectX::XMFLOAT4> &curve, float time);
 
     /// <summary>
     /// 指定時刻のローカルボーン行列を生成する

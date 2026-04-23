@@ -75,37 +75,35 @@ struct BoneInfo {
 };
 
 /// <summary>
-/// ベクトル値のアニメーションキー
+/// 1つのキー時刻における値
 /// </summary>
-struct AnimationKeyVec3 {
-    float time = 0.0f;
-    DirectX::XMFLOAT3 value{};
+template <typename TValue> struct Keyframe {
+    float time = 0.0f; // 単位は秒
+    TValue value{};
 };
 
 /// <summary>
-/// クォータニオン値のアニメーションキー
+/// キー列(いわゆるF-Curve)
 /// </summary>
-struct AnimationKeyQuat {
-    float time = 0.0f;
-    DirectX::XMFLOAT4 value{};
+template <typename TValue> struct AnimationCurve {
+    std::vector<Keyframe<TValue>> keyframes;
 };
 
 /// <summary>
-/// ボーン1本分のアニメーションチャンネル
+/// ノード1本分のアニメーション
 /// </summary>
-struct BoneAnimation {
-    std::vector<AnimationKeyVec3> positions;
-    std::vector<AnimationKeyQuat> rotations;
-    std::vector<AnimationKeyVec3> scales;
+struct NodeAnimation {
+    AnimationCurve<DirectX::XMFLOAT3> translate;
+    AnimationCurve<DirectX::XMFLOAT4> rotate;
+    AnimationCurve<DirectX::XMFLOAT3> scale;
 };
 
 /// <summary>
 /// モデル全体で共有するアニメーションクリップ
 /// </summary>
 struct AnimationClip {
-    float duration = 0.0f;
-    float ticksPerSecond = 1.0f;
-    std::unordered_map<std::string, BoneAnimation> channels;
+    float duration = 0.0f; // 単位は秒
+    std::unordered_map<std::string, NodeAnimation> nodeAnimations;
 };
 
 /// <summary>
@@ -144,4 +142,12 @@ struct Model {
     bool isLoop = true;
     bool isPlaying = true;
     bool animationFinished = false;
+
+    bool hasRootAnimation = false;
+    DirectX::XMFLOAT4X4 rootAnimationMatrix = {
+        1.0f, 0.0f, 0.0f, 0.0f, //
+        0.0f, 1.0f, 0.0f, 0.0f, //
+        0.0f, 0.0f, 1.0f, 0.0f, //
+        0.0f, 0.0f, 0.0f, 1.0f  //
+    };
 };

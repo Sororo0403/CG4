@@ -104,6 +104,10 @@ void ModelRenderer::Draw(const Model &model, const Transform &transform,
         XMMatrixTranslation(transform.position.x, transform.position.y,
                             transform.position.z);
 
+    if (model.hasRootAnimation) {
+        world = XMLoadFloat4x4(&model.rootAnimationMatrix) * world;
+    }
+
     XMMATRIX wvp = world * camera.GetView() * camera.GetProj();
 
     auto drawSubMesh = [&](const ModelSubMesh &subMesh) {

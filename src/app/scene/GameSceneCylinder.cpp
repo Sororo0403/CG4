@@ -175,7 +175,11 @@ void GameSceneCylinder::InitializeSneakWalkTest() {
         return;
     }
 
-    const std::filesystem::path modelPath = L"resources/models/sneakWalk.gltf";
+    std::filesystem::path modelPath = AssetPaths::kAnimatedCubeModel;
+    if (!std::filesystem::exists(modelPath)) {
+        modelPath = AssetPaths::kSneakWalkModel;
+    }
+
     if (std::filesystem::exists(modelPath)) {
         sneakWalkModelId_ = ctx_->model->Load(modelPath.wstring());
         hasSneakWalkModel_ = true;
