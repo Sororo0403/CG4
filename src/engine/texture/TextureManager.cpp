@@ -10,11 +10,33 @@
 #include <cwctype>
 #include <filesystem>
 #include <stdexcept>
+#include <system_error>
 #include <vector>
 
-static std::wstring NormalizePathKey(const std::wstring &path) {
-    std::filesystem::path fsPath(path);
-    std::wstring key = fsPath.lexically_normal().wstring();
+static std::filesystem::path CanonicalizePath(const std::filesystem::path &path) {
+    std::error_code ec;
+    const std::filesystem::path canonical =
+        std::filesystem::weakly_canonical(path, ec);
+    if (!ec) {
+        return canonical;
+    }
+
+    return path.lexically_normal();
+}
+
+static std::filesystem::path ResolveTexturePath(const std::wstring &path) {
+    const std::filesystem::path input(path);
+    const std::filesystem::path normalized = input.lexically_normal();
+    if (normalized.is_absolute()) {
+        return CanonicalizePath(normalized);
+    }
+
+    const std::filesystem::path absolute = std::filesystem::absolute(normalized);
+    return CanonicalizePath(absolute);
+}
+
+static std::wstring NormalizePathKey(const std::filesystem::path &path) {
+    std::wstring key = path.lexically_normal().wstring();
 
 #ifdef _WIN32
     std::transform(key.begin(), key.end(), key.begin(),
@@ -59,7 +81,8 @@ void TextureManager::Initialize(DirectXCommon *dxCommon,
 }
 
 uint32_t TextureManager::Load(const std::wstring &filePath) {
-    const std::wstring pathKey = NormalizePathKey(filePath);
+    const std::filesystem::path resolvedPath = ResolveTexturePath(filePath);
+    const std::wstring pathKey = NormalizePathKey(resolvedPath);
 
     auto it = filePathToTextureId_.find(pathKey);
     if (it != filePathToTextureId_.end()) {
@@ -69,16 +92,17 @@ uint32_t TextureManager::Load(const std::wstring &filePath) {
     ScratchImage scratch;
     TexMetadata metadata{};
 
-    const std::filesystem::path path(pathKey);
-    const std::wstring ext = path.extension().wstring();
+    const std::wstring ext = resolvedPath.extension().wstring();
 
     if (_wcsicmp(ext.c_str(), L".dds") == 0) {
         ThrowIfFailed(
-            LoadFromDDSFile(pathKey.c_str(), DDS_FLAGS_NONE, &metadata, scratch),
+            LoadFromDDSFile(resolvedPath.c_str(), DDS_FLAGS_NONE, &metadata,
+                            scratch),
             "LoadFromDDSFile failed");
     } else {
         ThrowIfFailed(
-            LoadFromWICFile(pathKey.c_str(), WIC_FLAGS_NONE, &metadata, scratch),
+            LoadFromWICFile(resolvedPath.c_str(), WIC_FLAGS_NONE, &metadata,
+                            scratch),
             "LoadFromWICFile failed");
     }
 

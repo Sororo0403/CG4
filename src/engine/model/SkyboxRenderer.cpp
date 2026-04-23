@@ -6,6 +6,7 @@
 #include "SrvManager.h"
 #include "TextureManager.h"
 #include <array>
+#include <cmath>
 #include <cstring>
 
 using namespace DirectX;
@@ -16,6 +17,27 @@ namespace {
 struct SkyboxVertex {
     XMFLOAT3 position;
 };
+
+bool NearlyEqual(float a, float b, float epsilon = 1.0e-6f) {
+    return std::fabs(a - b) <= epsilon;
+}
+
+bool IsSameFloat3(const XMFLOAT3 &lhs, const XMFLOAT3 &rhs) {
+    return NearlyEqual(lhs.x, rhs.x) && NearlyEqual(lhs.y, rhs.y) &&
+           NearlyEqual(lhs.z, rhs.z);
+}
+
+bool IsSameMatrix(const XMFLOAT4X4 &lhs, const XMFLOAT4X4 &rhs) {
+    for (int row = 0; row < 4; ++row) {
+        for (int column = 0; column < 4; ++column) {
+            if (!NearlyEqual(lhs.m[row][column], rhs.m[row][column])) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
 
 } // namespace
 
@@ -43,13 +65,30 @@ void SkyboxRenderer::Draw(uint32_t textureId, const Camera &camera) {
     cmd->IASetVertexBuffers(0, 1, &vbView_);
     cmd->IASetIndexBuffer(&ibView_);
 
-    XMMATRIX world =
-        XMMatrixScaling(50.0f, 50.0f, 50.0f) *
-        XMMatrixTranslation(camera.GetPosition().x, camera.GetPosition().y,
-                            camera.GetPosition().z);
-    XMMATRIX wvp = world * camera.GetView() * camera.GetProj();
+    XMFLOAT4X4 currentView{};
+    XMFLOAT4X4 currentProj{};
+    XMStoreFloat4x4(&currentView, camera.GetView());
+    XMStoreFloat4x4(&currentProj, camera.GetProj());
 
-    XMStoreFloat4x4(&mappedCB_->matWVP, XMMatrixTranspose(wvp));
+    const bool needsConstantBufferUpdate =
+        !hasCachedCameraState_ ||
+        !IsSameFloat3(camera.GetPosition(), cachedCameraPosition_) ||
+        !IsSameMatrix(currentView, cachedView_) ||
+        !IsSameMatrix(currentProj, cachedProj_);
+
+    if (needsConstantBufferUpdate) {
+        XMMATRIX world =
+            XMMatrixScaling(50.0f, 50.0f, 50.0f) *
+            XMMatrixTranslation(camera.GetPosition().x, camera.GetPosition().y,
+                                camera.GetPosition().z);
+        XMMATRIX wvp = world * camera.GetView() * camera.GetProj();
+        XMStoreFloat4x4(&mappedCB_->matWVP, XMMatrixTranspose(wvp));
+
+        cachedCameraPosition_ = camera.GetPosition();
+        cachedView_ = currentView;
+        cachedProj_ = currentProj;
+        hasCachedCameraState_ = true;
+    }
 
     cmd->SetGraphicsRootConstantBufferView(0,
                                            constBuffer_->GetGPUVirtualAddress());

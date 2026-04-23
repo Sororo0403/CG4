@@ -1,3 +1,4 @@
+#include "AssetPaths.h"
 #include "GameSceneCylinder.h"
 #include "DirectXCommon.h"
 #include "Input.h"
@@ -61,8 +62,7 @@ void GameSceneCylinder::InitializeHitEffect() {
         return;
     }
 
-    const std::filesystem::path texturePath =
-        L"resources/textures/gradationLine.png";
+    const std::filesystem::path texturePath = AssetPaths::kHitEffectTexture;
     if (!std::filesystem::exists(texturePath)) {
         return;
     }

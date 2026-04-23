@@ -71,4 +71,8 @@ class SkyboxRenderer {
 
     ConstBufferData *mappedCB_ = nullptr;
     uint32_t indexCount_ = 0;
+    bool hasCachedCameraState_ = false;
+    DirectX::XMFLOAT3 cachedCameraPosition_ = {};
+    DirectX::XMFLOAT4X4 cachedView_ = {};
+    DirectX::XMFLOAT4X4 cachedProj_ = {};
 };
