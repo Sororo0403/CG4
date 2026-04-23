@@ -157,6 +157,7 @@ if exist "$(ProjectDir)externals\assimp\bin\assimp-vc145-mt.dll" (
     <ClInclude Include="include\engine\camera\DebugCamera.h" />
     <ClInclude Include="include\engine\animation\Animator.h" />
     <ClInclude Include="include\engine\animation\AnimationSampler.h" />
+    <ClInclude Include="include\engine\animation\AnimationTypes.h" />
     <ClInclude Include="include\engine\model\AssimpLoader.h" />
     <ClInclude Include="include\engine\collision\AABB.h" />
     <ClInclude Include="include\engine\collision\CollisionUtil.h" />

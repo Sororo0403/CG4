@@ -1,5 +1,5 @@
 #pragma once
-#include "Model.h"
+#include "AnimationTypes.h"
 
 /// <summary>
 /// キーフレーム列の補間を担当する
@@ -18,4 +18,3 @@ class AnimationSampler {
     static DirectX::XMFLOAT4
     SampleQuat(const AnimationCurve<DirectX::XMFLOAT4> &curve, float time);
 };
-

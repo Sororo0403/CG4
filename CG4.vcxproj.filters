@@ -316,6 +316,9 @@
     <ClInclude Include="include\engine\animation\AnimationSampler.h">
       <Filter>include\engine\animation</Filter>
     </ClInclude>
+    <ClInclude Include="include\engine\animation\AnimationTypes.h">
+      <Filter>include\engine\animation</Filter>
+    </ClInclude>
     <ClInclude Include="include\engine\model\AssimpLoader.h">
       <Filter>include\engine\model</Filter>
     </ClInclude>
