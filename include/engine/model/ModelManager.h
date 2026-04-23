@@ -42,6 +42,19 @@ class ModelManager {
     uint32_t CreatePlane(uint32_t textureId, const Material &material);
 
     /// <summary>
+    /// XY平面のRing Primitiveを生成する
+    /// </summary>
+    /// <param name="textureId">貼り付けるテクスチャID</param>
+    /// <param name="material">使用するマテリアル</param>
+    /// <param name="divide">分割数(3以上)</param>
+    /// <param name="outerRadius">外径半径</param>
+    /// <param name="innerRadius">内径半径</param>
+    /// <returns>生成されたモデルID</returns>
+    uint32_t CreateRing(uint32_t textureId, const Material &material,
+                        uint32_t divide = 32, float outerRadius = 1.0f,
+                        float innerRadius = 0.2f);
+
+    /// <summary>
     /// モデルのアニメーションを更新する
     /// </summary>
     /// <param name="modelId">更新するモデルID</param>

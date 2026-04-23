@@ -426,6 +426,9 @@ void ModelRenderer::CreateRootSignature() {
     params[5].InitAsDescriptorTable(1, &environmentRange);
 
     CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
+    sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 
     CD3DX12_ROOT_SIGNATURE_DESC desc;
     desc.Init(_countof(params), params, 1, &sampler,

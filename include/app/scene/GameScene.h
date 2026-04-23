@@ -58,7 +58,7 @@ class GameScene : public BaseScene {
                                 const DirectX::XMMATRIX &parentWorld);
 
     /// <summary>
-    /// Planeベースのヒットエフェクトを初期化する
+    /// Ringベースのヒットエフェクトを初期化する
     /// </summary>
     void InitializeHitEffect();
 

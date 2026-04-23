@@ -56,31 +56,14 @@ void GameScene::Initialize(const SceneContext &ctx) {
 
     camera_.Initialize(aspect);
     camera_.SetMode(CameraMode::Free);
-    camera_.SetPosition({0.0f, 2.5f, -10.0f});
-    camera_.SetRotation({0.10f, 0.0f, 0.0f});
+    camera_.SetPosition({0.0f, 1.2f, -4.5f});
+    camera_.SetRotation({0.0f, 0.0f, 0.0f});
     camera_.UpdateMatrices();
 
-    skyboxRenderer_.Initialize(ctx.dxCommon, ctx.srv, ctx.texture);
-
     ctx.dxCommon->BeginUpload();
-    skyboxTextureId_ = LoadSkyboxTexture();
-    LoadLevel(L"resources/levels/sample_level.json");
-    const std::filesystem::path sneakWalkPath = L"resources/models/sneakWalk.gltf";
-    if (std::filesystem::exists(sneakWalkPath)) {
-        sneakWalkModelId_ = ctx_->model->Load(sneakWalkPath.wstring());
-        hasSneakWalkModel_ = true;
-
-        sneakWalkTransform_.position = {0.0f, 0.0f, 0.0f};
-        sneakWalkTransform_.scale = {1.0f, 1.0f, 1.0f};
-        XMStoreFloat4(&sneakWalkTransform_.rotation,
-                      XMQuaternionIdentity());
-    }
     InitializeHitEffect();
     ctx.dxCommon->EndUpload();
     ctx.texture->ReleaseUploadBuffers();
-
-    ctx.modelRenderer->SetSceneLighting(sceneLighting_);
-    ctx.modelRenderer->SetEnvironmentTexture(skyboxTextureId_);
 }
 
 void GameScene::Update() {
@@ -89,10 +72,6 @@ void GameScene::Update() {
     camera_.SetAspect(aspect);
     camera_.Update(*ctx_->input, ctx_->deltaTime);
     camera_.UpdateMatrices();
-
-    if (hasSneakWalkModel_) {
-        ctx_->model->UpdateAnimation(sneakWalkModelId_, ctx_->deltaTime);
-    }
 
     UpdateHitEffect(ctx_->deltaTime);
 
@@ -108,33 +87,10 @@ void GameScene::Update() {
 }
 
 void GameScene::Draw() {
-    skyboxRenderer_.Draw(skyboxTextureId_, camera_);
-
     ctx_->modelRenderer->PreDraw();
-    for (const PlacedObject &object : placedObjects_) {
-        const Model *model = ctx_->model->GetModel(object.modelId);
-        if (!model) {
-            continue;
-        }
-
-        ctx_->modelRenderer->Draw(*model, object.transform, camera_);
-    }
-
-    if (hasSneakWalkModel_) {
-        const Model *sneakWalkModel = ctx_->model->GetModel(sneakWalkModelId_);
-        if (sneakWalkModel) {
-            ctx_->modelRenderer->Draw(*sneakWalkModel, sneakWalkTransform_,
-                                      camera_);
-        }
-    }
-
     DrawHitEffect();
 
     ctx_->modelRenderer->PostDraw();
-
-#ifdef _DEBUG
-    DrawDebugUi();
-#endif // _DEBUG
 }
 
 uint32_t GameScene::LoadSkyboxTexture() {
@@ -199,7 +155,8 @@ void GameScene::InitializeHitEffect() {
         return;
     }
 
-    const std::filesystem::path texturePath = L"resources/textures/circle2.png";
+    const std::filesystem::path texturePath =
+        L"resources/textures/gradationLine.png";
     if (!std::filesystem::exists(texturePath)) {
         return;
     }
@@ -211,9 +168,11 @@ void GameScene::InitializeHitEffect() {
     material.reflectionFresnelStrength = 0.0f;
 
     const uint32_t textureId = ctx_->texture->Load(texturePath.wstring());
-    hitEffectModelId_ = ctx_->model->CreatePlane(textureId, material);
+    hitEffectModelId_ = ctx_->model->CreateRing(textureId, material, 32, 1.0f,
+                                                0.2f);
     hasHitEffectModel_ = true;
     hitParticles_.resize(64);
+    SpawnHitEffect({0.0f, 1.2f, 0.0f});
 }
 
 void GameScene::SpawnHitEffect(const XMFLOAT3 &position) {
@@ -221,11 +180,9 @@ void GameScene::SpawnHitEffect(const XMFLOAT3 &position) {
         return;
     }
 
-    std::uniform_real_distribution<float> distRoll(
-        0.0f, std::numbers::pi_v<float> * 2.0f);
-    std::uniform_real_distribution<float> distStretch(0.9f, 1.6f);
-    std::uniform_real_distribution<float> distLife(0.14f, 0.28f);
-    std::uniform_real_distribution<float> distAngularVelocity(-1.8f, 1.8f);
+    std::uniform_real_distribution<float> distJitter(-0.18f, 0.18f);
+    std::uniform_real_distribution<float> distLife(0.42f, 0.62f);
+    std::uniform_real_distribution<float> distAngularVelocity(-0.45f, 0.45f);
 
     int spawnedCount = 0;
     for (HitParticle &particle : hitParticles_) {
@@ -235,15 +192,27 @@ void GameScene::SpawnHitEffect(const XMFLOAT3 &position) {
 
         particle.isAlive = true;
         particle.transform.position = position;
-        particle.baseScale = {0.05f, distStretch(randomEngine_), 1.0f};
-        particle.transform.scale = particle.baseScale;
-        particle.roll = distRoll(randomEngine_);
-        particle.angularVelocity = distAngularVelocity(randomEngine_);
         particle.life = 0.0f;
         particle.maxLife = distLife(randomEngine_);
 
+        if (spawnedCount == 0) {
+            // 中央の柔らかいハロー
+            particle.baseScale = {0.42f, 0.42f, 1.0f};
+            particle.roll = 0.0f;
+            particle.angularVelocity = 0.18f;
+        } else {
+            // 細いリングを放射状に重ねて星型シルエットを作る
+            const float baseAngle =
+                (std::numbers::pi_v<float> / 5.0f) *
+                static_cast<float>(spawnedCount - 1);
+            particle.baseScale = {0.055f, 0.98f, 1.0f};
+            particle.roll = baseAngle + distJitter(randomEngine_);
+            particle.angularVelocity = distAngularVelocity(randomEngine_);
+        }
+        particle.transform.scale = particle.baseScale;
+
         ++spawnedCount;
-        if (spawnedCount >= 8) {
+        if (spawnedCount >= 6) {
             break;
         }
     }
@@ -262,11 +231,19 @@ void GameScene::UpdateHitEffect(float deltaTime) {
         }
 
         const float t = particle.life / particle.maxLife;
-        const float fade = 1.0f - t;
-
         particle.roll += particle.angularVelocity * deltaTime;
-        particle.transform.scale.x = particle.baseScale.x * (0.25f + fade * 0.75f);
-        particle.transform.scale.y = particle.baseScale.y * fade;
+        const bool isCore = particle.baseScale.x > 0.2f;
+
+        if (isCore) {
+            const float expand = 1.0f + t * 0.30f;
+            particle.transform.scale.x = particle.baseScale.x * expand;
+            particle.transform.scale.y = particle.baseScale.y * expand;
+        } else {
+            const float expandX = 1.0f + t * 0.12f;
+            const float expandY = 1.0f + t * 0.55f;
+            particle.transform.scale.x = particle.baseScale.x * expandX;
+            particle.transform.scale.y = particle.baseScale.y * expandY;
+        }
         particle.transform.scale.z = particle.baseScale.z;
     }
 }
@@ -291,8 +268,8 @@ void GameScene::DrawHitEffect() {
     ModelDrawEffect drawEffect{};
     drawEffect.enabled = true;
     drawEffect.additiveBlend = true;
-    drawEffect.color = {0.85f, 0.95f, 1.0f, 0.65f};
-    drawEffect.intensity = 0.18f;
+    drawEffect.color = {0.95f, 0.95f, 1.0f, 0.70f};
+    drawEffect.intensity = 0.14f;
     drawEffect.fresnelPower = 2.0f;
     drawEffect.noiseAmount = 0.0f;
     drawEffect.time = hitEffectAutoSpawnTimer_;
@@ -304,12 +281,20 @@ void GameScene::DrawHitEffect() {
         }
 
         const float t = particle.life / particle.maxLife;
-        const float alpha = 1.0f - t;
+        const bool isCore = particle.baseScale.x > 0.2f;
+        const float fade = 1.0f - t;
+        const float alpha = isCore ? fade * 0.62f : fade * 0.92f;
 
         Material material = baseMaterial;
-        material.color = {1.0f, 1.0f, 1.0f, alpha};
+        material.color = {1.0f, 0.98f, 0.90f, alpha};
         material.reflectionStrength = 0.0f;
         material.reflectionFresnelStrength = 0.0f;
+        const float uvScaleV = isCore ? 2.3f : 8.5f;
+        const float uvScroll = t * (isCore ? 0.7f : 2.1f);
+        const XMMATRIX uvTransform =
+            XMMatrixScaling(1.0f, uvScaleV, 1.0f) *
+            XMMatrixTranslation(0.0f, uvScroll, 0.0f);
+        XMStoreFloat4x4(&material.uvTransform, XMMatrixTranspose(uvTransform));
         ctx_->model->SetMaterial(materialId, material);
 
         Transform drawTransform = particle.transform;

@@ -13,10 +13,6 @@
 #include "WinApp.h"
 #include <memory>
 
-#ifdef _DEBUG
-#include "ImguiManager.h"
-#endif // _DEBUG
-
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     // WinApp初期化
     WinApp winApp;
@@ -61,12 +57,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     textureManager.ReleaseUploadBuffers();
 
-#ifdef _DEBUG
-    // ImguiManager
-    ImguiManager imguiManager;
-    imguiManager.Initialize(&winApp, &dxCommon, &srvManager);
-#endif // _DEBUG
-
     SceneContext sceneCtx{};
     sceneCtx.input = &input;
     sceneCtx.winApp = &winApp;
@@ -80,10 +70,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     sceneCtx.srv = &srvManager;
 
     sceneCtx.deltaTime = 0.0f;
-
-#ifdef _DEBUG
-    sceneCtx.imgui = &imguiManager;
-#endif // _DEBUG
 
     // SceneManager
     SceneManager sceneManager;
@@ -132,16 +118,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         // 描画
         dxCommon.BeginFrame();
 
-#ifdef _DEBUG
-        ID3D12GraphicsCommandList *cmdList = dxCommon.GetCommandList();
-        imguiManager.Begin(cmdList);
-#endif // _DEBUG
-
         sceneManager.Draw();
-
-#ifdef _DEBUG
-        imguiManager.End(cmdList);
-#endif // _DEBUG
 
         dxCommon.EndFrame();
     }
