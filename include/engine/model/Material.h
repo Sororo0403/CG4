@@ -11,5 +11,5 @@ struct Material {
     int32_t enableTexture = 1;
     float reflectionStrength = 0.18f;
     float reflectionFresnelStrength = 0.12f;
-    float padding = 0.0f;
+    float reflectionRoughness = 0.0f;
 };

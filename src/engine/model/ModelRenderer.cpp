@@ -87,7 +87,8 @@ void ModelRenderer::PreDraw() {
 }
 
 void ModelRenderer::Draw(const Model &model, const Transform &transform,
-                         const Camera &camera) {
+                         const Camera &camera,
+                         uint32_t environmentTextureId) {
     if (drawIndex_ >= kMaxDraws) {
         return;
     }
@@ -183,9 +184,16 @@ void ModelRenderer::Draw(const Model &model, const Transform &transform,
             3, textureManager_->GetGpuHandle(subMesh.textureId));
         cmd->SetGraphicsRootDescriptorTable(4,
                                             subMesh.skinCluster.paletteSrvGpuHandle);
-        if (hasEnvironmentTexture_) {
+        const bool hasPerDrawEnvironmentTexture =
+            (environmentTextureId != UINT32_MAX);
+        const bool useEnvironmentTexture =
+            hasPerDrawEnvironmentTexture || hasEnvironmentTexture_;
+        const uint32_t boundEnvironmentTextureId =
+            hasPerDrawEnvironmentTexture ? environmentTextureId
+                                         : environmentTextureId_;
+        if (useEnvironmentTexture) {
             cmd->SetGraphicsRootDescriptorTable(
-                5, textureManager_->GetGpuHandle(environmentTextureId_));
+                5, textureManager_->GetGpuHandle(boundEnvironmentTextureId));
         }
 
         cmd->IASetVertexBuffers(0, static_cast<UINT>(vertexBufferViews.size()),

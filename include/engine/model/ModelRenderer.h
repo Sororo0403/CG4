@@ -76,8 +76,13 @@ class ModelRenderer {
     /// <param name="model">描画するモデル</param>
     /// <param name="transform">描画するモデルのTransform</param>
     /// <param name="camera">描画に使用するカメラ</param>
+    /// <param name="environmentTextureId">
+    /// この描画で使用する環境マップテクスチャID
+    /// UINT32_MAXを指定した場合はSetEnvironmentTextureの設定を使用
+    /// </param>
     void Draw(const Model &model, const Transform &transform,
-              const Camera &camera);
+              const Camera &camera,
+              uint32_t environmentTextureId = UINT32_MAX);
 
     /// <summary>
     /// 現在フレームの描画エフェクトを設定する

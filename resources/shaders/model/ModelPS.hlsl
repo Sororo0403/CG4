@@ -31,7 +31,7 @@ cbuffer Material : register(b2)
     int enableTexture;
     float reflectionStrength;
     float reflectionFresnelStrength;
-    float padding;
+    float reflectionRoughness;
 };
 
 float4 main(ModelVSOutput input) : SV_TARGET
@@ -102,7 +102,14 @@ float4 main(ModelVSOutput input) : SV_TARGET
     finalColor.rgb *= lighting;
 
     float3 reflectedVector = reflect(-viewDir, normal);
-    float3 environmentColor = gEnvironmentTexture.Sample(samp0, reflectedVector).rgb;
+    uint envWidth = 0;
+    uint envHeight = 0;
+    uint envMipLevels = 1;
+    gEnvironmentTexture.GetDimensions(0, envWidth, envHeight, envMipLevels);
+    float maxMipLevel = max((float)envMipLevels - 1.0f, 0.0f);
+    float mipLevel = saturate(reflectionRoughness) * maxMipLevel;
+    float3 environmentColor =
+        gEnvironmentTexture.SampleLevel(samp0, reflectedVector, mipLevel).rgb;
     float environmentStrength =
         reflectionStrength + rim * reflectionFresnelStrength;
     finalColor.rgb += environmentColor * environmentStrength;
