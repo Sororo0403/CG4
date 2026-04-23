@@ -14,11 +14,7 @@ class RingBurstEmitter {
     /// <param name="particleSystem">発生先パーティクルシステム</param>
     /// <param name="position">発生位置</param>
     void Initialize(RingParticleSystem *particleSystem,
-                    const DirectX::XMFLOAT3 &position) {
-        particleSystem_ = particleSystem;
-        position_ = position;
-        timer_ = 0.0f;
-    }
+                    const DirectX::XMFLOAT3 &position);
 
     /// <summary>
     /// 自動発生を更新する
@@ -35,19 +31,19 @@ class RingBurstEmitter {
     /// 自動発生間隔を設定する
     /// </summary>
     /// <param name="seconds">秒単位の間隔</param>
-    void SetInterval(float seconds) { interval_ = (seconds > 0.01f) ? seconds : 0.01f; }
+    void SetInterval(float seconds);
 
     /// <summary>
     /// 自動発生を有効/無効にする
     /// </summary>
     /// <param name="enabled">有効ならtrue</param>
-    void SetAutoEmitEnabled(bool enabled) { autoEmitEnabled_ = enabled; }
+    void SetAutoEmitEnabled(bool enabled);
 
     /// <summary>
     /// 発生位置を変更する
     /// </summary>
     /// <param name="position">新しい発生位置</param>
-    void SetPosition(const DirectX::XMFLOAT3 &position) { position_ = position; }
+    void SetPosition(const DirectX::XMFLOAT3 &position);
 
   private:
     RingParticleSystem *particleSystem_ = nullptr;
@@ -56,24 +52,3 @@ class RingBurstEmitter {
     float interval_ = 1.0f;
     bool autoEmitEnabled_ = true;
 };
-
-#include "RingParticleSystem.h"
-
-inline void RingBurstEmitter::Update(float deltaTime) {
-    if (!autoEmitEnabled_ || !particleSystem_) {
-        return;
-    }
-
-    timer_ += deltaTime;
-    while (timer_ >= interval_) {
-        timer_ -= interval_;
-        particleSystem_->EmitBurst(position_);
-    }
-}
-
-inline void RingBurstEmitter::EmitNow() {
-    if (!particleSystem_) {
-        return;
-    }
-    particleSystem_->EmitBurst(position_);
-}
