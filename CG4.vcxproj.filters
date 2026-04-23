@@ -188,7 +188,13 @@
     <ClCompile Include="src\engine\animation\AnimationSampler.cpp">
       <Filter>src\engine\animation</Filter>
     </ClCompile>
+    <ClCompile Include="src\engine\animation\AssimpAnimationLoader.cpp">
+      <Filter>src\engine\animation</Filter>
+    </ClCompile>
     <ClCompile Include="src\engine\model\AssimpLoader.cpp">
+      <Filter>src\engine\model</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\model\AssimpMeshLoader.cpp">
       <Filter>src\engine\model</Filter>
     </ClCompile>
     <ClCompile Include="src\engine\model\MaterialManager.cpp">
@@ -316,10 +322,16 @@
     <ClInclude Include="include\engine\animation\AnimationSampler.h">
       <Filter>include\engine\animation</Filter>
     </ClInclude>
+    <ClInclude Include="include\engine\animation\AssimpAnimationLoader.h">
+      <Filter>include\engine\animation</Filter>
+    </ClInclude>
     <ClInclude Include="include\engine\animation\AnimationTypes.h">
       <Filter>include\engine\animation</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\model\AssimpLoader.h">
+      <Filter>include\engine\model</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\model\AssimpMeshLoader.h">
       <Filter>include\engine\model</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\model\Material.h">

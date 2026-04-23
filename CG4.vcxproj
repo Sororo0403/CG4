@@ -127,7 +127,9 @@ if exist "$(ProjectDir)externals\assimp\bin\assimp-vc145-mt.dll" (
     <ClCompile Include="src\engine\camera\DebugCamera.cpp" />
     <ClCompile Include="src\engine\animation\Animator.cpp" />
     <ClCompile Include="src\engine\animation\AnimationSampler.cpp" />
+    <ClCompile Include="src\engine\animation\AssimpAnimationLoader.cpp" />
     <ClCompile Include="src\engine\model\AssimpLoader.cpp" />
+    <ClCompile Include="src\engine\model\AssimpMeshLoader.cpp" />
     <ClCompile Include="src\engine\collision\CollisionUtil.cpp" />
     <ClCompile Include="src\engine\particle\RingBurstEmitter.cpp" />
     <ClCompile Include="src\engine\particle\CylinderBurstEmitter.cpp" />
@@ -157,8 +159,10 @@ if exist "$(ProjectDir)externals\assimp\bin\assimp-vc145-mt.dll" (
     <ClInclude Include="include\engine\camera\DebugCamera.h" />
     <ClInclude Include="include\engine\animation\Animator.h" />
     <ClInclude Include="include\engine\animation\AnimationSampler.h" />
+    <ClInclude Include="include\engine\animation\AssimpAnimationLoader.h" />
     <ClInclude Include="include\engine\animation\AnimationTypes.h" />
     <ClInclude Include="include\engine\model\AssimpLoader.h" />
+    <ClInclude Include="include\engine\model\AssimpMeshLoader.h" />
     <ClInclude Include="include\engine\collision\AABB.h" />
     <ClInclude Include="include\engine\collision\CollisionUtil.h" />
     <ClInclude Include="include\engine\collision\OBB.h" />
