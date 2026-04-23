@@ -8,6 +8,8 @@
 #include <DirectXMath.h>
 #include <algorithm>
 #include <filesystem>
+#include <numbers>
+#include <random>
 #include <stdexcept>
 
 #ifdef _DEBUG
@@ -73,6 +75,7 @@ void GameScene::Initialize(const SceneContext &ctx) {
         XMStoreFloat4(&sneakWalkTransform_.rotation,
                       XMQuaternionIdentity());
     }
+    InitializeHitEffect();
     ctx.dxCommon->EndUpload();
     ctx.texture->ReleaseUploadBuffers();
 
@@ -89,6 +92,18 @@ void GameScene::Update() {
 
     if (hasSneakWalkModel_) {
         ctx_->model->UpdateAnimation(sneakWalkModelId_, ctx_->deltaTime);
+    }
+
+    UpdateHitEffect(ctx_->deltaTime);
+
+    if (ctx_->input->IsKeyTrigger(DIK_SPACE) || ctx_->input->IsMouseTrigger(0)) {
+        SpawnHitEffect({0.0f, 1.2f, 0.0f});
+    }
+
+    hitEffectAutoSpawnTimer_ += ctx_->deltaTime;
+    if (hitEffectAutoSpawnTimer_ >= 1.0f) {
+        hitEffectAutoSpawnTimer_ = 0.0f;
+        SpawnHitEffect({0.0f, 1.2f, 0.0f});
     }
 }
 
@@ -112,6 +127,9 @@ void GameScene::Draw() {
                                       camera_);
         }
     }
+
+    DrawHitEffect();
+
     ctx_->modelRenderer->PostDraw();
 
 #ifdef _DEBUG
@@ -174,6 +192,137 @@ void GameScene::InstantiateLevelObject(
     for (const LevelObjectData &child : object.children) {
         InstantiateLevelObject(child, baseDirectory, world);
     }
+}
+
+void GameScene::InitializeHitEffect() {
+    if (!ctx_ || !ctx_->model || !ctx_->texture) {
+        return;
+    }
+
+    const std::filesystem::path texturePath = L"resources/textures/circle2.png";
+    if (!std::filesystem::exists(texturePath)) {
+        return;
+    }
+
+    Material material{};
+    material.color = {1.0f, 1.0f, 1.0f, 1.0f};
+    material.enableTexture = 1;
+    material.reflectionStrength = 0.0f;
+    material.reflectionFresnelStrength = 0.0f;
+
+    const uint32_t textureId = ctx_->texture->Load(texturePath.wstring());
+    hitEffectModelId_ = ctx_->model->CreatePlane(textureId, material);
+    hasHitEffectModel_ = true;
+    hitParticles_.resize(64);
+}
+
+void GameScene::SpawnHitEffect(const XMFLOAT3 &position) {
+    if (!hasHitEffectModel_) {
+        return;
+    }
+
+    std::uniform_real_distribution<float> distRoll(
+        0.0f, std::numbers::pi_v<float> * 2.0f);
+    std::uniform_real_distribution<float> distStretch(0.9f, 1.6f);
+    std::uniform_real_distribution<float> distLife(0.14f, 0.28f);
+    std::uniform_real_distribution<float> distAngularVelocity(-1.8f, 1.8f);
+
+    int spawnedCount = 0;
+    for (HitParticle &particle : hitParticles_) {
+        if (particle.isAlive) {
+            continue;
+        }
+
+        particle.isAlive = true;
+        particle.transform.position = position;
+        particle.baseScale = {0.05f, distStretch(randomEngine_), 1.0f};
+        particle.transform.scale = particle.baseScale;
+        particle.roll = distRoll(randomEngine_);
+        particle.angularVelocity = distAngularVelocity(randomEngine_);
+        particle.life = 0.0f;
+        particle.maxLife = distLife(randomEngine_);
+
+        ++spawnedCount;
+        if (spawnedCount >= 8) {
+            break;
+        }
+    }
+}
+
+void GameScene::UpdateHitEffect(float deltaTime) {
+    for (HitParticle &particle : hitParticles_) {
+        if (!particle.isAlive) {
+            continue;
+        }
+
+        particle.life += deltaTime;
+        if (particle.life >= particle.maxLife) {
+            particle.isAlive = false;
+            continue;
+        }
+
+        const float t = particle.life / particle.maxLife;
+        const float fade = 1.0f - t;
+
+        particle.roll += particle.angularVelocity * deltaTime;
+        particle.transform.scale.x = particle.baseScale.x * (0.25f + fade * 0.75f);
+        particle.transform.scale.y = particle.baseScale.y * fade;
+        particle.transform.scale.z = particle.baseScale.z;
+    }
+}
+
+void GameScene::DrawHitEffect() {
+    if (!hasHitEffectModel_ || !ctx_ || !ctx_->model || !ctx_->modelRenderer) {
+        return;
+    }
+
+    const Model *effectModel = ctx_->model->GetModel(hitEffectModelId_);
+    if (!effectModel || effectModel->subMeshes.empty()) {
+        return;
+    }
+
+    const uint32_t materialId = effectModel->subMeshes.front().materialId;
+    const Material baseMaterial = ctx_->model->GetMaterial(materialId);
+
+    XMMATRIX billboard = camera_.GetView();
+    billboard.r[3] = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
+    billboard = XMMatrixInverse(nullptr, billboard);
+
+    ModelDrawEffect drawEffect{};
+    drawEffect.enabled = true;
+    drawEffect.additiveBlend = true;
+    drawEffect.color = {0.85f, 0.95f, 1.0f, 0.65f};
+    drawEffect.intensity = 0.18f;
+    drawEffect.fresnelPower = 2.0f;
+    drawEffect.noiseAmount = 0.0f;
+    drawEffect.time = hitEffectAutoSpawnTimer_;
+    ctx_->modelRenderer->SetDrawEffect(drawEffect);
+
+    for (const HitParticle &particle : hitParticles_) {
+        if (!particle.isAlive) {
+            continue;
+        }
+
+        const float t = particle.life / particle.maxLife;
+        const float alpha = 1.0f - t;
+
+        Material material = baseMaterial;
+        material.color = {1.0f, 1.0f, 1.0f, alpha};
+        material.reflectionStrength = 0.0f;
+        material.reflectionFresnelStrength = 0.0f;
+        ctx_->model->SetMaterial(materialId, material);
+
+        Transform drawTransform = particle.transform;
+        const XMMATRIX rotationMatrix = XMMatrixRotationZ(particle.roll) * billboard;
+        XMStoreFloat4(&drawTransform.rotation, XMQuaternionNormalize(
+                                                   XMQuaternionRotationMatrix(
+                                                       rotationMatrix)));
+
+        ctx_->modelRenderer->Draw(*effectModel, drawTransform, camera_);
+    }
+
+    ctx_->model->SetMaterial(materialId, baseMaterial);
+    ctx_->modelRenderer->ClearDrawEffect();
 }
 
 #ifdef _DEBUG

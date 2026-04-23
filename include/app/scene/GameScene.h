@@ -8,6 +8,7 @@
 #include <DirectXMath.h>
 #include <cstdint>
 #include <filesystem>
+#include <random>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -56,6 +57,28 @@ class GameScene : public BaseScene {
                                 const std::filesystem::path &baseDirectory,
                                 const DirectX::XMMATRIX &parentWorld);
 
+    /// <summary>
+    /// Planeベースのヒットエフェクトを初期化する
+    /// </summary>
+    void InitializeHitEffect();
+
+    /// <summary>
+    /// ヒットエフェクト用パーティクルを生成する
+    /// </summary>
+    /// <param name="position">生成中心位置</param>
+    void SpawnHitEffect(const DirectX::XMFLOAT3 &position);
+
+    /// <summary>
+    /// ヒットエフェクトを更新する
+    /// </summary>
+    /// <param name="deltaTime">前フレームからの経過時間</param>
+    void UpdateHitEffect(float deltaTime);
+
+    /// <summary>
+    /// ヒットエフェクトを描画する
+    /// </summary>
+    void DrawHitEffect();
+
 #ifdef _DEBUG
     /// <summary>
     /// デバッグ用のImGuiパネルを描画する
@@ -73,6 +96,19 @@ class GameScene : public BaseScene {
         Transform transform;
     };
 
+    /// <summary>
+    /// ヒットエフェクトに使う単発パーティクル
+    /// </summary>
+    struct HitParticle {
+        Transform transform{};
+        DirectX::XMFLOAT3 baseScale{0.07f, 1.0f, 1.0f};
+        float roll = 0.0f;
+        float angularVelocity = 0.0f;
+        float life = 0.0f;
+        float maxLife = 0.25f;
+        bool isAlive = false;
+    };
+
   private:
     DebugCamera camera_;
     SkyboxRenderer skyboxRenderer_;
@@ -83,4 +119,9 @@ class GameScene : public BaseScene {
     Transform sneakWalkTransform_{};
     std::vector<PlacedObject> placedObjects_;
     std::unordered_map<std::wstring, uint32_t> modelCache_;
+    uint32_t hitEffectModelId_ = 0;
+    bool hasHitEffectModel_ = false;
+    std::vector<HitParticle> hitParticles_;
+    std::mt19937 randomEngine_{std::random_device{}()};
+    float hitEffectAutoSpawnTimer_ = 0.0f;
 };

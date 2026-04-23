@@ -3,7 +3,25 @@
 #include "MaterialManager.h"
 #include "SrvManager.h"
 #include "TextureManager.h"
+#include "Vertex.h"
+#include <DirectXMath.h>
+#include <array>
 #include <filesystem>
+
+using namespace DirectX;
+
+namespace {
+
+constexpr std::array<Vertex, 4> kPlaneVertices = {{
+    {{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+    {{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+}};
+
+constexpr std::array<uint32_t, 6> kPlaneIndices = {0, 1, 2, 2, 1, 3};
+
+} // namespace
 
 void ModelManager::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
                               TextureManager *textureManager) {
@@ -41,6 +59,32 @@ uint32_t ModelManager::Load(const std::wstring &path) {
     uint32_t modelId = static_cast<uint32_t>(models_.size() - 1);
 
     return modelId;
+}
+
+uint32_t ModelManager::CreatePlane(uint32_t textureId, const Material &material) {
+    Material planeMaterial = material;
+    XMStoreFloat4x4(&planeMaterial.uvTransform,
+                    XMMatrixTranspose(XMMatrixIdentity()));
+
+    Model model{};
+    ModelSubMesh subMesh{};
+    subMesh.vertexCount = static_cast<uint32_t>(kPlaneVertices.size());
+    subMesh.meshId = meshManager_.CreateMesh(
+        kPlaneVertices.data(), sizeof(Vertex),
+        static_cast<uint32_t>(kPlaneVertices.size()), kPlaneIndices.data(),
+        static_cast<uint32_t>(kPlaneIndices.size()));
+    subMesh.textureId = textureId;
+    subMesh.materialId = materialManager_.CreateMaterial(planeMaterial);
+
+    model.subMeshes.push_back(subMesh);
+    model.meshId = subMesh.meshId;
+    model.textureId = textureId;
+    model.materialId = subMesh.materialId;
+
+    modelRenderer_.CreateSkinClusters(model);
+
+    models_.push_back(model);
+    return static_cast<uint32_t>(models_.size() - 1);
 }
 
 void ModelManager::UpdateAnimation(uint32_t modelId, float deltaTime) {

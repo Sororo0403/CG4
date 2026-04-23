@@ -34,6 +34,14 @@ class ModelManager {
     uint32_t Load(const std::wstring &path);
 
     /// <summary>
+    /// XY平面のPrimitiveを生成する
+    /// </summary>
+    /// <param name="textureId">貼り付けるテクスチャID</param>
+    /// <param name="material">使用するマテリアル</param>
+    /// <returns>生成されたモデルID</returns>
+    uint32_t CreatePlane(uint32_t textureId, const Material &material);
+
+    /// <summary>
     /// モデルのアニメーションを更新する
     /// </summary>
     /// <param name="modelId">更新するモデルID</param>
