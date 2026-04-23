@@ -55,6 +55,20 @@ class ModelManager {
                         float innerRadius = 0.2f);
 
     /// <summary>
+    /// Y軸方向に伸びる筒状Cylinder Primitiveを生成する(上下キャップなし)
+    /// </summary>
+    /// <param name="textureId">貼り付けるテクスチャID</param>
+    /// <param name="material">使用するマテリアル</param>
+    /// <param name="divide">分割数(3以上)</param>
+    /// <param name="topRadius">上面半径</param>
+    /// <param name="bottomRadius">下面半径</param>
+    /// <param name="height">高さ</param>
+    /// <returns>生成されたモデルID</returns>
+    uint32_t CreateCylinder(uint32_t textureId, const Material &material,
+                            uint32_t divide = 32, float topRadius = 1.0f,
+                            float bottomRadius = 1.0f, float height = 3.0f);
+
+    /// <summary>
     /// モデルのアニメーションを更新する
     /// </summary>
     /// <param name="modelId">更新するモデルID</param>

@@ -1,5 +1,6 @@
 #include "DirectXCommon.h"
 #include "GameScene.h"
+#include "GameSceneCylinder.h"
 #include "Input.h"
 #include "ModelManager.h"
 #include "ModelRenderer.h"
@@ -74,7 +75,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     // SceneManager
     SceneManager sceneManager;
     sceneManager.Initialize(sceneCtx);
-    sceneManager.ChangeScene(std::make_unique<GameScene>());
+    sceneManager.ChangeScene(std::make_unique<GameSceneCylinder>());
 
     // 高精細タイマの周波数を取得
     LARGE_INTEGER freq;

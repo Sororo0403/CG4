@@ -171,6 +171,98 @@ uint32_t ModelManager::CreateRing(uint32_t textureId, const Material &material,
     return static_cast<uint32_t>(models_.size() - 1);
 }
 
+uint32_t ModelManager::CreateCylinder(uint32_t textureId,
+                                      const Material &material, uint32_t divide,
+                                      float topRadius, float bottomRadius,
+                                      float height) {
+    if (divide < 3) {
+        divide = 3;
+    }
+
+    topRadius = (std::max)(topRadius, 0.001f);
+    bottomRadius = (std::max)(bottomRadius, 0.001f);
+    height = (std::max)(height, 0.001f);
+
+    Material cylinderMaterial = material;
+    XMStoreFloat4x4(&cylinderMaterial.uvTransform,
+                    XMMatrixTranspose(XMMatrixIdentity()));
+
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+    vertices.reserve(static_cast<size_t>(divide) * 6u);
+    indices.reserve(static_cast<size_t>(divide) * 6u);
+
+    const float radianPerDivide = std::numbers::pi_v<float> * 2.0f /
+                                  static_cast<float>(divide);
+
+    for (uint32_t index = 0; index < divide; ++index) {
+        const uint32_t base = static_cast<uint32_t>(vertices.size());
+
+        const float angle = static_cast<float>(index) * radianPerDivide;
+        const float angleNext = static_cast<float>(index + 1) * radianPerDivide;
+
+        const float sinV = std::sin(angle);
+        const float cosV = std::cos(angle);
+        const float sinNext = std::sin(angleNext);
+        const float cosNext = std::cos(angleNext);
+
+        const float u = static_cast<float>(index) / static_cast<float>(divide);
+        const float uNext =
+            static_cast<float>(index + 1) / static_cast<float>(divide);
+
+        vertices.push_back(
+            {{-sinV * topRadius, height, cosV * topRadius},
+             {-sinV, 0.0f, cosV},
+             {u, 0.0f}});
+        vertices.push_back(
+            {{-sinNext * topRadius, height, cosNext * topRadius},
+             {-sinNext, 0.0f, cosNext},
+             {uNext, 0.0f}});
+        vertices.push_back(
+            {{-sinV * bottomRadius, 0.0f, cosV * bottomRadius},
+             {-sinV, 0.0f, cosV},
+             {u, 1.0f}});
+
+        vertices.push_back(
+            {{-sinV * bottomRadius, 0.0f, cosV * bottomRadius},
+             {-sinV, 0.0f, cosV},
+             {u, 1.0f}});
+        vertices.push_back(
+            {{-sinNext * topRadius, height, cosNext * topRadius},
+             {-sinNext, 0.0f, cosNext},
+             {uNext, 0.0f}});
+        vertices.push_back(
+            {{-sinNext * bottomRadius, 0.0f, cosNext * bottomRadius},
+             {-sinNext, 0.0f, cosNext},
+             {uNext, 1.0f}});
+
+        indices.push_back(base + 0);
+        indices.push_back(base + 1);
+        indices.push_back(base + 2);
+        indices.push_back(base + 3);
+        indices.push_back(base + 4);
+        indices.push_back(base + 5);
+    }
+
+    Model model{};
+    ModelSubMesh subMesh{};
+    subMesh.vertexCount = static_cast<uint32_t>(vertices.size());
+    subMesh.meshId = meshManager_.CreateMesh(
+        vertices.data(), sizeof(Vertex), static_cast<uint32_t>(vertices.size()),
+        indices.data(), static_cast<uint32_t>(indices.size()));
+    subMesh.textureId = textureId;
+    subMesh.materialId = materialManager_.CreateMaterial(cylinderMaterial);
+
+    model.subMeshes.push_back(subMesh);
+    model.meshId = subMesh.meshId;
+    model.textureId = textureId;
+    model.materialId = subMesh.materialId;
+
+    modelRenderer_.CreateSkinClusters(model);
+    models_.push_back(model);
+    return static_cast<uint32_t>(models_.size() - 1);
+}
+
 void ModelManager::UpdateAnimation(uint32_t modelId, float deltaTime) {
     if (modelId >= models_.size()) {
         return;

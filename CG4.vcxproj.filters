@@ -164,7 +164,13 @@
     <ClCompile Include="src\engine\particle\RingBurstEmitter.cpp">
       <Filter>src\engine\particle</Filter>
     </ClCompile>
+    <ClCompile Include="src\engine\particle\CylinderBurstEmitter.cpp">
+      <Filter>src\engine\particle</Filter>
+    </ClCompile>
     <ClCompile Include="src\engine\particle\RingParticleSystem.cpp">
+      <Filter>src\engine\particle</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\particle\CylinderParticleSystem.cpp">
       <Filter>src\engine\particle</Filter>
     </ClCompile>
     <ClCompile Include="src\engine\collision\CollisionUtil.cpp">
@@ -186,6 +192,9 @@
       <Filter>src\engine\core</Filter>
     </ClCompile>
     <ClCompile Include="src\app\scene\GameScene.cpp">
+      <Filter>src\app\scene</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\scene\GameSceneCylinder.cpp">
       <Filter>src\app\scene</Filter>
     </ClCompile>
     <ClCompile Include="src\engine\scene\LevelLoader.cpp">
@@ -274,7 +283,13 @@
     <ClInclude Include="include\engine\particle\RingBurstEmitter.h">
       <Filter>include\engine\particle</Filter>
     </ClInclude>
+    <ClInclude Include="include\engine\particle\CylinderBurstEmitter.h">
+      <Filter>include\engine\particle</Filter>
+    </ClInclude>
     <ClInclude Include="include\engine\particle\RingParticleSystem.h">
+      <Filter>include\engine\particle</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\particle\CylinderParticleSystem.h">
       <Filter>include\engine\particle</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\collision\CollisionUtil.h">
@@ -302,6 +317,9 @@
       <Filter>include\engine\camera</Filter>
     </ClInclude>
     <ClInclude Include="include\app\scene\GameScene.h">
+      <Filter>include\app\scene</Filter>
+    </ClInclude>
+    <ClInclude Include="include\app\scene\GameSceneCylinder.h">
       <Filter>include\app\scene</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\model\SkyboxRenderer.h">

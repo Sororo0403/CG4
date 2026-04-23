@@ -129,8 +129,11 @@ if exist "$(ProjectDir)externals\assimp\bin\assimp-vc145-mt.dll" (
     <ClCompile Include="src\engine\model\AssimpLoader.cpp" />
     <ClCompile Include="src\engine\collision\CollisionUtil.cpp" />
     <ClCompile Include="src\engine\particle\RingBurstEmitter.cpp" />
+    <ClCompile Include="src\engine\particle\CylinderBurstEmitter.cpp" />
     <ClCompile Include="src\engine\particle\RingParticleSystem.cpp" />
+    <ClCompile Include="src\engine\particle\CylinderParticleSystem.cpp" />
     <ClCompile Include="src\app\scene\GameScene.cpp" />
+    <ClCompile Include="src\app\scene\GameSceneCylinder.cpp" />
     <ClCompile Include="src\engine\scene\LevelLoader.cpp" />
     <ClCompile Include="src\engine\scene\SceneManager.cpp" />
     <ClCompile Include="src\engine\input\Input.cpp" />
@@ -156,7 +159,9 @@ if exist "$(ProjectDir)externals\assimp\bin\assimp-vc145-mt.dll" (
     <ClInclude Include="include\engine\collision\CollisionUtil.h" />
     <ClInclude Include="include\engine\collision\OBB.h" />
     <ClInclude Include="include\engine\particle\RingBurstEmitter.h" />
+    <ClInclude Include="include\engine\particle\CylinderBurstEmitter.h" />
     <ClInclude Include="include\engine\particle\RingParticleSystem.h" />
+    <ClInclude Include="include\engine\particle\CylinderParticleSystem.h" />
     <ClInclude Include="include\engine\model\Transform.h" />
     <ClInclude Include="include\engine\scene\BaseScene.h" />
     <ClInclude Include="include\engine\imgui\ImguiManager.h" />
@@ -169,6 +174,7 @@ if exist "$(ProjectDir)externals\assimp\bin\assimp-vc145-mt.dll" (
     <ClInclude Include="include\engine\model\Model.h" />
     <ClInclude Include="include\engine\model\Vertex.h" />
     <ClInclude Include="include\app\scene\GameScene.h" />
+    <ClInclude Include="include\app\scene\GameSceneCylinder.h" />
     <ClInclude Include="include\engine\scene\LevelLoader.h" />
     <ClInclude Include="include\engine\scene\SceneContext.h" />
     <ClInclude Include="include\engine\sprite\Sprite.h" />

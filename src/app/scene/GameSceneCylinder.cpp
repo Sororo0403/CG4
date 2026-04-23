@@ -1,0 +1,86 @@
+#include "GameSceneCylinder.h"
+#include "DirectXCommon.h"
+#include "Input.h"
+#include "ModelManager.h"
+#include "TextureManager.h"
+#include "WinApp.h"
+#include <algorithm>
+#include <filesystem>
+
+using namespace DirectX;
+
+void GameSceneCylinder::Initialize(const SceneContext &ctx) {
+    BaseScene::Initialize(ctx);
+
+    const float aspect = static_cast<float>(ctx.winApp->GetWidth()) /
+                         static_cast<float>(ctx.winApp->GetHeight());
+
+    camera_.Initialize(aspect);
+    camera_.SetMode(CameraMode::Free);
+    camera_.SetPosition({0.0f, 1.2f, -4.5f});
+    camera_.SetRotation({0.0f, 0.0f, 0.0f});
+    camera_.UpdateMatrices();
+
+    ctx.dxCommon->BeginUpload();
+    InitializeHitEffect();
+    ctx.dxCommon->EndUpload();
+    ctx.texture->ReleaseUploadBuffers();
+
+    if (hasHitEffectModel_) {
+        hitEmitter_.EmitNow();
+    }
+}
+
+void GameSceneCylinder::Update() {
+    const float aspect = static_cast<float>(ctx_->winApp->GetWidth()) /
+                         static_cast<float>((std::max)(ctx_->winApp->GetHeight(), 1));
+    camera_.SetAspect(aspect);
+    camera_.Update(*ctx_->input, ctx_->deltaTime);
+    camera_.UpdateMatrices();
+
+    if (ctx_->input->IsKeyTrigger(DIK_SPACE) || ctx_->input->IsMouseTrigger(0)) {
+        hitEmitter_.EmitNow();
+    }
+
+    hitEmitter_.Update(ctx_->deltaTime);
+    hitParticleSystem_.Update(ctx_->deltaTime);
+}
+
+void GameSceneCylinder::Draw() {
+    if (!ctx_ || !ctx_->modelRenderer) {
+        return;
+    }
+
+    ctx_->modelRenderer->PreDraw();
+    hitParticleSystem_.Draw(camera_);
+    ctx_->modelRenderer->PostDraw();
+}
+
+void GameSceneCylinder::InitializeHitEffect() {
+    if (!ctx_ || !ctx_->model || !ctx_->modelRenderer || !ctx_->texture) {
+        return;
+    }
+
+    const std::filesystem::path texturePath =
+        L"resources/textures/gradationLine.png";
+    if (!std::filesystem::exists(texturePath)) {
+        return;
+    }
+
+    Material material{};
+    material.color = {1.0f, 1.0f, 1.0f, 1.0f};
+    material.enableTexture = 1;
+    material.reflectionStrength = 0.0f;
+    material.reflectionFresnelStrength = 0.0f;
+
+    const uint32_t textureId = ctx_->texture->Load(texturePath.wstring());
+    hitEffectModelId_ =
+        ctx_->model->CreateCylinder(textureId, material, 32, 1.0f, 1.0f, 3.0f);
+    hasHitEffectModel_ = true;
+
+    hitParticleSystem_.Initialize(ctx_->model, ctx_->modelRenderer,
+                                  hitEffectModelId_);
+    hitEmitter_.Initialize(&hitParticleSystem_, {0.0f, 1.2f, 0.0f});
+    hitEmitter_.SetInterval(1.0f);
+    hitEmitter_.SetAutoEmitEnabled(true);
+}
