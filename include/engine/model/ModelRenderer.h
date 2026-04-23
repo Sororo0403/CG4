@@ -19,6 +19,7 @@ class TextureManager;
 struct ModelDrawEffect {
     bool enabled = false;
     bool additiveBlend = false;
+    bool disableCulling = false;
     DirectX::XMFLOAT4 color = {1.0f, 0.2f, 0.7f, 0.65f};
     float intensity = 0.0f;
     float fresnelPower = 3.5f;
@@ -154,6 +155,7 @@ class ModelRenderer {
     Microsoft::WRL::ComPtr<ID3D12PipelineState> opaquePSO_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> transparentPSO_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> additivePSO_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> additiveNoCullPSO_;
     Microsoft::WRL::ComPtr<ID3D12Resource> objectConstBuffer_;
     Microsoft::WRL::ComPtr<ID3D12Resource> sceneConstBuffer_;
 

@@ -69,6 +69,7 @@ void CylinderParticleSystem::Draw(const Camera &camera) {
     ModelDrawEffect drawEffect{};
     drawEffect.enabled = true;
     drawEffect.additiveBlend = true;
+    drawEffect.disableCulling = true;
     drawEffect.color = {0.70f, 0.82f, 1.0f, 0.75f};
     drawEffect.intensity = 0.14f;
     drawEffect.fresnelPower = 2.0f;

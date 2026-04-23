@@ -160,7 +160,11 @@ void ModelRenderer::Draw(const Model &model, const Transform &transform,
             materialManager_->GetMaterial(subMesh.materialId);
 
         if (currentEffect_.enabled && currentEffect_.additiveBlend) {
-            cmd->SetPipelineState(additivePSO_.Get());
+            if (currentEffect_.disableCulling) {
+                cmd->SetPipelineState(additiveNoCullPSO_.Get());
+            } else {
+                cmd->SetPipelineState(additivePSO_.Get());
+            }
         } else if (material.color.w < 1.0f || currentEffect_.enabled) {
             cmd->SetPipelineState(transparentPSO_.Get());
         } else {
@@ -535,4 +539,13 @@ void ModelRenderer::CreatePipelineState() {
     ThrowIfFailed(device->CreateGraphicsPipelineState(
                       &pso, IID_PPV_ARGS(&additivePSO_)),
                   "CreateGraphicsPipelineState(Additive) failed");
+
+    D3D12_RASTERIZER_DESC noCullRasterizer =
+        CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    noCullRasterizer.CullMode = D3D12_CULL_MODE_NONE;
+    pso.RasterizerState = noCullRasterizer;
+
+    ThrowIfFailed(device->CreateGraphicsPipelineState(
+                      &pso, IID_PPV_ARGS(&additiveNoCullPSO_)),
+                  "CreateGraphicsPipelineState(AdditiveNoCull) failed");
 }
