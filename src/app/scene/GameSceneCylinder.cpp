@@ -175,9 +175,9 @@ void GameSceneCylinder::InitializeSneakWalkTest() {
         return;
     }
 
-    std::filesystem::path modelPath = AssetPaths::kAnimatedCubeModel;
+    std::filesystem::path modelPath = AssetPaths::kSneakWalkModel;
     if (!std::filesystem::exists(modelPath)) {
-        modelPath = AssetPaths::kSneakWalkModel;
+        modelPath = AssetPaths::kAnimatedCubeModel;
     }
 
     if (std::filesystem::exists(modelPath)) {

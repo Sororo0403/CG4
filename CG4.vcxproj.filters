@@ -60,6 +60,9 @@
     <Filter Include="src\engine\model">
       <UniqueIdentifier>{62a940c6-b5eb-4fad-b010-dcbf3f6abdf0}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\engine\animation">
+      <UniqueIdentifier>{bf0c9f95-c8ca-4c27-9f50-4c9c6e658893}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\engine\sound">
       <UniqueIdentifier>{f7e0cb7b-cd6e-4e56-afb1-0955495f3102}</UniqueIdentifier>
     </Filter>
@@ -71,6 +74,9 @@
     </Filter>
     <Filter Include="include\engine\scene">
       <UniqueIdentifier>{62d41240-753f-4265-9b79-4d64300a266b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\engine\animation">
+      <UniqueIdentifier>{8af568ef-ee0e-43fd-b4e0-8abf61d2d433}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\engine\scene">
       <UniqueIdentifier>{3b23469a-8248-4dde-9cfe-2e855f1a691f}</UniqueIdentifier>
@@ -176,8 +182,11 @@
     <ClCompile Include="src\engine\collision\CollisionUtil.cpp">
       <Filter>src\engine\collision</Filter>
     </ClCompile>
-    <ClCompile Include="src\engine\model\Animator.cpp">
-      <Filter>src\engine\model</Filter>
+    <ClCompile Include="src\engine\animation\Animator.cpp">
+      <Filter>src\engine\animation</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\animation\AnimationSampler.cpp">
+      <Filter>src\engine\animation</Filter>
     </ClCompile>
     <ClCompile Include="src\engine\model\AssimpLoader.cpp">
       <Filter>src\engine\model</Filter>
@@ -202,6 +211,9 @@
     </ClCompile>
     <ClCompile Include="src\engine\model\SkyboxRenderer.cpp">
       <Filter>src\engine\model</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\animation\SkeletonPoseBuilder.cpp">
+      <Filter>src\engine\animation</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -298,8 +310,11 @@
     <ClInclude Include="include\engine\collision\AABB.h">
       <Filter>include\engine\collision</Filter>
     </ClInclude>
-    <ClInclude Include="include\engine\model\Animator.h">
-      <Filter>include\engine\model</Filter>
+    <ClInclude Include="include\engine\animation\Animator.h">
+      <Filter>include\engine\animation</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\animation\AnimationSampler.h">
+      <Filter>include\engine\animation</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\model\AssimpLoader.h">
       <Filter>include\engine\model</Filter>
@@ -327,6 +342,9 @@
     </ClInclude>
     <ClInclude Include="include\engine\scene\LevelLoader.h">
       <Filter>include\engine\scene</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\animation\SkeletonPoseBuilder.h">
+      <Filter>include\engine\animation</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
