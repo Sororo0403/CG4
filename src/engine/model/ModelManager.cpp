@@ -213,28 +213,28 @@ uint32_t ModelManager::CreateCylinder(uint32_t textureId,
         vertices.push_back(
             {{-sinV * topRadius, height, cosV * topRadius},
              {-sinV, 0.0f, cosV},
-             {u, 0.0f}});
+             {u, 1.0f}});
         vertices.push_back(
             {{-sinNext * topRadius, height, cosNext * topRadius},
              {-sinNext, 0.0f, cosNext},
-             {uNext, 0.0f}});
+             {uNext, 1.0f}});
         vertices.push_back(
             {{-sinV * bottomRadius, 0.0f, cosV * bottomRadius},
              {-sinV, 0.0f, cosV},
-             {u, 1.0f}});
+             {u, 0.0f}});
 
         vertices.push_back(
             {{-sinV * bottomRadius, 0.0f, cosV * bottomRadius},
              {-sinV, 0.0f, cosV},
-             {u, 1.0f}});
+             {u, 0.0f}});
         vertices.push_back(
             {{-sinNext * topRadius, height, cosNext * topRadius},
              {-sinNext, 0.0f, cosNext},
-             {uNext, 0.0f}});
+             {uNext, 1.0f}});
         vertices.push_back(
             {{-sinNext * bottomRadius, 0.0f, cosNext * bottomRadius},
              {-sinNext, 0.0f, cosNext},
-             {uNext, 1.0f}});
+             {uNext, 0.0f}});
 
         indices.push_back(base + 0);
         indices.push_back(base + 1);

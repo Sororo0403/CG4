@@ -90,8 +90,8 @@ void CylinderParticleSystem::Draw(const Camera &camera) {
         material.reflectionFresnelStrength = 0.0f;
         const float uvScaleV = 2.4f;
         const float uvScrollU = t * 1.2f;
-        const XMMATRIX uvTransform = XMMatrixScaling(1.0f, -uvScaleV, 1.0f) *
-                                     XMMatrixTranslation(uvScrollU, 1.0f, 0.0f);
+        const XMMATRIX uvTransform = XMMatrixScaling(1.0f, uvScaleV, 1.0f) *
+                                     XMMatrixTranslation(uvScrollU, 0.0f, 0.0f);
         XMStoreFloat4x4(&material.uvTransform, XMMatrixTranspose(uvTransform));
         modelManager_->SetMaterial(materialId, material);
 
