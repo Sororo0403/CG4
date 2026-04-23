@@ -12,6 +12,9 @@
 #include "SrvManager.h"
 #include "TextureManager.h"
 #include "WinApp.h"
+#ifdef _DEBUG
+#include "ImguiManager.h"
+#endif // _DEBUG
 #include <memory>
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
@@ -72,6 +75,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     sceneCtx.deltaTime = 0.0f;
 
+#ifdef _DEBUG
+    ImguiManager imguiManager;
+    imguiManager.Initialize(&winApp, &dxCommon, &srvManager);
+    sceneCtx.imgui = &imguiManager;
+#endif // _DEBUG
+
     // SceneManager
     SceneManager sceneManager;
     sceneManager.Initialize(sceneCtx);
@@ -119,7 +128,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         // 描画
         dxCommon.BeginFrame();
 
+#ifdef _DEBUG
+        imguiManager.Begin(dxCommon.GetCommandList());
+#endif // _DEBUG
         sceneManager.Draw();
+#ifdef _DEBUG
+        imguiManager.End(dxCommon.GetCommandList());
+#endif // _DEBUG
 
         dxCommon.EndFrame();
     }
