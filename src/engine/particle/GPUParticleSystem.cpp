@@ -24,51 +24,52 @@ void GPUParticleSystem::Initialize(DirectXCommon *dxCommon,
     textureId_ = textureId;
     maxParticles_ = (std::max)(1u, maxParticles);
     totalTime_ = 0.0f;
+    emitter_.translate = emitterPosition_;
+    emitter_.radius = 0.36f;
+    emitter_.count = 10;
+    emitter_.frequency = 0.5f;
+    emitter_.frequencyTime = 0.0f;
+    emitter_.emit = 0;
 
     std::mt19937 randomEngine{std::random_device{}()};
     std::uniform_real_distribution<float> dist01(0.0f, 1.0f);
-    std::uniform_real_distribution<float> distX(-1.2f, 1.2f);
-    std::uniform_real_distribution<float> distY(0.0f, 1.4f);
-    std::uniform_real_distribution<float> distZ(-0.15f, 0.15f);
-    std::uniform_real_distribution<float> distVelocity(-0.35f, 0.35f);
-    std::uniform_real_distribution<float> distLife(1.2f, 2.6f);
-    std::uniform_real_distribution<float> distScale(0.045f, 0.13f);
 
     std::vector<ParticleForGPU> particles(maxParticles_);
     for (ParticleForGPU &particle : particles) {
-        particle.translate = {emitterPosition_.x + distX(randomEngine),
-                              emitterPosition_.y + distY(randomEngine),
-                              emitterPosition_.z + distZ(randomEngine)};
-        particle.velocity = {distVelocity(randomEngine) * 0.55f,
-                             0.45f + dist01(randomEngine) * 0.8f,
-                             distVelocity(randomEngine)};
-        particle.lifeTime = distLife(randomEngine);
-        particle.currentTime = dist01(randomEngine) * particle.lifeTime;
-        particle.color = {0.55f + dist01(randomEngine) * 0.35f,
-                          0.75f + dist01(randomEngine) * 0.20f, 1.0f,
-                          0.55f + dist01(randomEngine) * 0.35f};
-        const float scale = distScale(randomEngine);
-        particle.scale = {scale, scale};
+        particle.translate = emitterPosition_;
+        particle.velocity = {};
+        particle.lifeTime = 1.0f;
+        particle.currentTime = particle.lifeTime;
+        particle.color = {1.0f, 1.0f, 1.0f, 0.0f};
+        particle.scale = {0.0f, 0.0f};
         particle.seed = dist01(randomEngine) * 10000.0f;
     }
 
     CreateRootSignatures();
     CreatePipelineStates();
     CreateParticleBuffer(particles);
+    CreateCounterBuffer();
     CreateConstantBuffers();
 }
 
 void GPUParticleSystem::Update(float deltaTime) {
     totalTime_ += deltaTime;
 
-    if (!mappedUpdateCB_) {
+    if (!mappedUpdateCB_ || !mappedEmitterCB_) {
         return;
     }
 
-    mappedUpdateCB_->emitterPositionAndTime = {
-        emitterPosition_.x, emitterPosition_.y, emitterPosition_.z, totalTime_};
-    mappedUpdateCB_->params = {deltaTime, static_cast<float>(maxParticles_),
-                               1.0f, 0.0f};
+    emitter_.translate = emitterPosition_;
+    emitter_.frequencyTime += deltaTime;
+    emitter_.emit = 0;
+    if (emitter_.frequencyTime >= emitter_.frequency) {
+        emitter_.frequencyTime -= emitter_.frequency;
+        emitter_.emit = 1;
+    }
+
+    mappedUpdateCB_->time = {totalTime_, deltaTime,
+                             static_cast<float>(maxParticles_), 0.0f};
+    *mappedEmitterCB_ = emitter_;
 }
 
 void GPUParticleSystem::Draw(const Camera &camera) {
@@ -85,11 +86,25 @@ void GPUParticleSystem::Draw(const Camera &camera) {
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     cmd->ResourceBarrier(1, &toUav);
 
+    auto counterToCopyDest = CD3DX12_RESOURCE_BARRIER::Transition(
+        emitCounterResource_.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        D3D12_RESOURCE_STATE_COPY_DEST);
+    cmd->ResourceBarrier(1, &counterToCopyDest);
+    cmd->CopyBufferRegion(emitCounterResource_.Get(), 0,
+                          emitCounterResetResource_.Get(), 0, sizeof(uint32_t));
+    auto counterToUav = CD3DX12_RESOURCE_BARRIER::Transition(
+        emitCounterResource_.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    cmd->ResourceBarrier(1, &counterToUav);
+
     cmd->SetComputeRootSignature(updateRootSignature_.Get());
     cmd->SetPipelineState(updatePSO_.Get());
     cmd->SetComputeRootConstantBufferView(
         0, updateConstantBuffer_->GetGPUVirtualAddress());
-    cmd->SetComputeRootDescriptorTable(1, particleUavGpuHandle_);
+    cmd->SetComputeRootConstantBufferView(
+        1, emitterConstantBuffer_->GetGPUVirtualAddress());
+    cmd->SetComputeRootDescriptorTable(2, particleUavGpuHandle_);
+    cmd->SetComputeRootDescriptorTable(3, emitCounterUavGpuHandle_);
     cmd->Dispatch((maxParticles_ + 255u) / 256u, 1, 1);
 
     auto uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(particleResource_.Get());
@@ -129,12 +144,17 @@ void GPUParticleSystem::Draw(const Camera &camera) {
 
 void GPUParticleSystem::CreateRootSignatures() {
     {
-        CD3DX12_ROOT_PARAMETER params[2];
+        CD3DX12_ROOT_PARAMETER params[4];
         params[0].InitAsConstantBufferView(0);
+        params[1].InitAsConstantBufferView(1);
 
         CD3DX12_DESCRIPTOR_RANGE particleRange;
         particleRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
-        params[1].InitAsDescriptorTable(1, &particleRange);
+        params[2].InitAsDescriptorTable(1, &particleRange);
+
+        CD3DX12_DESCRIPTOR_RANGE counterRange;
+        counterRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
+        params[3].InitAsDescriptorTable(1, &counterRange);
 
         CD3DX12_ROOT_SIGNATURE_DESC desc;
         desc.Init(_countof(params), params, 0, nullptr);
@@ -308,6 +328,49 @@ void GPUParticleSystem::CreateParticleBuffer(
                                       &uavDesc, particleUavCpuHandle_);
 }
 
+void GPUParticleSystem::CreateCounterBuffer() {
+    auto *device = dxCommon_->GetDevice();
+    constexpr UINT bufferSize = sizeof(uint32_t);
+
+    CD3DX12_HEAP_PROPERTIES defaultHeap(D3D12_HEAP_TYPE_DEFAULT);
+    auto counterDesc = CD3DX12_RESOURCE_DESC::Buffer(
+        bufferSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    ThrowIfFailed(device->CreateCommittedResource(
+                      &defaultHeap, D3D12_HEAP_FLAG_NONE, &counterDesc,
+                      D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+                      IID_PPV_ARGS(&emitCounterResource_)),
+                  "CreateCommittedResource(GPUParticleEmitCounter) failed");
+
+    CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
+    auto resetDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
+    ThrowIfFailed(device->CreateCommittedResource(
+                      &uploadHeap, D3D12_HEAP_FLAG_NONE, &resetDesc,
+                      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                      IID_PPV_ARGS(&emitCounterResetResource_)),
+                  "CreateCommittedResource(GPUParticleEmitCounterReset) failed");
+
+    uint32_t *mapped = nullptr;
+    ThrowIfFailed(emitCounterResetResource_->Map(
+                      0, nullptr, reinterpret_cast<void **>(&mapped)),
+                  "GPUParticleEmitCounterReset Map failed");
+    *mapped = 0;
+    emitCounterResetResource_->Unmap(0, nullptr);
+
+    const UINT uavIndex = srvManager_->Allocate();
+    emitCounterUavCpuHandle_ = srvManager_->GetCpuHandle(uavIndex);
+    emitCounterUavGpuHandle_ = srvManager_->GetGpuHandle(uavIndex);
+
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
+    uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+    uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+    uavDesc.Buffer.FirstElement = 0;
+    uavDesc.Buffer.NumElements = 1;
+    uavDesc.Buffer.StructureByteStride = sizeof(uint32_t);
+    uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+    device->CreateUnorderedAccessView(emitCounterResource_.Get(), nullptr,
+                                      &uavDesc, emitCounterUavCpuHandle_);
+}
+
 void GPUParticleSystem::CreateConstantBuffers() {
     auto *device = dxCommon_->GetDevice();
     CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
@@ -322,6 +385,17 @@ void GPUParticleSystem::CreateConstantBuffers() {
     ThrowIfFailed(updateConstantBuffer_->Map(
                       0, nullptr, reinterpret_cast<void **>(&mappedUpdateCB_)),
                   "GPUParticleUpdateCB Map failed");
+
+    auto emitterDesc =
+        CD3DX12_RESOURCE_DESC::Buffer(Align256(sizeof(EmitterForGPU)));
+    ThrowIfFailed(device->CreateCommittedResource(
+                      &uploadHeap, D3D12_HEAP_FLAG_NONE, &emitterDesc,
+                      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                      IID_PPV_ARGS(&emitterConstantBuffer_)),
+                  "CreateCommittedResource(GPUParticleEmitterCB) failed");
+    ThrowIfFailed(emitterConstantBuffer_->Map(
+                      0, nullptr, reinterpret_cast<void **>(&mappedEmitterCB_)),
+                  "GPUParticleEmitterCB Map failed");
 
     auto drawDesc =
         CD3DX12_RESOURCE_DESC::Buffer(Align256(sizeof(DrawConstantBufferData)));

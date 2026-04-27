@@ -52,8 +52,16 @@ class GPUParticleSystem {
     };
 
     struct UpdateConstantBufferData {
-        DirectX::XMFLOAT4 emitterPositionAndTime{};
-        DirectX::XMFLOAT4 params{};
+        DirectX::XMFLOAT4 time{};
+    };
+
+    struct EmitterForGPU {
+        DirectX::XMFLOAT3 translate{};
+        float radius = 0.35f;
+        uint32_t count = 10;
+        float frequency = 0.5f;
+        float frequencyTime = 0.0f;
+        uint32_t emit = 0;
     };
 
     struct DrawConstantBufferData {
@@ -66,6 +74,7 @@ class GPUParticleSystem {
     void CreateRootSignatures();
     void CreatePipelineStates();
     void CreateParticleBuffer(const std::vector<ParticleForGPU> &particles);
+    void CreateCounterBuffer();
     void CreateConstantBuffers();
 
     DirectXCommon *dxCommon_ = nullptr;
@@ -74,6 +83,7 @@ class GPUParticleSystem {
     uint32_t textureId_ = 0;
     uint32_t maxParticles_ = 0;
     float totalTime_ = 0.0f;
+    EmitterForGPU emitter_{};
     DirectX::XMFLOAT3 emitterPosition_{0.0f, 1.2f, 0.0f};
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> updateRootSignature_;
@@ -88,8 +98,15 @@ class GPUParticleSystem {
     D3D12_GPU_DESCRIPTOR_HANDLE particleUavGpuHandle_{};
     D3D12_CPU_DESCRIPTOR_HANDLE particleUavCpuHandle_{};
 
+    Microsoft::WRL::ComPtr<ID3D12Resource> emitCounterResource_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> emitCounterResetResource_;
+    D3D12_GPU_DESCRIPTOR_HANDLE emitCounterUavGpuHandle_{};
+    D3D12_CPU_DESCRIPTOR_HANDLE emitCounterUavCpuHandle_{};
+
     Microsoft::WRL::ComPtr<ID3D12Resource> updateConstantBuffer_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> emitterConstantBuffer_;
     Microsoft::WRL::ComPtr<ID3D12Resource> drawConstantBuffer_;
     UpdateConstantBufferData *mappedUpdateCB_ = nullptr;
+    EmitterForGPU *mappedEmitterCB_ = nullptr;
     DrawConstantBufferData *mappedDrawCB_ = nullptr;
 };
