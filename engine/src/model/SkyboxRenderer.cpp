@@ -125,10 +125,10 @@ void SkyboxRenderer::CreateRootSignature() {
 
 void SkyboxRenderer::CreatePipelineState() {
     auto vs =
-        ShaderCompiler::Compile(L"resources/shaders/skybox/SkyboxVS.hlsl", "main",
+        ShaderCompiler::Compile(L"engine/resources/shaders/skybox/SkyboxVS.hlsl", "main",
                                 "vs_5_0");
     auto ps =
-        ShaderCompiler::Compile(L"resources/shaders/skybox/SkyboxPS.hlsl", "main",
+        ShaderCompiler::Compile(L"engine/resources/shaders/skybox/SkyboxPS.hlsl", "main",
                                 "ps_5_0");
 
     D3D12_INPUT_ELEMENT_DESC layout[] = {

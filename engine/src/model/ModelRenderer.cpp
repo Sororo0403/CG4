@@ -577,10 +577,10 @@ void ModelRenderer::CreateSkinningRootSignature() {
 void ModelRenderer::CreatePipelineState() {
     auto device = dxCommon_->GetDevice();
 
-    auto vs = ShaderCompiler::Compile(L"resources/shaders/model/ModelVS.hlsl",
+    auto vs = ShaderCompiler::Compile(L"engine/resources/shaders/model/ModelVS.hlsl",
                                       "main", "vs_5_0");
 
-    auto ps = ShaderCompiler::Compile(L"resources/shaders/model/ModelPS.hlsl",
+    auto ps = ShaderCompiler::Compile(L"engine/resources/shaders/model/ModelPS.hlsl",
                                       "main", "ps_5_0");
 
     D3D12_INPUT_ELEMENT_DESC layout[] = {
@@ -670,7 +670,7 @@ void ModelRenderer::CreatePipelineState() {
 }
 
 void ModelRenderer::CreateSkinningPipelineState() {
-    auto cs = ShaderCompiler::Compile(L"resources/shaders/model/SkinningCS.hlsl",
+    auto cs = ShaderCompiler::Compile(L"engine/resources/shaders/model/SkinningCS.hlsl",
                                       "main", "cs_5_0");
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC pso{};

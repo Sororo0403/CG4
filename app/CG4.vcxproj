@@ -62,7 +62,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(SolutionDir)app\include;$(SolutionDir)app\include\scene;$(SolutionDir)engine\include\scene;$(SolutionDir)engine\include\particle;$(SolutionDir)engine\include\collision;$(SolutionDir)engine\include\input;$(SolutionDir)engine\include\camera;$(SolutionDir)engine\include\core;$(SolutionDir)engine\include\graphics;$(SolutionDir)engine\include\imgui;$(SolutionDir)engine\include\model;$(SolutionDir)engine\include\animation;$(SolutionDir)engine\include\sound;$(SolutionDir)engine\include\sprite;$(SolutionDir)engine\include\texture;$(SolutionDir)externals;$(SolutionDir)externals\assimp\include;$(SolutionDir)externals\assimp\include\assimp;$(SolutionDir)externals\DirectX-Headers;$(SolutionDir)externals\DirectXTex;$(SolutionDir)externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)app\include;$(SolutionDir)app\include\scene;$(SolutionDir)engine\include\scene;$(SolutionDir)engine\include\particle;$(SolutionDir)engine\include\collision;$(SolutionDir)engine\include\input;$(SolutionDir)engine\include\camera;$(SolutionDir)engine\include\core;$(SolutionDir)engine\include\graphics;$(SolutionDir)engine\include\imgui;$(SolutionDir)engine\include\model;$(SolutionDir)engine\include\animation;$(SolutionDir)engine\include\sound;$(SolutionDir)engine\include\sprite;$(SolutionDir)engine\include\texture;$(SolutionDir)engine\externals;$(SolutionDir)engine\externals\assimp\include;$(SolutionDir)engine\externals\assimp\include\assimp;$(SolutionDir)engine\externals\DirectX-Headers;$(SolutionDir)engine\externals\DirectXTex;$(SolutionDir)engine\externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -72,17 +72,17 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
       <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;imgui.lib;dinput8.lib;dxguid.lib;assimp-vc145-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)externals\assimp\lib\;$(SolutionDir)..\generated\outputs\$(Configuration)\imgui\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)engine\externals\assimp\lib\;$(SolutionDir)..\generated\outputs\$(Configuration)\imgui\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
       <Command>REM JoyShockLibrary
-if exist "$(SolutionDir)externals\JoyShockLibrary\lib\JoyShockLibrary.dll" (
-    xcopy /Y /D "$(SolutionDir)externals\JoyShockLibrary\lib\JoyShockLibrary.dll" "$(TargetDir)"
+if exist "$(SolutionDir)engine\externals\JoyShockLibrary\lib\JoyShockLibrary.dll" (
+    xcopy /Y /D "$(SolutionDir)engine\externals\JoyShockLibrary\lib\JoyShockLibrary.dll" "$(TargetDir)"
 )
 
 REM assimp
-if exist "$(SolutionDir)externals\assimp\bin\assimp-vc145-mt.dll" (
-    xcopy /Y /D "$(SolutionDir)externals\assimp\bin\assimp-vc145-mt.dll" "$(TargetDir)"
+if exist "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" (
+    xcopy /Y /D "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" "$(TargetDir)"
 )</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -96,7 +96,7 @@ if exist "$(SolutionDir)externals\assimp\bin\assimp-vc145-mt.dll" (
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <TreatWarningAsError>false</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(SolutionDir)app\include;$(SolutionDir)app\include\scene;$(SolutionDir)engine\include\scene;$(SolutionDir)engine\include\particle;$(SolutionDir)engine\include\collision;$(SolutionDir)engine\include\input;$(SolutionDir)engine\include\camera;$(SolutionDir)engine\include\core;$(SolutionDir)engine\include\graphics;$(SolutionDir)engine\include\imgui;$(SolutionDir)engine\include\model;$(SolutionDir)engine\include\animation;$(SolutionDir)engine\include\sound;$(SolutionDir)engine\include\sprite;$(SolutionDir)engine\include\texture;$(SolutionDir)externals;$(SolutionDir)externals\assimp\include;$(SolutionDir)externals\assimp\include\assimp;$(SolutionDir)externals\DirectX-Headers;$(SolutionDir)externals\DirectXTex;$(SolutionDir)externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)app\include;$(SolutionDir)app\include\scene;$(SolutionDir)engine\include\scene;$(SolutionDir)engine\include\particle;$(SolutionDir)engine\include\collision;$(SolutionDir)engine\include\input;$(SolutionDir)engine\include\camera;$(SolutionDir)engine\include\core;$(SolutionDir)engine\include\graphics;$(SolutionDir)engine\include\imgui;$(SolutionDir)engine\include\model;$(SolutionDir)engine\include\animation;$(SolutionDir)engine\include\sound;$(SolutionDir)engine\include\sprite;$(SolutionDir)engine\include\texture;$(SolutionDir)engine\externals;$(SolutionDir)engine\externals\assimp\include;$(SolutionDir)engine\externals\assimp\include\assimp;$(SolutionDir)engine\externals\DirectX-Headers;$(SolutionDir)engine\externals\DirectXTex;$(SolutionDir)engine\externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -106,17 +106,17 @@ if exist "$(SolutionDir)externals\assimp\bin\assimp-vc145-mt.dll" (
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <TreatLinkerWarningAsErrors>false</TreatLinkerWarningAsErrors>
       <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;imgui.lib;dinput8.lib;dxguid.lib;assimp-vc145-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)externals\assimp\lib\;$(SolutionDir)..\generated\outputs\$(Configuration)\imgui\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)engine\externals\assimp\lib\;$(SolutionDir)..\generated\outputs\$(Configuration)\imgui\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
       <Command>REM JoyShockLibrary
-if exist "$(SolutionDir)externals\JoyShockLibrary\lib\JoyShockLibrary.dll" (
-    xcopy /Y /D "$(SolutionDir)externals\JoyShockLibrary\lib\JoyShockLibrary.dll" "$(TargetDir)"
+if exist "$(SolutionDir)engine\externals\JoyShockLibrary\lib\JoyShockLibrary.dll" (
+    xcopy /Y /D "$(SolutionDir)engine\externals\JoyShockLibrary\lib\JoyShockLibrary.dll" "$(TargetDir)"
 )
 
 REM assimp
-if exist "$(SolutionDir)externals\assimp\bin\assimp-vc145-mt.dll" (
-    xcopy /Y /D "$(SolutionDir)externals\assimp\bin\assimp-vc145-mt.dll" "$(TargetDir)"
+if exist "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" (
+    xcopy /Y /D "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" "$(TargetDir)"
 )</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -135,10 +135,10 @@ if exist "$(SolutionDir)externals\assimp\bin\assimp-vc145-mt.dll" (
     <ProjectReference Include="..\engine\Engine.vcxproj">
       <Project>{8d69c2b4-4f39-47f0-9a40-4cb78ec442a1}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\externals\DirectXTex\DirectXTex_Desktop_2022.vcxproj">
+    <ProjectReference Include="..\engine\externals\DirectXTex\DirectXTex_Desktop_2022.vcxproj">
       <Project>{371b9fa9-4c90-4ac6-a123-aced756d6c77}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\externals\imgui\imgui.vcxproj">
+    <ProjectReference Include="..\engine\externals\imgui\imgui.vcxproj">
       <Project>{f6ba9c36-46d4-4c55-9c90-d016c833a837}</Project>
     </ProjectReference>
   </ItemGroup>

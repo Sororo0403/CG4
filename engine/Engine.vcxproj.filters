@@ -85,22 +85,22 @@
     <Filter Include="engine\include\collision">
       <UniqueIdentifier>{ae2140d3-1036-4cf2-8cc4-63cdbc1d3c3d}</UniqueIdentifier>
     </Filter>
-    <Filter Include="resources">
+    <Filter Include="app\resources">
       <UniqueIdentifier>{5555559b-2eca-4b5d-bf84-335509c634f7}</UniqueIdentifier>
     </Filter>
-    <Filter Include="resources\shaders">
+    <Filter Include="engine\resources\shaders">
       <UniqueIdentifier>{55bdf0aa-78de-413b-8dbf-162f854d13ca}</UniqueIdentifier>
     </Filter>
-    <Filter Include="resources\shaders\model">
+    <Filter Include="engine\resources\shaders\model">
       <UniqueIdentifier>{d1e2f888-21f4-448d-a52c-00081f843af2}</UniqueIdentifier>
     </Filter>
-    <Filter Include="resources\shaders\sprite">
+    <Filter Include="engine\resources\shaders\sprite">
       <UniqueIdentifier>{a7796bda-e57e-4298-a020-eb38e2c4a4a7}</UniqueIdentifier>
     </Filter>
-    <Filter Include="resources\shaders\skybox">
+    <Filter Include="engine\resources\shaders\skybox">
       <UniqueIdentifier>{ee5d2c4b-212f-4f11-a82a-224e52ed54c7}</UniqueIdentifier>
     </Filter>
-    <Filter Include="resources\shaders\particle">
+    <Filter Include="engine\resources\shaders\particle">
       <UniqueIdentifier>{1bdc6374-9793-4a4e-9bca-5bb78cb274b8}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
@@ -343,55 +343,55 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="$(SolutionDir)resources\shaders\model\ModelPS.hlsl">
-      <Filter>resources\shaders\model</Filter>
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\model\ModelPS.hlsl">
+      <Filter>engine\resources\shaders\model</Filter>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\debug\SkeletonDebugPS.hlsl">
-      <Filter>resources\shaders\model</Filter>
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\debug\SkeletonDebugPS.hlsl">
+      <Filter>engine\resources\shaders\model</Filter>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\model\ModelVS.hlsl">
-      <Filter>resources\shaders\model</Filter>
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\model\ModelVS.hlsl">
+      <Filter>engine\resources\shaders\model</Filter>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\model\SkinningCS.hlsl">
-      <Filter>resources\shaders\model</Filter>
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\model\SkinningCS.hlsl">
+      <Filter>engine\resources\shaders\model</Filter>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\debug\SkeletonDebugVS.hlsl">
-      <Filter>resources\shaders\model</Filter>
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\debug\SkeletonDebugVS.hlsl">
+      <Filter>engine\resources\shaders\model</Filter>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\sprite\SpritePS.hlsl">
-      <Filter>resources\shaders\sprite</Filter>
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\sprite\SpritePS.hlsl">
+      <Filter>engine\resources\shaders\sprite</Filter>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\sprite\SpriteVS.hlsl">
-      <Filter>resources\shaders\sprite</Filter>
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\sprite\SpriteVS.hlsl">
+      <Filter>engine\resources\shaders\sprite</Filter>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\skybox\SkyboxPS.hlsl">
-      <Filter>resources\shaders\skybox</Filter>
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\skybox\SkyboxPS.hlsl">
+      <Filter>engine\resources\shaders\skybox</Filter>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\skybox\SkyboxVS.hlsl">
-      <Filter>resources\shaders\skybox</Filter>
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\skybox\SkyboxVS.hlsl">
+      <Filter>engine\resources\shaders\skybox</Filter>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\particle\GPUParticlePS.hlsl">
-      <Filter>resources\shaders\particle</Filter>
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\particle\GPUParticlePS.hlsl">
+      <Filter>engine\resources\shaders\particle</Filter>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\particle\GPUParticleVS.hlsl">
-      <Filter>resources\shaders\particle</Filter>
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\particle\GPUParticleVS.hlsl">
+      <Filter>engine\resources\shaders\particle</Filter>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\particle\GPUParticleUpdateCS.hlsl">
-      <Filter>resources\shaders\particle</Filter>
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\particle\GPUParticleUpdateCS.hlsl">
+      <Filter>engine\resources\shaders\particle</Filter>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="$(SolutionDir)resources\shaders\model\Model.hlsli">
-      <Filter>resources\shaders\model</Filter>
+    <None Include="$(SolutionDir)engine\resources\shaders\model\Model.hlsli">
+      <Filter>engine\resources\shaders\model</Filter>
     </None>
-    <None Include="$(SolutionDir)resources\shaders\sprite\Sprite.hlsli">
-      <Filter>resources\shaders\sprite</Filter>
+    <None Include="$(SolutionDir)engine\resources\shaders\sprite\Sprite.hlsli">
+      <Filter>engine\resources\shaders\sprite</Filter>
     </None>
-    <None Include="$(SolutionDir)resources\shaders\skybox\Skybox.hlsli">
-      <Filter>resources\shaders\skybox</Filter>
+    <None Include="$(SolutionDir)engine\resources\shaders\skybox\Skybox.hlsli">
+      <Filter>engine\resources\shaders\skybox</Filter>
     </None>
-    <None Include="$(SolutionDir)resources\shaders\particle\GPUParticle.hlsli">
-      <Filter>resources\shaders\particle</Filter>
+    <None Include="$(SolutionDir)engine\resources\shaders\particle\GPUParticle.hlsli">
+      <Filter>engine\resources\shaders\particle</Filter>
     </None>
   </ItemGroup>
 </Project>

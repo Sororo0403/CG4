@@ -62,7 +62,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(SolutionDir)engine\include\scene;$(SolutionDir)engine\include\particle;$(SolutionDir)engine\include\collision;$(SolutionDir)engine\include\input;$(SolutionDir)engine\include\camera;$(SolutionDir)engine\include\core;$(SolutionDir)engine\include\graphics;$(SolutionDir)engine\include\imgui;$(SolutionDir)engine\include\model;$(SolutionDir)engine\include\animation;$(SolutionDir)engine\include\sound;$(SolutionDir)engine\include\sprite;$(SolutionDir)engine\include\texture;$(SolutionDir)externals;$(SolutionDir)externals\assimp\include;$(SolutionDir)externals\assimp\include\assimp;$(SolutionDir)externals\DirectX-Headers;$(SolutionDir)externals\DirectXTex;$(SolutionDir)externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)engine\include\scene;$(SolutionDir)engine\include\particle;$(SolutionDir)engine\include\collision;$(SolutionDir)engine\include\input;$(SolutionDir)engine\include\camera;$(SolutionDir)engine\include\core;$(SolutionDir)engine\include\graphics;$(SolutionDir)engine\include\imgui;$(SolutionDir)engine\include\model;$(SolutionDir)engine\include\animation;$(SolutionDir)engine\include\sound;$(SolutionDir)engine\include\sprite;$(SolutionDir)engine\include\texture;$(SolutionDir)engine\externals;$(SolutionDir)engine\externals\assimp\include;$(SolutionDir)engine\externals\assimp\include\assimp;$(SolutionDir)engine\externals\DirectX-Headers;$(SolutionDir)engine\externals\DirectXTex;$(SolutionDir)engine\externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -76,7 +76,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <TreatWarningAsError>false</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(SolutionDir)engine\include\scene;$(SolutionDir)engine\include\particle;$(SolutionDir)engine\include\collision;$(SolutionDir)engine\include\input;$(SolutionDir)engine\include\camera;$(SolutionDir)engine\include\core;$(SolutionDir)engine\include\graphics;$(SolutionDir)engine\include\imgui;$(SolutionDir)engine\include\model;$(SolutionDir)engine\include\animation;$(SolutionDir)engine\include\sound;$(SolutionDir)engine\include\sprite;$(SolutionDir)engine\include\texture;$(SolutionDir)externals;$(SolutionDir)externals\assimp\include;$(SolutionDir)externals\assimp\include\assimp;$(SolutionDir)externals\DirectX-Headers;$(SolutionDir)externals\DirectXTex;$(SolutionDir)externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)engine\include\scene;$(SolutionDir)engine\include\particle;$(SolutionDir)engine\include\collision;$(SolutionDir)engine\include\input;$(SolutionDir)engine\include\camera;$(SolutionDir)engine\include\core;$(SolutionDir)engine\include\graphics;$(SolutionDir)engine\include\imgui;$(SolutionDir)engine\include\model;$(SolutionDir)engine\include\animation;$(SolutionDir)engine\include\sound;$(SolutionDir)engine\include\sprite;$(SolutionDir)engine\include\texture;$(SolutionDir)engine\externals;$(SolutionDir)engine\externals\assimp\include;$(SolutionDir)engine\externals\assimp\include\assimp;$(SolutionDir)engine\externals\DirectX-Headers;$(SolutionDir)engine\externals\DirectXTex;$(SolutionDir)engine\externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -165,85 +165,85 @@
     <ClInclude Include="$(SolutionDir)engine\include\animation\SkeletonPoseBuilder.h" />
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="$(SolutionDir)resources\shaders\model\ModelPS.hlsl">
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\model\ModelPS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\particle\GPUParticlePS.hlsl">
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\particle\GPUParticlePS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\particle\GPUParticleVS.hlsl">
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\particle\GPUParticleVS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\particle\GPUParticleUpdateCS.hlsl">
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\particle\GPUParticleUpdateCS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\debug\SkeletonDebugPS.hlsl">
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\debug\SkeletonDebugPS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\model\ModelVS.hlsl">
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\model\ModelVS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\model\SkinningCS.hlsl">
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\model\SkinningCS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\debug\SkeletonDebugVS.hlsl">
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\debug\SkeletonDebugVS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\sprite\SpritePS.hlsl">
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\sprite\SpritePS.hlsl">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\sprite\SpriteVS.hlsl">
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\sprite\SpriteVS.hlsl">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\skybox\SkyboxPS.hlsl">
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\skybox\SkyboxPS.hlsl">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
-    <FxCompile Include="$(SolutionDir)resources\shaders\skybox\SkyboxVS.hlsl">
+    <FxCompile Include="$(SolutionDir)engine\resources\shaders\skybox\SkyboxVS.hlsl">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="$(SolutionDir)resources\shaders\model\Model.hlsli">
+    <None Include="$(SolutionDir)engine\resources\shaders\model\Model.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
-    <None Include="$(SolutionDir)resources\shaders\particle\GPUParticle.hlsli">
+    <None Include="$(SolutionDir)engine\resources\shaders\particle\GPUParticle.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
-    <None Include="$(SolutionDir)resources\shaders\sprite\Sprite.hlsli">
+    <None Include="$(SolutionDir)engine\resources\shaders\sprite\Sprite.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
-    <None Include="$(SolutionDir)resources\shaders\skybox\Skybox.hlsli">
+    <None Include="$(SolutionDir)engine\resources\shaders\skybox\Skybox.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>

@@ -159,9 +159,9 @@ void SpriteRenderer::CreateRootSignature() {
 }
 
 void SpriteRenderer::CreatePipelineState() {
-    auto vs = ShaderCompiler::Compile(L"resources/shaders/sprite/SpriteVS.hlsl",
+    auto vs = ShaderCompiler::Compile(L"engine/resources/shaders/sprite/SpriteVS.hlsl",
                                       "main", "vs_5_0");
-    auto ps = ShaderCompiler::Compile(L"resources/shaders/sprite/SpritePS.hlsl",
+    auto ps = ShaderCompiler::Compile(L"engine/resources/shaders/sprite/SpritePS.hlsl",
                                       "main", "ps_5_0");
 
     D3D12_INPUT_ELEMENT_DESC layout[] = {

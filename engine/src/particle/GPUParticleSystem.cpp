@@ -210,7 +210,7 @@ void GPUParticleSystem::CreatePipelineStates() {
     auto *device = dxCommon_->GetDevice();
 
     auto cs = ShaderCompiler::Compile(
-        L"resources/shaders/particle/GPUParticleUpdateCS.hlsl", "main",
+        L"engine/resources/shaders/particle/GPUParticleUpdateCS.hlsl", "main",
         "cs_5_0");
     D3D12_COMPUTE_PIPELINE_STATE_DESC computePso{};
     computePso.pRootSignature = updateRootSignature_.Get();
@@ -220,9 +220,9 @@ void GPUParticleSystem::CreatePipelineStates() {
                   "CreateComputePipelineState(GPUParticleUpdate) failed");
 
     auto vs = ShaderCompiler::Compile(
-        L"resources/shaders/particle/GPUParticleVS.hlsl", "main", "vs_5_0");
+        L"engine/resources/shaders/particle/GPUParticleVS.hlsl", "main", "vs_5_0");
     auto ps = ShaderCompiler::Compile(
-        L"resources/shaders/particle/GPUParticlePS.hlsl", "main", "ps_5_0");
+        L"engine/resources/shaders/particle/GPUParticlePS.hlsl", "main", "ps_5_0");
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC drawPso{};
     drawPso.pRootSignature = drawRootSignature_.Get();

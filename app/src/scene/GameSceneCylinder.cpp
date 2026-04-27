@@ -196,7 +196,7 @@ void GameSceneCylinder::InitializeSneakWalkTest() {
         ApplySneakWalkMaterialParams();
     }
 
-    const std::filesystem::path envPath = L"resources/rostock_laage_airport_4k.dds";
+    const std::filesystem::path envPath = L"app/resources/rostock_laage_airport_4k.dds";
     if (std::filesystem::exists(envPath)) {
         environmentTextureId_ = ctx_->texture->Load(envPath.wstring());
         hasEnvironmentTexture_ = true;

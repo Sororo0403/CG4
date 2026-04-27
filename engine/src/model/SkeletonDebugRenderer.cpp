@@ -101,9 +101,9 @@ void SkeletonDebugRenderer::CreateRootSignature() {
 void SkeletonDebugRenderer::CreatePipelineState() {
     auto *device = dxCommon_->GetDevice();
     auto vs = ShaderCompiler::Compile(
-        L"resources/shaders/debug/SkeletonDebugVS.hlsl", "main", "vs_5_0");
+        L"engine/resources/shaders/debug/SkeletonDebugVS.hlsl", "main", "vs_5_0");
     auto ps = ShaderCompiler::Compile(
-        L"resources/shaders/debug/SkeletonDebugPS.hlsl", "main", "ps_5_0");
+        L"engine/resources/shaders/debug/SkeletonDebugPS.hlsl", "main", "ps_5_0");
 
     D3D12_INPUT_ELEMENT_DESC layout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
