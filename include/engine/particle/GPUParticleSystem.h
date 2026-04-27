@@ -48,7 +48,8 @@ class GPUParticleSystem {
         DirectX::XMFLOAT4 color{1.0f, 1.0f, 1.0f, 1.0f};
         DirectX::XMFLOAT2 scale{0.1f, 0.1f};
         float seed = 0.0f;
-        float padding = 0.0f;
+        uint32_t isActive = 0;
+        DirectX::XMFLOAT3 padding{};
     };
 
     struct UpdateConstantBufferData {
@@ -74,7 +75,7 @@ class GPUParticleSystem {
     void CreateRootSignatures();
     void CreatePipelineStates();
     void CreateParticleBuffer(const std::vector<ParticleForGPU> &particles);
-    void CreateCounterBuffer();
+    void CreateFreeListBuffers();
     void CreateConstantBuffers();
 
     DirectXCommon *dxCommon_ = nullptr;
@@ -98,10 +99,15 @@ class GPUParticleSystem {
     D3D12_GPU_DESCRIPTOR_HANDLE particleUavGpuHandle_{};
     D3D12_CPU_DESCRIPTOR_HANDLE particleUavCpuHandle_{};
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> emitCounterResource_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> emitCounterResetResource_;
-    D3D12_GPU_DESCRIPTOR_HANDLE emitCounterUavGpuHandle_{};
-    D3D12_CPU_DESCRIPTOR_HANDLE emitCounterUavCpuHandle_{};
+    Microsoft::WRL::ComPtr<ID3D12Resource> freeListResource_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> freeListUploadResource_;
+    D3D12_GPU_DESCRIPTOR_HANDLE freeListUavGpuHandle_{};
+    D3D12_CPU_DESCRIPTOR_HANDLE freeListUavCpuHandle_{};
+
+    Microsoft::WRL::ComPtr<ID3D12Resource> freeListIndexResource_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> freeListIndexUploadResource_;
+    D3D12_GPU_DESCRIPTOR_HANDLE freeListIndexUavGpuHandle_{};
+    D3D12_CPU_DESCRIPTOR_HANDLE freeListIndexUavCpuHandle_{};
 
     Microsoft::WRL::ComPtr<ID3D12Resource> updateConstantBuffer_;
     Microsoft::WRL::ComPtr<ID3D12Resource> emitterConstantBuffer_;

@@ -58,7 +58,14 @@ void DirectXCommon::EndFrame() {
     ID3D12CommandList *lists[] = {commandList_.Get()};
     commandQueue_->ExecuteCommandLists(1, lists);
 
-    ThrowIfFailed(swapChain_->Present(1, 0), "swapChain_->Present failed");
+    HRESULT presentResult = swapChain_->Present(1, 0);
+    if (FAILED(presentResult)) {
+        HRESULT removedReason = device_->GetDeviceRemovedReason();
+        if (FAILED(removedReason)) {
+            ThrowIfFailed(removedReason, "D3D12 device removed");
+        }
+        ThrowIfFailed(presentResult, "swapChain_->Present failed");
+    }
 
     fenceValue_++;
     ThrowIfFailed(commandQueue_->Signal(fence_.Get(), fenceValue_),

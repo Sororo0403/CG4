@@ -16,7 +16,8 @@ cbuffer EmitterParams : register(b1)
 };
 
 RWStructuredBuffer<Particle> gParticles : register(u0);
-RWStructuredBuffer<uint> gEmitCounter : register(u1);
+RWStructuredBuffer<uint> gFreeList : register(u1);
+RWStructuredBuffer<int> gFreeListIndex : register(u2);
 
 struct RandomGenerator
 {
@@ -60,6 +61,23 @@ void Respawn(uint index, inout Particle particle)
     float scale = 0.045f + r0 * 0.095f;
     particle.scale = float2(scale, scale);
     particle.seed += 19.19f + time.x;
+    particle.isActive = 1;
+}
+
+bool TryPopFreeList(out uint particleIndex)
+{
+    particleIndex = 0;
+
+    int freeListIndex = 0;
+    InterlockedAdd(gFreeListIndex[0], -1, freeListIndex);
+    if (freeListIndex <= 0)
+    {
+        InterlockedAdd(gFreeListIndex[0], 1);
+        return false;
+    }
+
+    particleIndex = gFreeList[freeListIndex - 1];
+    return true;
 }
 
 [numthreads(256, 1, 1)]
@@ -72,11 +90,11 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         return;
     }
 
-    float deltaTime = time.y;
     Particle particle = gParticles[index];
 
-    if (particle.currentTime < particle.lifeTime)
+    if (particle.isActive != 0)
     {
+        float deltaTime = time.y;
         particle.currentTime += deltaTime;
         float ageRate = saturate(particle.currentTime / max(particle.lifeTime, 0.001f));
         float wave = sin(time.x * 2.0f + particle.seed);
@@ -86,22 +104,33 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         particle.velocity += (wind + gravity) * deltaTime;
         particle.translate += particle.velocity * deltaTime;
         particle.color.a = saturate(1.0f - ageRate) * 0.75f;
-    }
 
-    if (particle.currentTime >= particle.lifeTime)
-    {
-        particle.color.a = 0.0f;
-
-        if (emitterEmit != 0)
+        if (particle.currentTime >= particle.lifeTime)
         {
-            uint particleIndex = 0;
-            InterlockedAdd(gEmitCounter[0], 1, particleIndex);
-            if (particleIndex < emitterCount)
+            particle.isActive = 0;
+            particle.color.a = 0.0f;
+            gParticles[index] = particle;
+
+            int freeListIndex = 0;
+            InterlockedAdd(gFreeListIndex[0], 1, freeListIndex);
+            if (freeListIndex < (int) particleCount)
             {
-                Respawn(index, particle);
+                gFreeList[freeListIndex] = index;
             }
+        } else
+        {
+            gParticles[index] = particle;
         }
     }
 
-    gParticles[index] = particle;
+    if (emitterEmit != 0 && index < emitterCount)
+    {
+        uint particleIndex = 0;
+        if (TryPopFreeList(particleIndex))
+        {
+            Particle respawnParticle = gParticles[particleIndex];
+            Respawn(particleIndex, respawnParticle);
+            gParticles[particleIndex] = respawnParticle;
+        }
+    }
 }

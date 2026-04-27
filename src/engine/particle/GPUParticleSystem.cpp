@@ -43,12 +43,13 @@ void GPUParticleSystem::Initialize(DirectXCommon *dxCommon,
         particle.color = {1.0f, 1.0f, 1.0f, 0.0f};
         particle.scale = {0.0f, 0.0f};
         particle.seed = dist01(randomEngine) * 10000.0f;
+        particle.isActive = 0;
     }
 
     CreateRootSignatures();
     CreatePipelineStates();
     CreateParticleBuffer(particles);
-    CreateCounterBuffer();
+    CreateFreeListBuffers();
     CreateConstantBuffers();
 }
 
@@ -86,17 +87,6 @@ void GPUParticleSystem::Draw(const Camera &camera) {
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     cmd->ResourceBarrier(1, &toUav);
 
-    auto counterToCopyDest = CD3DX12_RESOURCE_BARRIER::Transition(
-        emitCounterResource_.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-        D3D12_RESOURCE_STATE_COPY_DEST);
-    cmd->ResourceBarrier(1, &counterToCopyDest);
-    cmd->CopyBufferRegion(emitCounterResource_.Get(), 0,
-                          emitCounterResetResource_.Get(), 0, sizeof(uint32_t));
-    auto counterToUav = CD3DX12_RESOURCE_BARRIER::Transition(
-        emitCounterResource_.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-    cmd->ResourceBarrier(1, &counterToUav);
-
     cmd->SetComputeRootSignature(updateRootSignature_.Get());
     cmd->SetPipelineState(updatePSO_.Get());
     cmd->SetComputeRootConstantBufferView(
@@ -104,7 +94,8 @@ void GPUParticleSystem::Draw(const Camera &camera) {
     cmd->SetComputeRootConstantBufferView(
         1, emitterConstantBuffer_->GetGPUVirtualAddress());
     cmd->SetComputeRootDescriptorTable(2, particleUavGpuHandle_);
-    cmd->SetComputeRootDescriptorTable(3, emitCounterUavGpuHandle_);
+    cmd->SetComputeRootDescriptorTable(3, freeListUavGpuHandle_);
+    cmd->SetComputeRootDescriptorTable(4, freeListIndexUavGpuHandle_);
     cmd->Dispatch((maxParticles_ + 255u) / 256u, 1, 1);
 
     auto uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(particleResource_.Get());
@@ -144,7 +135,7 @@ void GPUParticleSystem::Draw(const Camera &camera) {
 
 void GPUParticleSystem::CreateRootSignatures() {
     {
-        CD3DX12_ROOT_PARAMETER params[4];
+        CD3DX12_ROOT_PARAMETER params[5];
         params[0].InitAsConstantBufferView(0);
         params[1].InitAsConstantBufferView(1);
 
@@ -152,9 +143,13 @@ void GPUParticleSystem::CreateRootSignatures() {
         particleRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
         params[2].InitAsDescriptorTable(1, &particleRange);
 
-        CD3DX12_DESCRIPTOR_RANGE counterRange;
-        counterRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
-        params[3].InitAsDescriptorTable(1, &counterRange);
+        CD3DX12_DESCRIPTOR_RANGE freeListRange;
+        freeListRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
+        params[3].InitAsDescriptorTable(1, &freeListRange);
+
+        CD3DX12_DESCRIPTOR_RANGE freeListIndexRange;
+        freeListIndexRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2);
+        params[4].InitAsDescriptorTable(1, &freeListIndexRange);
 
         CD3DX12_ROOT_SIGNATURE_DESC desc;
         desc.Init(_countof(params), params, 0, nullptr);
@@ -328,47 +323,109 @@ void GPUParticleSystem::CreateParticleBuffer(
                                       &uavDesc, particleUavCpuHandle_);
 }
 
-void GPUParticleSystem::CreateCounterBuffer() {
+void GPUParticleSystem::CreateFreeListBuffers() {
     auto *device = dxCommon_->GetDevice();
-    constexpr UINT bufferSize = sizeof(uint32_t);
+    const UINT freeListBufferSize = sizeof(uint32_t) * maxParticles_;
 
     CD3DX12_HEAP_PROPERTIES defaultHeap(D3D12_HEAP_TYPE_DEFAULT);
-    auto counterDesc = CD3DX12_RESOURCE_DESC::Buffer(
-        bufferSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    auto freeListDesc = CD3DX12_RESOURCE_DESC::Buffer(
+        freeListBufferSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
     ThrowIfFailed(device->CreateCommittedResource(
-                      &defaultHeap, D3D12_HEAP_FLAG_NONE, &counterDesc,
-                      D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
-                      IID_PPV_ARGS(&emitCounterResource_)),
-                  "CreateCommittedResource(GPUParticleEmitCounter) failed");
+                      &defaultHeap, D3D12_HEAP_FLAG_NONE, &freeListDesc,
+                      D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                      IID_PPV_ARGS(&freeListResource_)),
+                  "CreateCommittedResource(GPUParticleFreeList) failed");
 
     CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
-    auto resetDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
+    auto freeListUploadDesc = CD3DX12_RESOURCE_DESC::Buffer(freeListBufferSize);
     ThrowIfFailed(device->CreateCommittedResource(
-                      &uploadHeap, D3D12_HEAP_FLAG_NONE, &resetDesc,
+                      &uploadHeap, D3D12_HEAP_FLAG_NONE, &freeListUploadDesc,
                       D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                      IID_PPV_ARGS(&emitCounterResetResource_)),
-                  "CreateCommittedResource(GPUParticleEmitCounterReset) failed");
+                      IID_PPV_ARGS(&freeListUploadResource_)),
+                  "CreateCommittedResource(GPUParticleFreeListUpload) failed");
 
-    uint32_t *mapped = nullptr;
-    ThrowIfFailed(emitCounterResetResource_->Map(
-                      0, nullptr, reinterpret_cast<void **>(&mapped)),
-                  "GPUParticleEmitCounterReset Map failed");
-    *mapped = 0;
-    emitCounterResetResource_->Unmap(0, nullptr);
+    std::vector<uint32_t> freeList(maxParticles_);
+    for (uint32_t index = 0; index < maxParticles_; ++index) {
+        freeList[index] = index;
+    }
+
+    uint8_t *mappedFreeList = nullptr;
+    ThrowIfFailed(freeListUploadResource_->Map(
+                      0, nullptr, reinterpret_cast<void **>(&mappedFreeList)),
+                  "GPUParticleFreeListUpload Map failed");
+    std::memcpy(mappedFreeList, freeList.data(), freeListBufferSize);
+    freeListUploadResource_->Unmap(0, nullptr);
+
+    dxCommon_->GetCommandList()->CopyBufferRegion(
+        freeListResource_.Get(), 0, freeListUploadResource_.Get(), 0,
+        freeListBufferSize);
+    auto freeListToUav = CD3DX12_RESOURCE_BARRIER::Transition(
+        freeListResource_.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    dxCommon_->GetCommandList()->ResourceBarrier(1, &freeListToUav);
 
     const UINT uavIndex = srvManager_->Allocate();
-    emitCounterUavCpuHandle_ = srvManager_->GetCpuHandle(uavIndex);
-    emitCounterUavGpuHandle_ = srvManager_->GetGpuHandle(uavIndex);
+    freeListUavCpuHandle_ = srvManager_->GetCpuHandle(uavIndex);
+    freeListUavGpuHandle_ = srvManager_->GetGpuHandle(uavIndex);
 
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
     uavDesc.Format = DXGI_FORMAT_UNKNOWN;
     uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
     uavDesc.Buffer.FirstElement = 0;
-    uavDesc.Buffer.NumElements = 1;
+    uavDesc.Buffer.NumElements = maxParticles_;
     uavDesc.Buffer.StructureByteStride = sizeof(uint32_t);
     uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
-    device->CreateUnorderedAccessView(emitCounterResource_.Get(), nullptr,
-                                      &uavDesc, emitCounterUavCpuHandle_);
+    device->CreateUnorderedAccessView(freeListResource_.Get(), nullptr,
+                                      &uavDesc, freeListUavCpuHandle_);
+
+    constexpr UINT freeListIndexBufferSize = sizeof(int32_t);
+    auto freeListIndexDesc = CD3DX12_RESOURCE_DESC::Buffer(
+        freeListIndexBufferSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    ThrowIfFailed(device->CreateCommittedResource(
+                      &defaultHeap, D3D12_HEAP_FLAG_NONE, &freeListIndexDesc,
+                      D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                      IID_PPV_ARGS(&freeListIndexResource_)),
+                  "CreateCommittedResource(GPUParticleFreeListIndex) failed");
+
+    auto freeListIndexUploadDesc =
+        CD3DX12_RESOURCE_DESC::Buffer(freeListIndexBufferSize);
+    ThrowIfFailed(
+        device->CreateCommittedResource(
+            &uploadHeap, D3D12_HEAP_FLAG_NONE, &freeListIndexUploadDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+            IID_PPV_ARGS(&freeListIndexUploadResource_)),
+        "CreateCommittedResource(GPUParticleFreeListIndexUpload) failed");
+
+    int32_t *mappedFreeListIndex = nullptr;
+    ThrowIfFailed(freeListIndexUploadResource_->Map(
+                      0, nullptr,
+                      reinterpret_cast<void **>(&mappedFreeListIndex)),
+                  "GPUParticleFreeListIndexUpload Map failed");
+    *mappedFreeListIndex = static_cast<int32_t>(maxParticles_);
+    freeListIndexUploadResource_->Unmap(0, nullptr);
+
+    dxCommon_->GetCommandList()->CopyBufferRegion(
+        freeListIndexResource_.Get(), 0, freeListIndexUploadResource_.Get(), 0,
+        freeListIndexBufferSize);
+    auto freeListIndexToUav = CD3DX12_RESOURCE_BARRIER::Transition(
+        freeListIndexResource_.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    dxCommon_->GetCommandList()->ResourceBarrier(1, &freeListIndexToUav);
+
+    const UINT indexUavIndex = srvManager_->Allocate();
+    freeListIndexUavCpuHandle_ = srvManager_->GetCpuHandle(indexUavIndex);
+    freeListIndexUavGpuHandle_ = srvManager_->GetGpuHandle(indexUavIndex);
+
+    D3D12_UNORDERED_ACCESS_VIEW_DESC indexUavDesc{};
+    indexUavDesc.Format = DXGI_FORMAT_UNKNOWN;
+    indexUavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+    indexUavDesc.Buffer.FirstElement = 0;
+    indexUavDesc.Buffer.NumElements = 1;
+    indexUavDesc.Buffer.StructureByteStride = sizeof(int32_t);
+    indexUavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+    device->CreateUnorderedAccessView(freeListIndexResource_.Get(), nullptr,
+                                      &indexUavDesc,
+                                      freeListIndexUavCpuHandle_);
 }
 
 void GPUParticleSystem::CreateConstantBuffers() {

@@ -10,7 +10,8 @@ struct Particle
     float4 color;
     float2 scale;
     float seed;
-    float padding;
+    uint isActive;
+    float3 padding;
 };
 
 struct ParticleVSOutput
