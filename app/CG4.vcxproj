@@ -128,7 +128,6 @@ if exist "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" (
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(SolutionDir)app\include\scene\GameScene.h" />
-    <ClInclude Include="$(SolutionDir)app\include\scene\AssetPaths.h" />
   </ItemGroup>
   <ItemGroup>
   </ItemGroup>

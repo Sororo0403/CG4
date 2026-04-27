@@ -1,11 +1,6 @@
 #pragma once
 #include "BaseScene.h"
-#include "DebugCamera.h"
-#include "GPUParticleSystem.h"
 
-/// <summary>
-/// 絵本風シルエットパーティクルの評価用ゲームシーン
-/// </summary>
 class GameScene : public BaseScene {
   public:
     /// <summary>
@@ -23,16 +18,4 @@ class GameScene : public BaseScene {
     /// ゲームシーンを描画する
     /// </summary>
     void Draw() override;
-
-  private:
-    /// <summary>
-    /// GPUベースの紙シルエットパーティクルを初期化する
-    /// </summary>
-    void InitializeParticleEffect();
-
-  private:
-    DebugCamera camera_;
-
-    GPUParticleSystem gpuParticleSystem_;
-    bool hasGpuParticleSystem_ = false;
 };
