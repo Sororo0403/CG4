@@ -139,13 +139,25 @@ class ModelRenderer {
     /// </summary>
     void CreateRootSignature();
     /// <summary>
+    /// ComputeShader用ルートシグネチャを生成する
+    /// </summary>
+    void CreateSkinningRootSignature();
+    /// <summary>
     /// パイプラインステートを生成する
     /// </summary>
     void CreatePipelineState();
     /// <summary>
+    /// ComputeShader用パイプラインステートを生成する
+    /// </summary>
+    void CreateSkinningPipelineState();
+    /// <summary>
     /// 定数バッファを生成する
     /// </summary>
     void CreateConstantBuffer();
+    /// <summary>
+    /// ComputeShaderでスキニング済み頂点を書き込む
+    /// </summary>
+    void DispatchSkinning(const ModelSubMesh &subMesh);
 
   private:
     static constexpr uint32_t kMaxDraws = 4096;
@@ -157,10 +169,12 @@ class ModelRenderer {
     MaterialManager *materialManager_ = nullptr;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> skinningRootSignature_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> opaquePSO_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> transparentPSO_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> additivePSO_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> additiveNoCullPSO_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> skinningPSO_;
     Microsoft::WRL::ComPtr<ID3D12Resource> objectConstBuffer_;
     Microsoft::WRL::ComPtr<ID3D12Resource> sceneConstBuffer_;
 

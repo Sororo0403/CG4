@@ -7,6 +7,7 @@
 #include "ShaderCompiler.h"
 #include "SrvManager.h"
 #include "TextureManager.h"
+#include "Vertex.h"
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -70,7 +71,9 @@ void ModelRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
     materialManager_ = materialManager;
 
     CreateRootSignature();
+    CreateSkinningRootSignature();
     CreatePipelineState();
+    CreateSkinningPipelineState();
     CreateConstantBuffer();
 }
 
@@ -161,6 +164,8 @@ void ModelRenderer::Draw(const Model &model, const Transform &transform,
             sceneConstBuffer_->GetGPUVirtualAddress() +
             sceneCbStride_ * drawIndex_;
 
+        DispatchSkinning(subMesh);
+
         const Material &material =
             materialManager_->GetMaterial(subMesh.materialId);
 
@@ -177,8 +182,10 @@ void ModelRenderer::Draw(const Model &model, const Transform &transform,
         }
 
         const Mesh &mesh = meshManager_->GetMesh(subMesh.meshId);
-        std::array<D3D12_VERTEX_BUFFER_VIEW, 2> vertexBufferViews = {
-            mesh.vbView, subMesh.skinCluster.influenceBufferView};
+        const D3D12_VERTEX_BUFFER_VIEW vertexBufferView =
+            subMesh.skinCluster.skinnedVertexResource
+                ? subMesh.skinCluster.skinnedVertexBufferView
+                : mesh.vbView;
 
         cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
         cmd->SetGraphicsRootConstantBufferView(1, sceneCbAddr);
@@ -200,8 +207,7 @@ void ModelRenderer::Draw(const Model &model, const Transform &transform,
                 5, textureManager_->GetGpuHandle(boundEnvironmentTextureId));
         }
 
-        cmd->IASetVertexBuffers(0, static_cast<UINT>(vertexBufferViews.size()),
-                                vertexBufferViews.data());
+        cmd->IASetVertexBuffers(0, 1, &vertexBufferView);
         cmd->IASetIndexBuffer(&mesh.ibView);
         cmd->DrawIndexedInstanced(mesh.indexCount, 1, 0, 0, 0);
 
@@ -233,6 +239,7 @@ void ModelRenderer::CreateSkinClusters(Model &model) {
             jointCount, StoreMatrix(XMMatrixIdentity()));
 
         if (subMesh.vertexCount > 0) {
+            const Mesh &mesh = meshManager_->GetMesh(subMesh.meshId);
             const UINT influenceBufferSize =
                 static_cast<UINT>(sizeof(VertexInfluence) * subMesh.vertexCount);
 
@@ -255,11 +262,80 @@ void ModelRenderer::CreateSkinClusters(Model &model) {
             std::memset(skinCluster.mappedInfluence, 0,
                         sizeof(VertexInfluence) * skinCluster.influenceCount);
 
-            skinCluster.influenceBufferView.BufferLocation =
-                skinCluster.influenceResource->GetGPUVirtualAddress();
-            skinCluster.influenceBufferView.SizeInBytes = influenceBufferSize;
-            skinCluster.influenceBufferView.StrideInBytes =
-                sizeof(VertexInfluence);
+            const UINT inputVertexSrvIndex = srvManager_->Allocate();
+            skinCluster.inputVertexSrvCpuHandle =
+                srvManager_->GetCpuHandle(inputVertexSrvIndex);
+            skinCluster.inputVertexSrvGpuHandle =
+                srvManager_->GetGpuHandle(inputVertexSrvIndex);
+
+            D3D12_SHADER_RESOURCE_VIEW_DESC vertexSrvDesc{};
+            vertexSrvDesc.Format = DXGI_FORMAT_UNKNOWN;
+            vertexSrvDesc.Shader4ComponentMapping =
+                D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            vertexSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+            vertexSrvDesc.Buffer.FirstElement = 0;
+            vertexSrvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+            vertexSrvDesc.Buffer.NumElements = subMesh.vertexCount;
+            vertexSrvDesc.Buffer.StructureByteStride = sizeof(Vertex);
+            device->CreateShaderResourceView(mesh.vertexBuffer.Get(),
+                                             &vertexSrvDesc,
+                                             skinCluster.inputVertexSrvCpuHandle);
+
+            const UINT influenceSrvIndex = srvManager_->Allocate();
+            skinCluster.influenceSrvCpuHandle =
+                srvManager_->GetCpuHandle(influenceSrvIndex);
+            skinCluster.influenceSrvGpuHandle =
+                srvManager_->GetGpuHandle(influenceSrvIndex);
+
+            D3D12_SHADER_RESOURCE_VIEW_DESC influenceSrvDesc{};
+            influenceSrvDesc.Format = DXGI_FORMAT_UNKNOWN;
+            influenceSrvDesc.Shader4ComponentMapping =
+                D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            influenceSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+            influenceSrvDesc.Buffer.FirstElement = 0;
+            influenceSrvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+            influenceSrvDesc.Buffer.NumElements = subMesh.vertexCount;
+            influenceSrvDesc.Buffer.StructureByteStride = sizeof(VertexInfluence);
+            device->CreateShaderResourceView(
+                skinCluster.influenceResource.Get(), &influenceSrvDesc,
+                skinCluster.influenceSrvCpuHandle);
+
+            const UINT skinnedVertexBufferSize =
+                static_cast<UINT>(sizeof(Vertex) * subMesh.vertexCount);
+            CD3DX12_HEAP_PROPERTIES defaultHeap(D3D12_HEAP_TYPE_DEFAULT);
+            auto skinnedVertexDesc = CD3DX12_RESOURCE_DESC::Buffer(
+                skinnedVertexBufferSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+
+            ThrowIfFailed(device->CreateCommittedResource(
+                              &defaultHeap, D3D12_HEAP_FLAG_NONE,
+                              &skinnedVertexDesc,
+                              D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
+                              nullptr,
+                              IID_PPV_ARGS(&skinCluster.skinnedVertexResource)),
+                          "CreateCommittedResource(SkinnedVertexBuffer) failed");
+
+            skinCluster.skinnedVertexBufferView.BufferLocation =
+                skinCluster.skinnedVertexResource->GetGPUVirtualAddress();
+            skinCluster.skinnedVertexBufferView.SizeInBytes =
+                skinnedVertexBufferSize;
+            skinCluster.skinnedVertexBufferView.StrideInBytes = sizeof(Vertex);
+
+            const UINT skinnedVertexUavIndex = srvManager_->Allocate();
+            skinCluster.skinnedVertexUavCpuHandle =
+                srvManager_->GetCpuHandle(skinnedVertexUavIndex);
+            skinCluster.skinnedVertexUavGpuHandle =
+                srvManager_->GetGpuHandle(skinnedVertexUavIndex);
+
+            D3D12_UNORDERED_ACCESS_VIEW_DESC skinnedVertexUavDesc{};
+            skinnedVertexUavDesc.Format = DXGI_FORMAT_UNKNOWN;
+            skinnedVertexUavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+            skinnedVertexUavDesc.Buffer.FirstElement = 0;
+            skinnedVertexUavDesc.Buffer.NumElements = subMesh.vertexCount;
+            skinnedVertexUavDesc.Buffer.StructureByteStride = sizeof(Vertex);
+            skinnedVertexUavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+            device->CreateUnorderedAccessView(
+                skinCluster.skinnedVertexResource.Get(), nullptr,
+                &skinnedVertexUavDesc, skinCluster.skinnedVertexUavCpuHandle);
         }
 
         for (const auto &[jointName, jointWeightData] : subMesh.skinClusterData) {
@@ -462,6 +538,42 @@ void ModelRenderer::CreateRootSignature() {
                   "CreateRootSignature failed");
 }
 
+void ModelRenderer::CreateSkinningRootSignature() {
+    CD3DX12_ROOT_PARAMETER params[5];
+
+    params[0].InitAsConstants(1, 0);
+
+    CD3DX12_DESCRIPTOR_RANGE inputVertexRange;
+    inputVertexRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    params[1].InitAsDescriptorTable(1, &inputVertexRange);
+
+    CD3DX12_DESCRIPTOR_RANGE influenceRange;
+    influenceRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+    params[2].InitAsDescriptorTable(1, &influenceRange);
+
+    CD3DX12_DESCRIPTOR_RANGE matrixPaletteRange;
+    matrixPaletteRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
+    params[3].InitAsDescriptorTable(1, &matrixPaletteRange);
+
+    CD3DX12_DESCRIPTOR_RANGE skinnedVertexRange;
+    skinnedVertexRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+    params[4].InitAsDescriptorTable(1, &skinnedVertexRange);
+
+    CD3DX12_ROOT_SIGNATURE_DESC desc;
+    desc.Init(_countof(params), params, 0, nullptr);
+
+    ComPtr<ID3DBlob> blob, error;
+
+    ThrowIfFailed(D3D12SerializeRootSignature(
+                      &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error),
+                  "D3D12SerializeRootSignature(Skinning) failed");
+
+    ThrowIfFailed(dxCommon_->GetDevice()->CreateRootSignature(
+                      0, blob->GetBufferPointer(), blob->GetBufferSize(),
+                      IID_PPV_ARGS(&skinningRootSignature_)),
+                  "CreateRootSignature(Skinning) failed");
+}
+
 void ModelRenderer::CreatePipelineState() {
     auto device = dxCommon_->GetDevice();
 
@@ -478,11 +590,6 @@ void ModelRenderer::CreatePipelineState() {
          D3D12_APPEND_ALIGNED_ELEMENT,
          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"WEIGHT", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"INDEX", 0, DXGI_FORMAT_R32G32B32A32_SINT, 1,
          D3D12_APPEND_ALIGNED_ELEMENT,
          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     };
@@ -560,4 +667,53 @@ void ModelRenderer::CreatePipelineState() {
     ThrowIfFailed(device->CreateGraphicsPipelineState(
                       &pso, IID_PPV_ARGS(&additiveNoCullPSO_)),
                   "CreateGraphicsPipelineState(AdditiveNoCull) failed");
+}
+
+void ModelRenderer::CreateSkinningPipelineState() {
+    auto cs = ShaderCompiler::Compile(L"resources/shaders/model/SkinningCS.hlsl",
+                                      "main", "cs_5_0");
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC pso{};
+    pso.pRootSignature = skinningRootSignature_.Get();
+    pso.CS = {cs->GetBufferPointer(), cs->GetBufferSize()};
+
+    ThrowIfFailed(dxCommon_->GetDevice()->CreateComputePipelineState(
+                      &pso, IID_PPV_ARGS(&skinningPSO_)),
+                  "CreateComputePipelineState(Skinning) failed");
+}
+
+void ModelRenderer::DispatchSkinning(const ModelSubMesh &subMesh) {
+    const SkinCluster &skinCluster = subMesh.skinCluster;
+    if (!skinCluster.skinnedVertexResource || subMesh.vertexCount == 0) {
+        return;
+    }
+
+    auto cmd = dxCommon_->GetCommandList();
+
+    auto toUav = CD3DX12_RESOURCE_BARRIER::Transition(
+        skinCluster.skinnedVertexResource.Get(),
+        D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    cmd->ResourceBarrier(1, &toUav);
+
+    cmd->SetPipelineState(skinningPSO_.Get());
+    cmd->SetComputeRootSignature(skinningRootSignature_.Get());
+    cmd->SetComputeRoot32BitConstant(0, subMesh.vertexCount, 0);
+    cmd->SetComputeRootDescriptorTable(1, skinCluster.inputVertexSrvGpuHandle);
+    cmd->SetComputeRootDescriptorTable(2, skinCluster.influenceSrvGpuHandle);
+    cmd->SetComputeRootDescriptorTable(3, skinCluster.paletteSrvGpuHandle);
+    cmd->SetComputeRootDescriptorTable(4, skinCluster.skinnedVertexUavGpuHandle);
+
+    const UINT threadGroupCount = (subMesh.vertexCount + 1023u) / 1024u;
+    cmd->Dispatch(threadGroupCount, 1, 1);
+
+    auto uavBarrier =
+        CD3DX12_RESOURCE_BARRIER::UAV(skinCluster.skinnedVertexResource.Get());
+    cmd->ResourceBarrier(1, &uavBarrier);
+
+    auto toVertex = CD3DX12_RESOURCE_BARRIER::Transition(
+        skinCluster.skinnedVertexResource.Get(),
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+    cmd->ResourceBarrier(1, &toVertex);
 }

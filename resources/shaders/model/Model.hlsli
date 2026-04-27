@@ -6,8 +6,6 @@ struct ModelVSInput
     float3 pos : POSITION;
     float3 normal : NORMAL;
     float2 uv : TEXCOORD;
-    float4 weight : WEIGHT;
-    int4 index : INDEX;
 };
 
 struct ModelVSOutput

@@ -378,6 +378,9 @@
     <FxCompile Include="resources\shaders\model\ModelVS.hlsl">
       <Filter>resources\shaders\model</Filter>
     </FxCompile>
+    <FxCompile Include="resources\shaders\model\SkinningCS.hlsl">
+      <Filter>resources\shaders\model</Filter>
+    </FxCompile>
     <FxCompile Include="resources\shaders\debug\SkeletonDebugVS.hlsl">
       <Filter>resources\shaders\model</Filter>
     </FxCompile>

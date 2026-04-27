@@ -53,15 +53,23 @@ struct SkinCluster {
     std::vector<DirectX::XMFLOAT4X4> inverseBindPoseMatrices;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> influenceResource;
-    D3D12_VERTEX_BUFFER_VIEW influenceBufferView{};
     VertexInfluence *mappedInfluence = nullptr;
     uint32_t influenceCount = 0;
+    D3D12_CPU_DESCRIPTOR_HANDLE influenceSrvCpuHandle{};
+    D3D12_GPU_DESCRIPTOR_HANDLE influenceSrvGpuHandle{};
 
     Microsoft::WRL::ComPtr<ID3D12Resource> paletteResource;
     WellForGPU *mappedPalette = nullptr;
     uint32_t paletteCount = 0;
     D3D12_CPU_DESCRIPTOR_HANDLE paletteSrvCpuHandle{};
     D3D12_GPU_DESCRIPTOR_HANDLE paletteSrvGpuHandle{};
+
+    Microsoft::WRL::ComPtr<ID3D12Resource> skinnedVertexResource;
+    D3D12_VERTEX_BUFFER_VIEW skinnedVertexBufferView{};
+    D3D12_CPU_DESCRIPTOR_HANDLE inputVertexSrvCpuHandle{};
+    D3D12_GPU_DESCRIPTOR_HANDLE inputVertexSrvGpuHandle{};
+    D3D12_CPU_DESCRIPTOR_HANDLE skinnedVertexUavCpuHandle{};
+    D3D12_GPU_DESCRIPTOR_HANDLE skinnedVertexUavGpuHandle{};
 };
 
 /// <summary>
