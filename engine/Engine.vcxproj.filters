@@ -1,397 +1,400 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="engine\include">
+    <Filter Include="include">
       <UniqueIdentifier>{388d3241-1174-4a44-a817-7a1649db88f7}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\include\sound">
+    <Filter Include="include\sound">
       <UniqueIdentifier>{6f1b98f9-dc62-4ec8-b57d-889938e0e015}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\include\sprite">
+    <Filter Include="include\sprite">
       <UniqueIdentifier>{a2cac4e6-20b8-45a7-931d-0a27e2c5bf6a}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\include\texture">
+    <Filter Include="include\texture">
       <UniqueIdentifier>{5bec7eee-5ef1-42c8-a009-c6f9679a6fef}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\include\model">
+    <Filter Include="include\model">
       <UniqueIdentifier>{b8067c30-35e6-468f-9e3d-ef8654614d0c}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\include\imgui">
+    <Filter Include="include\imgui">
       <UniqueIdentifier>{a0f19709-9f78-4c29-b043-257079ce3264}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\include\graphics">
+    <Filter Include="include\graphics">
       <UniqueIdentifier>{cf901ebd-4ec3-4245-abfb-a4f8a060fe78}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\include\core">
+    <Filter Include="include\core">
       <UniqueIdentifier>{426c453d-acbc-4090-be64-3dc3056a4c6d}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\include\camera">
+    <Filter Include="include\camera">
       <UniqueIdentifier>{284ab13d-a94f-4b94-9b8e-269bc028fe26}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\include\input">
+    <Filter Include="include\input">
       <UniqueIdentifier>{b10d450d-043d-4295-9957-4529bf49fa10}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\src">
+    <Filter Include="src">
       <UniqueIdentifier>{eb8052ae-dca4-432c-81b8-8f46968f4727}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\src\camera">
+    <Filter Include="src\camera">
       <UniqueIdentifier>{a4f9e347-c86f-4a9b-96dd-9ff87162614f}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\src\core">
+    <Filter Include="src\core">
       <UniqueIdentifier>{ff8fb54f-cff5-4d87-8fb5-4a32872d78c4}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\src\graphics">
+    <Filter Include="src\graphics">
       <UniqueIdentifier>{97862079-a97b-4220-a22d-7186c388520a}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\src\imgui">
+    <Filter Include="src\imgui">
       <UniqueIdentifier>{9fdd27b8-e9de-4df3-816a-806d9fd09028}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\src\input">
+    <Filter Include="src\input">
       <UniqueIdentifier>{1e0faabc-891a-4635-898a-1eae741bf5fe}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\src\model">
+    <Filter Include="src\model">
       <UniqueIdentifier>{62a940c6-b5eb-4fad-b010-dcbf3f6abdf0}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\src\animation">
+    <Filter Include="src\animation">
       <UniqueIdentifier>{bf0c9f95-c8ca-4c27-9f50-4c9c6e658893}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\src\sound">
+    <Filter Include="src\sound">
       <UniqueIdentifier>{f7e0cb7b-cd6e-4e56-afb1-0955495f3102}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\src\sprite">
+    <Filter Include="src\sprite">
       <UniqueIdentifier>{5917cf8e-f48c-43ef-9dc9-669fe78154d3}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\src\texture">
+    <Filter Include="src\texture">
       <UniqueIdentifier>{9f4dc77b-cf7c-446b-afa4-4f2d3ce1d972}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\include\scene">
+    <Filter Include="include\scene">
       <UniqueIdentifier>{62d41240-753f-4265-9b79-4d64300a266b}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\include\animation">
+    <Filter Include="include\animation">
       <UniqueIdentifier>{8af568ef-ee0e-43fd-b4e0-8abf61d2d433}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\src\scene">
+    <Filter Include="src\scene">
       <UniqueIdentifier>{3b23469a-8248-4dde-9cfe-2e855f1a691f}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\include\particle">
+    <Filter Include="include\particle">
       <UniqueIdentifier>{c2999ce7-771d-4d07-9c9e-fb53f656af97}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\src\particle">
+    <Filter Include="src\particle">
       <UniqueIdentifier>{58a1f206-67c0-4ac7-a3ee-733507e97254}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\src\collision">
+    <Filter Include="src\collision">
       <UniqueIdentifier>{024bd489-5878-4b22-bcf0-02c6b87fc14e}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\include\collision">
+    <Filter Include="include\collision">
       <UniqueIdentifier>{ae2140d3-1036-4cf2-8cc4-63cdbc1d3c3d}</UniqueIdentifier>
     </Filter>
-    <Filter Include="app\resources">
-      <UniqueIdentifier>{5555559b-2eca-4b5d-bf84-335509c634f7}</UniqueIdentifier>
+    <Filter Include="resources">
+      <UniqueIdentifier>{a7d15aa3-a2e6-492d-8656-1d600e7d5081}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\resources\shaders">
+    <Filter Include="resources\shaders">
       <UniqueIdentifier>{55bdf0aa-78de-413b-8dbf-162f854d13ca}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\resources\shaders\model">
+    <Filter Include="resources\shaders\model">
       <UniqueIdentifier>{d1e2f888-21f4-448d-a52c-00081f843af2}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\resources\shaders\sprite">
+    <Filter Include="resources\shaders\sprite">
       <UniqueIdentifier>{a7796bda-e57e-4298-a020-eb38e2c4a4a7}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\resources\shaders\skybox">
+    <Filter Include="resources\shaders\skybox">
       <UniqueIdentifier>{ee5d2c4b-212f-4f11-a82a-224e52ed54c7}</UniqueIdentifier>
     </Filter>
-    <Filter Include="engine\resources\shaders\particle">
+    <Filter Include="resources\shaders\particle">
       <UniqueIdentifier>{1bdc6374-9793-4a4e-9bca-5bb78cb274b8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="resources\shaders\debug">
+      <UniqueIdentifier>{5555559b-2eca-4b5d-bf84-335509c634f7}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(SolutionDir)engine\src\core\WinApp.cpp">
-      <Filter>engine\src\core</Filter>
+      <Filter>src\core</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\graphics\DirectXCommon.cpp">
-      <Filter>engine\src\graphics</Filter>
+      <Filter>src\graphics</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\graphics\SrvManager.cpp">
-      <Filter>engine\src\graphics</Filter>
+      <Filter>src\graphics</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\texture\TextureManager.cpp">
-      <Filter>engine\src\texture</Filter>
+      <Filter>src\texture</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\sprite\SpriteRenderer.cpp">
-      <Filter>engine\src\sprite</Filter>
+      <Filter>src\sprite</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\sprite\SpriteManager.cpp">
-      <Filter>engine\src\sprite</Filter>
+      <Filter>src\sprite</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\model\ModelRenderer.cpp">
-      <Filter>engine\src\model</Filter>
+      <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\model\SkeletonDebugRenderer.cpp">
-      <Filter>engine\src\model</Filter>
+      <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\camera\Camera.cpp">
-      <Filter>engine\src\camera</Filter>
+      <Filter>src\camera</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\model\MeshManager.cpp">
-      <Filter>engine\src\model</Filter>
+      <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\model\ModelManager.cpp">
-      <Filter>engine\src\model</Filter>
+      <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\imgui\ImguiManager.cpp">
-      <Filter>engine\src\imgui</Filter>
+      <Filter>src\imgui</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\sound\SoundManager.cpp">
-      <Filter>engine\src\sound</Filter>
+      <Filter>src\sound</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\input\Input.cpp">
-      <Filter>engine\src\input</Filter>
+      <Filter>src\input</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\scene\SceneManager.cpp">
-      <Filter>engine\src\scene</Filter>
+      <Filter>src\scene</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\particle\RingBurstEmitter.cpp">
-      <Filter>engine\src\particle</Filter>
+      <Filter>src\particle</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\particle\CylinderBurstEmitter.cpp">
-      <Filter>engine\src\particle</Filter>
+      <Filter>src\particle</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\particle\RingParticleSystem.cpp">
-      <Filter>engine\src\particle</Filter>
+      <Filter>src\particle</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\particle\GPUParticleSystem.cpp">
-      <Filter>engine\src\particle</Filter>
+      <Filter>src\particle</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\particle\CylinderParticleSystem.cpp">
-      <Filter>engine\src\particle</Filter>
+      <Filter>src\particle</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\collision\CollisionUtil.cpp">
-      <Filter>engine\src\collision</Filter>
+      <Filter>src\collision</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\animation\Animator.cpp">
-      <Filter>engine\src\animation</Filter>
+      <Filter>src\animation</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\animation\AnimationSampler.cpp">
-      <Filter>engine\src\animation</Filter>
+      <Filter>src\animation</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\animation\AssimpAnimationLoader.cpp">
-      <Filter>engine\src\animation</Filter>
+      <Filter>src\animation</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\model\AssimpLoader.cpp">
-      <Filter>engine\src\model</Filter>
+      <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\model\AssimpMeshLoader.cpp">
-      <Filter>engine\src\model</Filter>
+      <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\model\MaterialManager.cpp">
-      <Filter>engine\src\model</Filter>
+      <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\camera\DebugCamera.cpp">
-      <Filter>engine\src\camera</Filter>
+      <Filter>src\camera</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\graphics\DxUtils.cpp">
-      <Filter>engine\src\core</Filter>
+      <Filter>src\core</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\scene\LevelLoader.cpp">
-      <Filter>engine\src\scene</Filter>
+      <Filter>src\scene</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\model\SkyboxRenderer.cpp">
-      <Filter>engine\src\model</Filter>
+      <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="$(SolutionDir)engine\src\animation\SkeletonPoseBuilder.cpp">
-      <Filter>engine\src\animation</Filter>
+      <Filter>src\animation</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(SolutionDir)engine\include\core\WinApp.h">
-      <Filter>engine\include\core</Filter>
+      <Filter>include\core</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\graphics\DirectXCommon.h">
-      <Filter>engine\include\graphics</Filter>
+      <Filter>include\graphics</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\graphics\DxUtils.h">
-      <Filter>engine\include\graphics</Filter>
+      <Filter>include\graphics</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\graphics\DxHelpers.h">
-      <Filter>engine\include\graphics</Filter>
+      <Filter>include\graphics</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\sprite\Sprite.h">
-      <Filter>engine\include\sprite</Filter>
+      <Filter>include\sprite</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\graphics\ShaderCompiler.h">
-      <Filter>engine\include\graphics</Filter>
+      <Filter>include\graphics</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\graphics\SrvManager.h">
-      <Filter>engine\include\graphics</Filter>
+      <Filter>include\graphics</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\texture\Texture.h">
-      <Filter>engine\include\texture</Filter>
+      <Filter>include\texture</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\texture\TextureManager.h">
-      <Filter>engine\include\texture</Filter>
+      <Filter>include\texture</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\sprite\SpriteRenderer.h">
-      <Filter>engine\include\sprite</Filter>
+      <Filter>include\sprite</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\sprite\SpriteManager.h">
-      <Filter>engine\include\sprite</Filter>
+      <Filter>include\sprite</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\model\ModelRenderer.h">
-      <Filter>engine\include\model</Filter>
+      <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\model\SkeletonDebugRenderer.h">
-      <Filter>engine\include\model</Filter>
+      <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\model\Model.h">
-      <Filter>engine\include\model</Filter>
+      <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\camera\Camera.h">
-      <Filter>engine\include\camera</Filter>
+      <Filter>include\camera</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\model\MeshManager.h">
-      <Filter>engine\include\model</Filter>
+      <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\model\Vertex.h">
-      <Filter>engine\include\model</Filter>
+      <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\model\ModelManager.h">
-      <Filter>engine\include\model</Filter>
+      <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\imgui\ImguiManager.h">
-      <Filter>engine\include\imgui</Filter>
+      <Filter>include\imgui</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\sound\SoundManager.h">
-      <Filter>engine\include\sound</Filter>
+      <Filter>include\sound</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\sound\SoundVoiceCallback.h">
-      <Filter>engine\include\sound</Filter>
+      <Filter>include\sound</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\input\Input.h">
-      <Filter>engine\include\input</Filter>
+      <Filter>include\input</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\scene\BaseScene.h">
-      <Filter>engine\include\scene</Filter>
+      <Filter>include\scene</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\scene\SceneManager.h">
-      <Filter>engine\include\scene</Filter>
+      <Filter>include\scene</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\scene\SceneContext.h">
-      <Filter>engine\include\scene</Filter>
+      <Filter>include\scene</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\model\Transform.h">
-      <Filter>engine\include\model</Filter>
+      <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\particle\RingBurstEmitter.h">
-      <Filter>engine\include\particle</Filter>
+      <Filter>include\particle</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\particle\CylinderBurstEmitter.h">
-      <Filter>engine\include\particle</Filter>
+      <Filter>include\particle</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\particle\RingParticleSystem.h">
-      <Filter>engine\include\particle</Filter>
+      <Filter>include\particle</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\particle\GPUParticleSystem.h">
-      <Filter>engine\include\particle</Filter>
+      <Filter>include\particle</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\particle\CylinderParticleSystem.h">
-      <Filter>engine\include\particle</Filter>
+      <Filter>include\particle</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\collision\CollisionUtil.h">
-      <Filter>engine\include\collision</Filter>
+      <Filter>include\collision</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\collision\AABB.h">
-      <Filter>engine\include\collision</Filter>
+      <Filter>include\collision</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\animation\Animator.h">
-      <Filter>engine\include\animation</Filter>
+      <Filter>include\animation</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\animation\AnimationSampler.h">
-      <Filter>engine\include\animation</Filter>
+      <Filter>include\animation</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\animation\AssimpAnimationLoader.h">
-      <Filter>engine\include\animation</Filter>
+      <Filter>include\animation</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\animation\AnimationTypes.h">
-      <Filter>engine\include\animation</Filter>
+      <Filter>include\animation</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\model\AssimpLoader.h">
-      <Filter>engine\include\model</Filter>
+      <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\model\AssimpMeshLoader.h">
-      <Filter>engine\include\model</Filter>
+      <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\model\Material.h">
-      <Filter>engine\include\model</Filter>
+      <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\model\MaterialManager.h">
-      <Filter>engine\include\model</Filter>
+      <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\collision\OBB.h">
-      <Filter>engine\include\collision</Filter>
+      <Filter>include\collision</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\camera\DebugCamera.h">
-      <Filter>engine\include\camera</Filter>
+      <Filter>include\camera</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\model\SkyboxRenderer.h">
-      <Filter>engine\include\model</Filter>
+      <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\scene\LevelLoader.h">
-      <Filter>engine\include\scene</Filter>
+      <Filter>include\scene</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)engine\include\animation\SkeletonPoseBuilder.h">
-      <Filter>engine\include\animation</Filter>
+      <Filter>include\animation</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="$(SolutionDir)engine\resources\shaders\model\ModelPS.hlsl">
-      <Filter>engine\resources\shaders\model</Filter>
+      <Filter>resources\shaders\model</Filter>
     </FxCompile>
     <FxCompile Include="$(SolutionDir)engine\resources\shaders\debug\SkeletonDebugPS.hlsl">
-      <Filter>engine\resources\shaders\model</Filter>
+      <Filter>resources\shaders\debug</Filter>
     </FxCompile>
     <FxCompile Include="$(SolutionDir)engine\resources\shaders\model\ModelVS.hlsl">
-      <Filter>engine\resources\shaders\model</Filter>
+      <Filter>resources\shaders\model</Filter>
     </FxCompile>
     <FxCompile Include="$(SolutionDir)engine\resources\shaders\model\SkinningCS.hlsl">
-      <Filter>engine\resources\shaders\model</Filter>
+      <Filter>resources\shaders\model</Filter>
     </FxCompile>
     <FxCompile Include="$(SolutionDir)engine\resources\shaders\debug\SkeletonDebugVS.hlsl">
-      <Filter>engine\resources\shaders\model</Filter>
+      <Filter>resources\shaders\debug</Filter>
     </FxCompile>
     <FxCompile Include="$(SolutionDir)engine\resources\shaders\sprite\SpritePS.hlsl">
-      <Filter>engine\resources\shaders\sprite</Filter>
+      <Filter>resources\shaders\sprite</Filter>
     </FxCompile>
     <FxCompile Include="$(SolutionDir)engine\resources\shaders\sprite\SpriteVS.hlsl">
-      <Filter>engine\resources\shaders\sprite</Filter>
+      <Filter>resources\shaders\sprite</Filter>
     </FxCompile>
     <FxCompile Include="$(SolutionDir)engine\resources\shaders\skybox\SkyboxPS.hlsl">
-      <Filter>engine\resources\shaders\skybox</Filter>
+      <Filter>resources\shaders\skybox</Filter>
     </FxCompile>
     <FxCompile Include="$(SolutionDir)engine\resources\shaders\skybox\SkyboxVS.hlsl">
-      <Filter>engine\resources\shaders\skybox</Filter>
+      <Filter>resources\shaders\skybox</Filter>
     </FxCompile>
     <FxCompile Include="$(SolutionDir)engine\resources\shaders\particle\GPUParticlePS.hlsl">
-      <Filter>engine\resources\shaders\particle</Filter>
+      <Filter>resources\shaders\particle</Filter>
     </FxCompile>
     <FxCompile Include="$(SolutionDir)engine\resources\shaders\particle\GPUParticleVS.hlsl">
-      <Filter>engine\resources\shaders\particle</Filter>
+      <Filter>resources\shaders\particle</Filter>
     </FxCompile>
     <FxCompile Include="$(SolutionDir)engine\resources\shaders\particle\GPUParticleUpdateCS.hlsl">
-      <Filter>engine\resources\shaders\particle</Filter>
+      <Filter>resources\shaders\particle</Filter>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="$(SolutionDir)engine\resources\shaders\model\Model.hlsli">
-      <Filter>engine\resources\shaders\model</Filter>
+      <Filter>resources\shaders\model</Filter>
     </None>
     <None Include="$(SolutionDir)engine\resources\shaders\sprite\Sprite.hlsli">
-      <Filter>engine\resources\shaders\sprite</Filter>
+      <Filter>resources\shaders\sprite</Filter>
     </None>
     <None Include="$(SolutionDir)engine\resources\shaders\skybox\Skybox.hlsli">
-      <Filter>engine\resources\shaders\skybox</Filter>
+      <Filter>resources\shaders\skybox</Filter>
     </None>
     <None Include="$(SolutionDir)engine\resources\shaders\particle\GPUParticle.hlsli">
-      <Filter>engine\resources\shaders\particle</Filter>
+      <Filter>resources\shaders\particle</Filter>
     </None>
   </ItemGroup>
 </Project>
