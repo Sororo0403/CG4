@@ -362,7 +362,7 @@ MigrationBackup/
 FodyWeavers.xsd
 
 # imgui
-/imgui.ini
+/app/imgui.ini
 
 # track resources
 !resources/

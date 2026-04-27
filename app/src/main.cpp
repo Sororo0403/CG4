@@ -19,7 +19,7 @@
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     // WinApp初期化
     WinApp winApp;
-    winApp.Initialize(hInstance, nCmdShow, 1280, 720, L"3145_身技一体");
+    winApp.Initialize(hInstance, nCmdShow, 1280, 720, L"CG4");
 
     // クライアント領域の幅と高さ
     int width = winApp.GetWidth();

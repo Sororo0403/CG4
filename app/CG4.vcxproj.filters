@@ -21,21 +21,17 @@
     <ClCompile Include="$(SolutionDir)app\src\scene\GameScene.cpp">
       <Filter>src\scene</Filter>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)app\src\scene\GameSceneCylinder.cpp">
-      <Filter>src\scene</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(SolutionDir)app\include\scene\GameScene.h">
-      <Filter>include\scene</Filter>
-    </ClInclude>
-    <ClInclude Include="$(SolutionDir)app\include\scene\GameSceneCylinder.h">
       <Filter>include\scene</Filter>
     </ClInclude>
     <ClInclude Include="$(SolutionDir)app\include\scene\AssetPaths.h">
       <Filter>include\scene</Filter>
     </ClInclude>
   </ItemGroup>
-  <ItemGroup></ItemGroup>
-  <ItemGroup></ItemGroup>
+  <ItemGroup>
+  </ItemGroup>
+  <ItemGroup>
+  </ItemGroup>
 </Project>

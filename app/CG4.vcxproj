@@ -33,8 +33,10 @@
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-  <ImportGroup Label="ExtensionSettings"></ImportGroup>
-  <ImportGroup Label="Shared"></ImportGroup>
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
@@ -122,15 +124,14 @@ if exist "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" (
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="$(SolutionDir)app\src\scene\GameScene.cpp" />
-    <ClCompile Include="$(SolutionDir)app\src\scene\GameSceneCylinder.cpp" />
     <ClCompile Include="$(SolutionDir)app\src\main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(SolutionDir)app\include\scene\GameScene.h" />
-    <ClInclude Include="$(SolutionDir)app\include\scene\GameSceneCylinder.h" />
     <ClInclude Include="$(SolutionDir)app\include\scene\AssetPaths.h" />
   </ItemGroup>
-  <ItemGroup></ItemGroup>
+  <ItemGroup>
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\engine\Engine.vcxproj">
       <Project>{8d69c2b4-4f39-47f0-9a40-4cb78ec442a1}</Project>
@@ -142,7 +143,9 @@ if exist "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" (
       <Project>{f6ba9c36-46d4-4c55-9c90-d016c833a837}</Project>
     </ProjectReference>
   </ItemGroup>
-  <ItemGroup></ItemGroup>
+  <ItemGroup>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets"></ImportGroup>
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
 </Project>
