@@ -34,7 +34,14 @@ ParticleVSOutput main(uint vertexId : SV_VertexID, uint instanceId : SV_Instance
 {
     Particle particle = gParticles[instanceId];
     float ageRate = saturate(particle.currentTime / max(particle.lifeTime, 0.001f));
-    float2 local = kPositions[vertexId] * particle.scale * lerp(1.25f, 0.55f, ageRate);
+    float pulse = 1.0f + sin(ageRate * 3.1415926f) * 0.16f;
+    float2 local = kPositions[vertexId] * particle.scale * lerp(1.18f, 0.64f, ageRate) * pulse;
+    float roll = sin(particle.seed * 0.13f + particle.currentTime * 5.6f) * 0.95f +
+                 particle.currentTime * 0.55f;
+    float s = sin(roll);
+    float c = cos(roll);
+    local = float2(local.x * c - local.y * s, local.x * s + local.y * c);
+
     float3 worldPosition =
         particle.translate +
         cameraRight.xyz * local.x +
@@ -44,6 +51,7 @@ ParticleVSOutput main(uint vertexId : SV_VertexID, uint instanceId : SV_Instance
     output.position = mul(float4(worldPosition, 1.0f), viewProjection);
     output.uv = kUvs[vertexId];
     output.color = particle.color * tintColor;
-    output.color.a *= smoothstep(0.0f, 0.12f, ageRate) * (1.0f - ageRate);
+    output.color.a *= smoothstep(0.0f, 0.10f, ageRate) * (1.0f - ageRate);
+    output.params = float2(frac(particle.seed * 0.173f), ageRate);
     return output;
 }

@@ -53,6 +53,15 @@ void GPUParticleSystem::Initialize(DirectXCommon *dxCommon,
     CreateConstantBuffers();
 }
 
+void GPUParticleSystem::SetEmission(uint32_t count, float frequency) {
+    emitter_.count = (std::max)(1u, count);
+    emitter_.frequency = (std::max)(0.01f, frequency);
+}
+
+void GPUParticleSystem::SetEmitterRadius(float radius) {
+    emitter_.radius = (std::max)(0.01f, radius);
+}
+
 void GPUParticleSystem::Update(float deltaTime) {
     totalTime_ += deltaTime;
 
@@ -120,7 +129,7 @@ void GPUParticleSystem::Draw(const Camera &camera) {
     XMStoreFloat3(&up, billboard.r[1]);
     mappedDrawCB_->cameraRight = {right.x, right.y, right.z, 0.0f};
     mappedDrawCB_->cameraUp = {up.x, up.y, up.z, 0.0f};
-    mappedDrawCB_->tintColor = {0.75f, 0.90f, 1.0f, 1.0f};
+    mappedDrawCB_->tintColor = {1.0f, 0.96f, 0.88f, 1.0f};
 
     cmd->SetGraphicsRootSignature(drawRootSignature_.Get());
     cmd->SetPipelineState(drawPSO_.Get());
@@ -235,7 +244,7 @@ void GPUParticleSystem::CreatePipelineStates() {
     D3D12_BLEND_DESC blend = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     blend.RenderTarget[0].BlendEnable = TRUE;
     blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-    blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+    blend.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
     blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
     blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
     blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
@@ -245,7 +254,7 @@ void GPUParticleSystem::CreatePipelineStates() {
 
     D3D12_DEPTH_STENCIL_DESC depth =
         CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    depth.DepthEnable = TRUE;
+    depth.DepthEnable = FALSE;
     depth.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
     depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
     drawPso.DepthStencilState = depth;

@@ -39,6 +39,16 @@ class GPUParticleSystem {
         emitterPosition_ = position;
     }
 
+    /// <summary>
+    /// 発生頻度と一度に出す数を設定する
+    /// </summary>
+    void SetEmission(uint32_t count, float frequency);
+
+    /// <summary>
+    /// 発生範囲の半径を設定する
+    /// </summary>
+    void SetEmitterRadius(float radius);
+
   private:
     struct ParticleForGPU {
         DirectX::XMFLOAT3 translate{};

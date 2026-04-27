@@ -19,6 +19,7 @@ struct ParticleVSOutput
     float4 position : SV_POSITION;
     float2 uv : TEXCOORD0;
     float4 color : COLOR0;
+    float2 params : TEXCOORD1;
 };
 
 #endif // GPU_PARTICLE_HLSLI

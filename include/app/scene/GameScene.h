@@ -2,12 +2,9 @@
 #include "BaseScene.h"
 #include "DebugCamera.h"
 #include "GPUParticleSystem.h"
-#include "RingBurstEmitter.h"
-#include "RingParticleSystem.h"
-#include <cstdint>
 
 /// <summary>
-/// Ringパーティクルの挙動確認用ゲームシーン
+/// 絵本風シルエットパーティクルの評価用ゲームシーン
 /// </summary>
 class GameScene : public BaseScene {
   public:
@@ -29,17 +26,13 @@ class GameScene : public BaseScene {
 
   private:
     /// <summary>
-    /// Ringベースのヒットエフェクトを初期化する
+    /// GPUベースの紙シルエットパーティクルを初期化する
     /// </summary>
-    void InitializeHitEffect();
+    void InitializeParticleEffect();
 
   private:
     DebugCamera camera_;
 
-    uint32_t hitEffectModelId_ = 0;
-    bool hasHitEffectModel_ = false;
-    RingParticleSystem hitParticleSystem_;
-    RingBurstEmitter hitEmitter_;
     GPUParticleSystem gpuParticleSystem_;
     bool hasGpuParticleSystem_ = false;
 };
