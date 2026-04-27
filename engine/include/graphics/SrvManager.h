@@ -48,5 +48,6 @@ class SrvManager {
   private:
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> heap_;
     UINT descriptorSize_ = 0;
+    UINT maxSrvCount_ = 0;
     UINT currentIndex_ = 0;
 };

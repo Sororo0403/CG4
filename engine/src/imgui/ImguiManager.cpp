@@ -24,7 +24,7 @@ void ImguiManager::Initialize(WinApp *winApp, DirectXCommon *dxCommon,
     init_info.Device = dxCommon->GetDevice();
     init_info.CommandQueue = dxCommon->GetCommandQueue();
     init_info.NumFramesInFlight = dxCommon->GetSwapChainBufferCount();
-    init_info.RTVFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+    init_info.RTVFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
     init_info.DSVFormat = DXGI_FORMAT_UNKNOWN;
     init_info.SrvDescriptorHeap = srvManager_->GetHeap();
 

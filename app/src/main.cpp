@@ -41,6 +41,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     SoundManager soundManager;
     soundManager.Initialize();
 
+    dxCommon.BeginUpload();
+
     // TextureManager
     TextureManager textureManager;
     textureManager.Initialize(&dxCommon, &srvManager);
@@ -53,8 +55,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     SpriteManager spriteManager;
     spriteManager.Initialize(&dxCommon, &textureManager, &srvManager, width,
                              height);
-
-    dxCommon.BeginUpload();
 
     dxCommon.EndUpload();
 

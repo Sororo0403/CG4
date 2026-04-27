@@ -231,7 +231,7 @@ void GPUParticleSystem::CreatePipelineStates() {
     drawPso.InputLayout = {nullptr, 0};
     drawPso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     drawPso.NumRenderTargets = 1;
-    drawPso.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    drawPso.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
     drawPso.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
     drawPso.SampleDesc.Count = 1;
     drawPso.SampleMask = UINT_MAX;
