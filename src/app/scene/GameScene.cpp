@@ -45,6 +45,9 @@ void GameScene::Update() {
 
     hitEmitter_.Update(ctx_->deltaTime);
     hitParticleSystem_.Update(ctx_->deltaTime);
+    if (hasGpuParticleSystem_) {
+        gpuParticleSystem_.Update(ctx_->deltaTime);
+    }
 }
 
 void GameScene::Draw() {
@@ -52,9 +55,9 @@ void GameScene::Draw() {
         return;
     }
 
-    ctx_->modelRenderer->PreDraw();
-    hitParticleSystem_.Draw(camera_);
-    ctx_->modelRenderer->PostDraw();
+    if (hasGpuParticleSystem_) {
+        gpuParticleSystem_.Draw(camera_);
+    }
 }
 
 void GameScene::InitializeHitEffect() {
@@ -83,4 +86,9 @@ void GameScene::InitializeHitEffect() {
     hitEmitter_.Initialize(&hitParticleSystem_, {0.0f, 1.2f, 0.0f});
     hitEmitter_.SetInterval(1.0f);
     hitEmitter_.SetAutoEmitEnabled(true);
+
+    gpuParticleSystem_.Initialize(ctx_->dxCommon, ctx_->srv, ctx_->texture,
+                                  textureId, 2048);
+    gpuParticleSystem_.SetEmitterPosition({0.0f, 0.4f, 0.0f});
+    hasGpuParticleSystem_ = true;
 }

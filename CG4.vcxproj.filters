@@ -120,6 +120,9 @@
     <Filter Include="resources\shaders\skybox">
       <UniqueIdentifier>{ee5d2c4b-212f-4f11-a82a-224e52ed54c7}</UniqueIdentifier>
     </Filter>
+    <Filter Include="resources\shaders\particle">
+      <UniqueIdentifier>{1bdc6374-9793-4a4e-9bca-5bb78cb274b8}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp">
@@ -177,6 +180,9 @@
       <Filter>src\engine\particle</Filter>
     </ClCompile>
     <ClCompile Include="src\engine\particle\RingParticleSystem.cpp">
+      <Filter>src\engine\particle</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\particle\GPUParticleSystem.cpp">
       <Filter>src\engine\particle</Filter>
     </ClCompile>
     <ClCompile Include="src\engine\particle\CylinderParticleSystem.cpp">
@@ -313,6 +319,9 @@
     <ClInclude Include="include\engine\particle\RingParticleSystem.h">
       <Filter>include\engine\particle</Filter>
     </ClInclude>
+    <ClInclude Include="include\engine\particle\GPUParticleSystem.h">
+      <Filter>include\engine\particle</Filter>
+    </ClInclude>
     <ClInclude Include="include\engine\particle\CylinderParticleSystem.h">
       <Filter>include\engine\particle</Filter>
     </ClInclude>
@@ -396,6 +405,15 @@
     <FxCompile Include="resources\shaders\skybox\SkyboxVS.hlsl">
       <Filter>resources\shaders\skybox</Filter>
     </FxCompile>
+    <FxCompile Include="resources\shaders\particle\GPUParticlePS.hlsl">
+      <Filter>resources\shaders\particle</Filter>
+    </FxCompile>
+    <FxCompile Include="resources\shaders\particle\GPUParticleVS.hlsl">
+      <Filter>resources\shaders\particle</Filter>
+    </FxCompile>
+    <FxCompile Include="resources\shaders\particle\GPUParticleUpdateCS.hlsl">
+      <Filter>resources\shaders\particle</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="resources\shaders\model\Model.hlsli">
@@ -406,6 +424,9 @@
     </None>
     <None Include="resources\shaders\skybox\Skybox.hlsli">
       <Filter>resources\shaders\skybox</Filter>
+    </None>
+    <None Include="resources\shaders\particle\GPUParticle.hlsli">
+      <Filter>resources\shaders\particle</Filter>
     </None>
   </ItemGroup>
 </Project>

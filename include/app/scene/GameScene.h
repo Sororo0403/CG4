@@ -1,6 +1,7 @@
 #pragma once
 #include "BaseScene.h"
 #include "DebugCamera.h"
+#include "GPUParticleSystem.h"
 #include "RingBurstEmitter.h"
 #include "RingParticleSystem.h"
 #include <cstdint>
@@ -39,4 +40,6 @@ class GameScene : public BaseScene {
     bool hasHitEffectModel_ = false;
     RingParticleSystem hitParticleSystem_;
     RingBurstEmitter hitEmitter_;
+    GPUParticleSystem gpuParticleSystem_;
+    bool hasGpuParticleSystem_ = false;
 };
