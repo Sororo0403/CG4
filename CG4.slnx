@@ -2,12 +2,16 @@
   <Configurations>
     <Platform Name="x64" />
   </Configurations>
-  <Folder Name="/ソリューション項目/">
+  <Folder Name="/Externals/">
+    <Project Path="engine/externals/DirectXTex/DirectXTex_Desktop_2022.vcxproj" Id="371b9fa9-4c90-4ac6-a123-aced756d6c77" />
+    <Project Path="engine/externals/imgui/imgui.vcxproj" Id="f6ba9c36-46d4-4c55-9c90-d016c833a837" />
+  </Folder>
+  <Folder Name="/Internals/">
+    <Project Path="app/CG4.vcxproj" Id="2d2b4186-642f-41bf-97c8-74ab151638ec" />
+    <Project Path="engine/Engine.vcxproj" Id="8d69c2b4-4f39-47f0-9a40-4cb78ec442a1" />
+  </Folder>
+  <Folder Name="/SolutionItems/">
     <File Path=".clang-format" />
     <File Path=".editorconfig" />
   </Folder>
-  <Project Path="app/CG4.vcxproj" Id="2d2b4186-642f-41bf-97c8-74ab151638ec" />
-  <Project Path="engine/Engine.vcxproj" Id="8d69c2b4-4f39-47f0-9a40-4cb78ec442a1" />
-  <Project Path="engine/externals/DirectXTex/DirectXTex_Desktop_2022.vcxproj" Id="371b9fa9-4c90-4ac6-a123-aced756d6c77" />
-  <Project Path="engine/externals/imgui/imgui.vcxproj" Id="f6ba9c36-46d4-4c55-9c90-d016c833a837" />
 </Solution>
