@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="app\include">
+      <UniqueIdentifier>{86e6a6b0-d74e-4aaa-92bf-f9646114076d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="app\include\scene">
+      <UniqueIdentifier>{edc77e8e-c3ca-4567-9f6d-afc6474c4827}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="app\src">
+      <UniqueIdentifier>{5301541f-af2b-4c39-9309-d90f5fd9039b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="app\src\scene">
+      <UniqueIdentifier>{6df06332-d393-4577-9a22-2260e6a5b501}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(SolutionDir)app\src\main.cpp">
+      <Filter>app\src</Filter>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)app\src\scene\GameScene.cpp">
+      <Filter>app\src\scene</Filter>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)app\src\scene\GameSceneCylinder.cpp">
+      <Filter>app\src\scene</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="$(SolutionDir)app\include\scene\GameScene.h">
+      <Filter>app\include\scene</Filter>
+    </ClInclude>
+    <ClInclude Include="$(SolutionDir)app\include\scene\GameSceneCylinder.h">
+      <Filter>app\include\scene</Filter>
+    </ClInclude>
+    <ClInclude Include="$(SolutionDir)app\include\scene\AssetPaths.h">
+      <Filter>app\include\scene</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup></ItemGroup>
+  <ItemGroup></ItemGroup>
+</Project>
