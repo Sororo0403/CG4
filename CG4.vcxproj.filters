@@ -146,6 +146,9 @@
     <ClCompile Include="src\engine\model\ModelRenderer.cpp">
       <Filter>src\engine\model</Filter>
     </ClCompile>
+    <ClCompile Include="src\engine\model\SkeletonDebugRenderer.cpp">
+      <Filter>src\engine\model</Filter>
+    </ClCompile>
     <ClCompile Include="src\engine\camera\Camera.cpp">
       <Filter>src\engine\camera</Filter>
     </ClCompile>
@@ -259,6 +262,9 @@
     <ClInclude Include="include\engine\model\ModelRenderer.h">
       <Filter>include\engine\model</Filter>
     </ClInclude>
+    <ClInclude Include="include\engine\model\SkeletonDebugRenderer.h">
+      <Filter>include\engine\model</Filter>
+    </ClInclude>
     <ClInclude Include="include\engine\model\Model.h">
       <Filter>include\engine\model</Filter>
     </ClInclude>
@@ -366,7 +372,13 @@
     <FxCompile Include="resources\shaders\model\ModelPS.hlsl">
       <Filter>resources\shaders\model</Filter>
     </FxCompile>
+    <FxCompile Include="resources\shaders\debug\SkeletonDebugPS.hlsl">
+      <Filter>resources\shaders\model</Filter>
+    </FxCompile>
     <FxCompile Include="resources\shaders\model\ModelVS.hlsl">
+      <Filter>resources\shaders\model</Filter>
+    </FxCompile>
+    <FxCompile Include="resources\shaders\debug\SkeletonDebugVS.hlsl">
       <Filter>resources\shaders\model</Filter>
     </FxCompile>
     <FxCompile Include="resources\shaders\sprite\SpritePS.hlsl">

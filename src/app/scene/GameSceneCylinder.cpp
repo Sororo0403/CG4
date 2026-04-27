@@ -101,6 +101,7 @@ void GameSceneCylinder::Draw() {
                            1.0f);
 
         ImGui::SeparatorText("Model");
+        ImGui::Checkbox("Show Skeleton", &showSkeleton_);
         ImGui::DragFloat3("Position", &sneakWalkTransform_.position.x, 0.01f,
                           -10.0f, 10.0f);
         ImGui::SliderAngle("Yaw", &sneakWalkYaw_, -180.0f, 180.0f);
@@ -139,6 +140,9 @@ void GameSceneCylinder::Draw() {
         }
     }
     hitParticleSystem_.Draw(camera_);
+    if (hasSneakWalkModel_ && showSkeleton_) {
+        ctx_->model->DrawSkeleton(sneakWalkModelId_, sneakWalkTransform_, camera_);
+    }
     ctx_->modelRenderer->PostDraw();
 }
 

@@ -5,6 +5,7 @@
 #include "MeshManager.h"
 #include "Model.h"
 #include "ModelRenderer.h"
+#include "SkeletonDebugRenderer.h"
 #include <string>
 #include <vector>
 
@@ -119,6 +120,12 @@ class ModelManager {
     void SetMaterial(uint32_t materialId, const Material &material);
 
     /// <summary>
+    /// モデルのSkeletonをデバッグラインで描画する
+    /// </summary>
+    void DrawSkeleton(uint32_t modelId, const Transform &transform,
+                      const Camera &camera);
+
+    /// <summary>
     /// 描画に使用するModelRendererを取得する
     /// </summary>
     /// <returns>ModelRendererへのポインタ</returns>
@@ -137,6 +144,7 @@ class ModelManager {
     MaterialManager materialManager_;
     AssimpLoader assimpLoader_;
     ModelRenderer modelRenderer_;
+    SkeletonDebugRenderer skeletonDebugRenderer_;
     Animator animator_;
 
     std::vector<Model> models_;

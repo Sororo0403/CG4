@@ -39,6 +39,7 @@ class GameSceneCylinder : public BaseScene {
     bool hasEnvironmentTexture_ = false;
     bool usePerModelEnvironmentTexture_ = true;
     bool animateSneakWalk_ = true;
+    bool showSkeleton_ = true;
     int materialPresetIndex_ = 1;
     float sneakWalkYaw_ = 0.0f;
     float sneakWalkReflectionStrength_ = 0.18f;

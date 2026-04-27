@@ -39,6 +39,7 @@ void ModelManager::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
 
     modelRenderer_.Initialize(dxCommon_, srvManager, &meshManager_,
                               textureManager_, &materialManager_);
+    skeletonDebugRenderer_.Initialize(dxCommon_);
 }
 
 uint32_t ModelManager::Load(const std::wstring &path) {
@@ -311,4 +312,14 @@ const Material &ModelManager::GetMaterial(uint32_t materialId) const {
 
 void ModelManager::SetMaterial(uint32_t materialId, const Material &material) {
     materialManager_.SetMaterial(materialId, material);
+}
+
+void ModelManager::DrawSkeleton(uint32_t modelId, const Transform &transform,
+                                const Camera &camera) {
+    const Model *model = GetModel(modelId);
+    if (!model) {
+        return;
+    }
+
+    skeletonDebugRenderer_.Draw(*model, transform, camera);
 }

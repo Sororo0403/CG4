@@ -146,6 +146,7 @@ if exist "$(ProjectDir)externals\assimp\bin\assimp-vc145-mt.dll" (
     <ClCompile Include="src\engine\model\MeshManager.cpp" />
     <ClCompile Include="src\engine\camera\Camera.cpp" />
     <ClCompile Include="src\engine\model\ModelRenderer.cpp" />
+    <ClCompile Include="src\engine\model\SkeletonDebugRenderer.cpp" />
     <ClCompile Include="src\engine\sprite\SpriteManager.cpp" />
     <ClCompile Include="src\engine\sprite\SpriteRenderer.cpp" />
     <ClCompile Include="src\engine\graphics\DirectXCommon.cpp" />
@@ -193,6 +194,7 @@ if exist "$(ProjectDir)externals\assimp\bin\assimp-vc145-mt.dll" (
     <ClInclude Include="include\engine\sprite\SpriteRenderer.h" />
     <ClInclude Include="include\engine\sprite\SpriteManager.h" />
     <ClInclude Include="include\engine\model\ModelRenderer.h" />
+    <ClInclude Include="include\engine\model\SkeletonDebugRenderer.h" />
     <ClInclude Include="include\engine\model\MeshManager.h" />
     <ClInclude Include="include\engine\model\ModelManager.h" />
     <ClInclude Include="include\engine\sound\SoundManager.h" />
@@ -210,7 +212,19 @@ if exist "$(ProjectDir)externals\assimp\bin\assimp-vc145-mt.dll" (
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
+    <FxCompile Include="resources\shaders\debug\SkeletonDebugPS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
     <FxCompile Include="resources\shaders\model\ModelVS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <FxCompile Include="resources\shaders\debug\SkeletonDebugVS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>

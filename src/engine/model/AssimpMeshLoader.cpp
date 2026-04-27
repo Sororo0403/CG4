@@ -8,6 +8,7 @@
 #include <assimp/GltfMaterial.h>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <stdexcept>
 #include <vector>
 
@@ -292,5 +293,66 @@ void AssimpMeshLoader::BuildBoneHierarchy(const aiScene *scene, Model &model) co
         model.bones[i].parentAdjustmentMatrix = ToMatrix(adjustment);
         model.bones[i].localBindMatrix =
             ToMatrix(node->mTransformation * adjustment);
+    }
+
+    ReorderBonesParentFirst(model);
+}
+
+void AssimpMeshLoader::ReorderBonesParentFirst(Model &model) const {
+    const size_t boneCount = model.bones.size();
+    if (boneCount <= 1) {
+        return;
+    }
+
+    std::vector<std::vector<size_t>> children(boneCount);
+    std::vector<size_t> roots;
+    roots.reserve(boneCount);
+
+    for (size_t boneIndex = 0; boneIndex < boneCount; ++boneIndex) {
+        const int parentIndex = model.bones[boneIndex].parentIndex;
+        if (parentIndex >= 0 &&
+            static_cast<size_t>(parentIndex) < boneCount) {
+            children[static_cast<size_t>(parentIndex)].push_back(boneIndex);
+        } else {
+            roots.push_back(boneIndex);
+        }
+    }
+
+    std::vector<BoneInfo> orderedBones;
+    std::vector<int> oldToNew(boneCount, -1);
+    orderedBones.reserve(boneCount);
+
+    std::function<void(size_t, int)> visit = [&](size_t oldIndex,
+                                                 int newParentIndex) {
+        if (oldToNew[oldIndex] >= 0) {
+            return;
+        }
+
+        BoneInfo bone = model.bones[oldIndex];
+        bone.parentIndex = newParentIndex;
+        const int newIndex = static_cast<int>(orderedBones.size());
+        oldToNew[oldIndex] = newIndex;
+        orderedBones.push_back(bone);
+
+        for (size_t childIndex : children[oldIndex]) {
+            visit(childIndex, newIndex);
+        }
+    };
+
+    for (size_t rootIndex : roots) {
+        visit(rootIndex, -1);
+    }
+
+    for (size_t boneIndex = 0; boneIndex < boneCount; ++boneIndex) {
+        if (oldToNew[boneIndex] < 0) {
+            visit(boneIndex, -1);
+        }
+    }
+
+    model.bones = std::move(orderedBones);
+    model.boneMap.clear();
+    for (size_t boneIndex = 0; boneIndex < model.bones.size(); ++boneIndex) {
+        model.boneMap[model.bones[boneIndex].name] =
+            static_cast<uint32_t>(boneIndex);
     }
 }

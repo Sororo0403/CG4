@@ -52,6 +52,11 @@ class AssimpMeshLoader {
     /// <param name="model">書き込み先モデル</param>
     void BuildBoneHierarchy(const aiScene *scene, Model &model) const;
 
+    /// <summary>
+    /// Skeleton更新しやすいように親Jointが子Jointより若いIndexになるよう並べる
+    /// </summary>
+    void ReorderBonesParentFirst(Model &model) const;
+
   private:
     TextureManager *textureManager_ = nullptr;
     MeshManager *meshManager_ = nullptr;
