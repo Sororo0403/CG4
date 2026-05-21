@@ -1,20 +1,22 @@
 #include "Model.hlsli"
+#include "../common/ShadowSampling.hlsli"
 
 Texture2D tex0 : register(t0);
 TextureCube<float4> gEnvironmentTexture : register(t2);
+Texture2D<float> gShadowMap : register(t3);
+Texture2D normalMap : register(t4);
 SamplerState samp0 : register(s0);
 
 cbuffer ObjectTransform : register(b0)
 {
     float4x4 matWVP;
     float4x4 matWorld;
+    float4x4 matWorldInverseTranspose;
 };
 
 cbuffer SceneParams : register(b1)
 {
     float4 cameraPos;
-    float4 effectColor;
-    float4 effectParams;
     float4 keyLightDirection;
     float4 keyLightColor;
     float4 fillLightDirection;
@@ -22,6 +24,13 @@ cbuffer SceneParams : register(b1)
     float4 ambientColor;
     PointLight pointLights[2];
     float4 lightingParams;
+    float4 lightingModeParams;
+    float4 fogColor;
+    float4 fogParams;
+    float4x4 viewProjection;
+    float4x4 lightViewProjection;
+    float4 shadowParams;
+    float4 shadowFilterParams;
 };
 
 cbuffer Material : register(b2)
@@ -32,7 +41,39 @@ cbuffer Material : register(b2)
     float reflectionStrength;
     float reflectionFresnelStrength;
     float reflectionRoughness;
+    int blendMode;
+    float alphaCutoff;
+    int cullMode;
+    int depthWrite;
+    float roughness;
+    float metallic;
+    float normalStrength;
+    int enableNormalMap;
 };
+
+float3 ApplyNormalMap(float3 vertexNormal, float4 vertexTangent, float2 uv)
+{
+    float3 normal = normalize(vertexNormal);
+    if (enableNormalMap == 0)
+    {
+        return normal;
+    }
+
+    float3 tangent = normalize(vertexTangent.xyz - normal * dot(normal, vertexTangent.xyz));
+    float tangentLength = length(tangent);
+    if (tangentLength < 0.0001f)
+    {
+        return normal;
+    }
+
+    float3 bitangent = normalize(cross(normal, tangent) * vertexTangent.w);
+    float3 sampledNormal = normalMap.Sample(samp0, uv).xyz * 2.0f - 1.0f;
+    sampledNormal.xy *= max(normalStrength, 0.0f);
+    sampledNormal = normalize(sampledNormal);
+    return normalize(sampledNormal.x * tangent +
+                     sampledNormal.y * bitangent +
+                     sampledNormal.z * normal);
+}
 
 float4 main(ModelVSOutput input) : SV_TARGET
 {
@@ -44,8 +85,13 @@ float4 main(ModelVSOutput input) : SV_TARGET
         texColor = tex0.Sample(samp0, uv);
     }
 
-    float4 finalColor = texColor * color;
-    float3 normal = normalize(input.worldNormal);
+    float4 finalColor = texColor * color * input.color;
+    if (blendMode == 1 && finalColor.a < alphaCutoff)
+    {
+        discard;
+    }
+
+    float3 normal = ApplyNormalMap(input.worldNormal, input.worldTangent, uv);
     float3 viewDir = normalize(cameraPos.xyz - input.worldPos);
 
     float3 keyDir = normalize(-keyLightDirection.xyz);
@@ -57,10 +103,12 @@ float4 main(ModelVSOutput input) : SV_TARGET
     keyDiffuse = saturate((keyDiffuse + wrap) / (1.0f + wrap));
     fillDiffuse = saturate((fillDiffuse + wrap * 0.5f) / (1.0f + wrap * 0.5f));
 
-    float3 halfVector = normalize(keyDir + viewDir);
     float specularPower = max(lightingParams.x, 1.0f);
     float specularStrength = saturate(lightingParams.y);
-    float keySpecular = pow(saturate(dot(normal, halfVector)), specularPower) * specularStrength;
+    float blinnSpecular = pow(saturate(dot(normal, normalize(keyDir + viewDir))), specularPower);
+    float phongSpecular = pow(saturate(dot(viewDir, reflect(-keyDir, normal))), specularPower);
+    float useBlinnPhong = lightingModeParams.x > 0.5f ? 1.0f : 0.0f;
+    float keySpecular = lerp(phongSpecular, blinnSpecular, useBlinnPhong) * specularStrength;
 
     float rimPower = max(lightingParams.z, 0.5f);
     float rim = pow(saturate(1.0f - dot(normal, viewDir)), rimPower);
@@ -99,47 +147,56 @@ float4 main(ModelVSOutput input) : SV_TARGET
         keyLightColor.rgb * keySpecular +
         fillLightColor.rgb * rim * fillLightColor.a;
 
+    if (shadowParams.x > 0.5f)
+    {
+        float3 shadowWorldPos = input.worldPos + normal * shadowParams.w;
+        float4 shadowClip = mul(float4(shadowWorldPos, 1.0f), lightViewProjection);
+        shadowClip.xyz /= max(shadowClip.w, 0.0001f);
+        float2 shadowUv = shadowClip.xy * float2(0.5f, -0.5f) + 0.5f;
+        if (all(shadowUv >= 0.0f) && all(shadowUv <= 1.0f) &&
+            shadowClip.z >= 0.0f && shadowClip.z <= 1.0f)
+        {
+            float receiverDepth = shadowClip.z - shadowParams.y;
+            float materialShadowStrength =
+                blendMode == 1 ? saturate(shadowParams.z) * 0.45f : saturate(shadowParams.z);
+            const float shadowSoftness = blendMode == 1 ? 0.9f : 0.45f;
+            ShadowSampleSettings sampleSettings;
+            sampleSettings.filterRadius =
+                shadowFilterParams.x * lerp(0.85f, 1.25f, saturate(shadowSoftness));
+            sampleSettings.depthSoftness = shadowFilterParams.y;
+            sampleSettings.edgeFade = shadowFilterParams.z;
+            sampleSettings.materialStrength = materialShadowStrength;
+            float shadowVisibility = SampleShadowVisibility(
+                gShadowMap, samp0, shadowUv, receiverDepth, sampleSettings);
+            lighting = ambientColor.rgb + (lighting - ambientColor.rgb) * shadowVisibility;
+        }
+    }
+
     finalColor.rgb *= lighting;
 
-    float3 reflectedVector = reflect(-viewDir, normal);
-    uint envWidth = 0;
-    uint envHeight = 0;
-    uint envMipLevels = 1;
-    gEnvironmentTexture.GetDimensions(0, envWidth, envHeight, envMipLevels);
-    float maxMipLevel = max((float)envMipLevels - 1.0f, 0.0f);
-    float mipLevel = saturate(reflectionRoughness) * maxMipLevel;
-    float3 environmentColor =
-        gEnvironmentTexture.SampleLevel(samp0, reflectedVector, mipLevel).rgb;
     float environmentStrength =
         reflectionStrength + rim * reflectionFresnelStrength;
-    finalColor.rgb += environmentColor * environmentStrength;
-
-    float effectIntensity = effectParams.x;
-    if (effectIntensity > 0.0001f)
+    if (environmentStrength > 0.0001f)
     {
-        float fresnelPower = max(effectParams.y, 0.5f);
-        float noiseAmount = saturate(effectParams.z);
-        float time = effectParams.w;
+        float3 reflectedVector = reflect(-viewDir, normal);
+        uint envWidth = 0;
+        uint envHeight = 0;
+        uint envMipLevels = 1;
+        gEnvironmentTexture.GetDimensions(0, envWidth, envHeight, envMipLevels);
+        float maxMipLevel = max((float)envMipLevels - 1.0f, 0.0f);
+        float mipLevel = saturate(reflectionRoughness) * maxMipLevel;
+        float3 environmentColor =
+            gEnvironmentTexture.SampleLevel(samp0, reflectedVector, mipLevel).rgb;
+        finalColor.rgb += environmentColor * environmentStrength;
+    }
 
-        float effectRim = pow(saturate(1.0f - abs(dot(normal, viewDir))),
-                        fresnelPower);
-
-        float noise =
-            sin(input.worldPos.x * 10.0f + time * 15.0f) *
-            sin(input.worldPos.y * 12.0f - time * 11.0f) *
-            sin(input.worldPos.z * 9.0f + time * 17.0f);
-        noise = lerp(1.0f, 0.65f + 0.35f * noise, noiseAmount);
-
-        float pulse = 0.8f + 0.2f * sin(time * 20.0f + input.worldPos.y * 8.0f);
-        float glow = effectRim * noise * pulse * effectIntensity;
-
-        float bodyFade = saturate(effectIntensity * 0.38f);
-        finalColor.rgb *= lerp(1.0f, 0.24f, bodyFade);
-        finalColor.rgb = lerp(finalColor.rgb, finalColor.rgb * float3(0.28f, 0.08f, 0.16f),
-                              bodyFade * 0.75f);
-
-        finalColor.rgb += effectColor.rgb * glow;
-        finalColor.a = saturate(finalColor.a + effectColor.a * glow * 0.55f);
+    if (fogParams.x > 0.5f)
+    {
+        float viewDistance = distance(cameraPos.xyz, input.worldPos);
+        float fogRange = max(fogParams.z - fogParams.y, 0.0001f);
+        float fogAmount = saturate((viewDistance - fogParams.y) / fogRange);
+        fogAmount = pow(fogAmount, max(fogParams.w, 0.0001f));
+        finalColor.rgb = lerp(finalColor.rgb, fogColor.rgb, fogAmount * fogColor.a);
     }
 
     return finalColor;

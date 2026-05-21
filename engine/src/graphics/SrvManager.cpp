@@ -1,7 +1,7 @@
-#include "SrvManager.h"
-#include "DirectXCommon.h"
-#include "DxHelpers.h"
-#include "DxUtils.h"
+#include "graphics/SrvManager.h"
+#include "graphics/DirectXCommon.h"
+#include "graphics/DxHelpers.h"
+#include "graphics/DxUtils.h"
 #include <stdexcept>
 
 using namespace DxUtils;
@@ -21,14 +21,28 @@ void SrvManager::Initialize(DirectXCommon *dxCommon, UINT maxSrvCount) {
 
     maxSrvCount_ = maxSrvCount;
     currentIndex_ = 0;
+    freeList_.clear();
 }
 
 UINT SrvManager::Allocate() {
+    if (!freeList_.empty()) {
+        const UINT index = freeList_.back();
+        freeList_.pop_back();
+        return index;
+    }
+
     if (currentIndex_ >= maxSrvCount_) {
         throw std::runtime_error("SRV descriptor heap exhausted");
     }
 
     return currentIndex_++;
+}
+
+void SrvManager::Free(UINT index) {
+    if (index >= maxSrvCount_) {
+        throw std::out_of_range("SRV descriptor index out of range");
+    }
+    freeList_.push_back(index);
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE

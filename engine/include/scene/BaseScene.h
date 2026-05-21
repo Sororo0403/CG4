@@ -1,5 +1,5 @@
 #pragma once
-#include "SceneContext.h"
+#include "scene/SceneContext.h"
 
 class SceneManager;
 
@@ -9,25 +9,35 @@ class SceneManager;
 class BaseScene {
   public:
     /// <summary>
-    /// デストラクタ
+    /// シーン基底クラスを破棄する
     /// </summary>
     virtual ~BaseScene() = default;
 
     /// <summary>
-    /// 初期化処理
+    /// シーンで使用する共有コンテキストを保持する
     /// </summary>
     /// <param name="ctx">シーンコンテキスト</param>
     virtual void Initialize(const SceneContext &ctx) { ctx_ = &ctx; }
 
     /// <summary>
-    /// 更新処理
+    /// シーン固有の状態を更新する
     /// </summary>
     virtual void Update() = 0;
 
     /// <summary>
-    /// 描画処理
+    /// ShadowPassで必要な深度だけの描画を行う。
+    /// </summary>
+    virtual void DrawShadow() {}
+
+    /// <summary>
+    /// シーン固有の内容を描画する
     /// </summary>
     virtual void Draw() = 0;
+
+    /// <summary>
+    /// 透明描画だけをSceneColorPassの後段で描画する。
+    /// </summary>
+    virtual void DrawTransparent() {}
 
     /// <summary>
     /// シーンマネージャーを設定する

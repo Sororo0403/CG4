@@ -12,7 +12,7 @@ class WinApp;
 class ImguiManager {
   public:
     /// <summary>
-    /// 初期化処理
+    /// ImGuiのWin32/DX12バックエンドを初期化する
     /// </summary>
     /// <param name="winApp">WinAppインスタンス</param>
     /// <param name="dxCommon">DirectXCommonインスタンス</param>
@@ -21,13 +21,13 @@ class ImguiManager {
                     SrvManager *srvManager);
 
     /// <summary>
-    /// フレーム前処理
+    /// ImGuiの新しいフレームを開始する
     /// </summary>
     /// <param name="commandList">コマンドリスト</param>
     void Begin(ID3D12GraphicsCommandList *commandList);
 
     /// <summary>
-    /// フレーム後処理
+    /// ImGuiの描画データをコマンドリストへ積む
     /// </summary>
     /// <param name="commandList">コマンドリスト</param>
     void End(ID3D12GraphicsCommandList *commandList);
@@ -36,4 +36,4 @@ class ImguiManager {
     SrvManager *srvManager_ = nullptr;
 };
 
-#endif // _DEBUG
+#endif

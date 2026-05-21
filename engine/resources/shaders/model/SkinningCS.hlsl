@@ -3,6 +3,8 @@ struct Vertex
     float3 pos;
     float3 normal;
     float2 uv;
+    float4 color;
+    float4 tangent;
 };
 
 struct VertexInfluence
@@ -28,7 +30,9 @@ StructuredBuffer<VertexInfluence> gInfluences : register(t1);
 StructuredBuffer<Well> gMatrixPalette : register(t2);
 RWStructuredBuffer<Vertex> gOutputVertices : register(u0);
 
-[numthreads(1024, 1, 1)]
+#define SKINNING_THREAD_COUNT 1024
+
+[numthreads(SKINNING_THREAD_COUNT, 1, 1)]
 void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
     const uint vertexIndex = dispatchThreadId.x;
@@ -66,6 +70,15 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
         const float normalLength = length(output.normal);
         output.normal = normalLength > 0.0001f ? output.normal / normalLength : float3(0.0f, 1.0f, 0.0f);
+
+        float3 tangent =
+            mul(input.tangent.xyz, (float3x3) gMatrixPalette[influence.index.x].skeletonSpaceInverseTransposeMatrix) * influence.weight.x +
+            mul(input.tangent.xyz, (float3x3) gMatrixPalette[influence.index.y].skeletonSpaceInverseTransposeMatrix) * influence.weight.y +
+            mul(input.tangent.xyz, (float3x3) gMatrixPalette[influence.index.z].skeletonSpaceInverseTransposeMatrix) * influence.weight.z +
+            mul(input.tangent.xyz, (float3x3) gMatrixPalette[influence.index.w].skeletonSpaceInverseTransposeMatrix) * influence.weight.w;
+
+        const float tangentLength = length(tangent);
+        output.tangent = float4(tangentLength > 0.0001f ? tangent / tangentLength : float3(1.0f, 0.0f, 0.0f), input.tangent.w);
     }
 
     gOutputVertices[vertexIndex] = output;

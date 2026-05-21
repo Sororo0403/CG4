@@ -1,18 +1,15 @@
 #ifdef _DEBUG
-#include "ImguiManager.h"
-#include "DirectXCommon.h"
-#include "SrvManager.h"
-#include "WinApp.h"
+#include "imgui/ImguiManager.h"
+#include "core/WinApp.h"
+#include "graphics/DirectXCommon.h"
+#include "graphics/SrvManager.h"
 #include "imgui.h"
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"
 
-static SrvManager *gSrvManager = nullptr;
-
 void ImguiManager::Initialize(WinApp *winApp, DirectXCommon *dxCommon,
                               SrvManager *srvManager) {
     srvManager_ = srvManager;
-    gSrvManager = srvManager;
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -24,16 +21,18 @@ void ImguiManager::Initialize(WinApp *winApp, DirectXCommon *dxCommon,
     init_info.Device = dxCommon->GetDevice();
     init_info.CommandQueue = dxCommon->GetCommandQueue();
     init_info.NumFramesInFlight = dxCommon->GetSwapChainBufferCount();
-    init_info.RTVFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    init_info.RTVFormat = DirectXCommon::kBackBufferFormat;
     init_info.DSVFormat = DXGI_FORMAT_UNKNOWN;
+    init_info.UserData = this;
     init_info.SrvDescriptorHeap = srvManager_->GetHeap();
 
-    init_info.SrvDescriptorAllocFn = [](ImGui_ImplDX12_InitInfo *,
+    init_info.SrvDescriptorAllocFn = [](ImGui_ImplDX12_InitInfo *info,
                                         D3D12_CPU_DESCRIPTOR_HANDLE *out_cpu,
                                         D3D12_GPU_DESCRIPTOR_HANDLE *out_gpu) {
-        uint32_t index = gSrvManager->Allocate();
-        *out_cpu = gSrvManager->GetCpuHandle(index);
-        *out_gpu = gSrvManager->GetGpuHandle(index);
+        auto *manager = static_cast<ImguiManager *>(info->UserData);
+        uint32_t index = manager->srvManager_->Allocate();
+        *out_cpu = manager->srvManager_->GetCpuHandle(index);
+        *out_gpu = manager->srvManager_->GetGpuHandle(index);
     };
 
     init_info.SrvDescriptorFreeFn = [](ImGui_ImplDX12_InitInfo *,
@@ -60,4 +59,4 @@ void ImguiManager::End(ID3D12GraphicsCommandList *commandList) {
 
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
 }
-#endif // _DEBUG
+#endif

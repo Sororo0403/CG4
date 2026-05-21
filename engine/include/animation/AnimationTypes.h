@@ -8,7 +8,7 @@
 /// 1つのキー時刻における値
 /// </summary>
 template <typename TValue> struct Keyframe {
-    float time = 0.0f; // 単位は秒
+    float time = 0.0f;
     TValue value{};
 };
 
@@ -32,6 +32,7 @@ struct NodeAnimation {
 /// モデル全体で共有するアニメーションクリップ
 /// </summary>
 struct AnimationClip {
-    float duration = 0.0f; // 単位は秒
+    float duration = 0.0f;
+    std::string rootNodeName;
     std::unordered_map<std::string, NodeAnimation> nodeAnimations;
 };

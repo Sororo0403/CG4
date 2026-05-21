@@ -1,15 +1,18 @@
-#include "ModelManager.h"
-#include "DirectXCommon.h"
-#include "MaterialManager.h"
-#include "SrvManager.h"
-#include "TextureManager.h"
-#include "Vertex.h"
+#include "model/ModelManager.h"
+#include "core/AssetManager.h"
+#include "graphics/DirectXCommon.h"
+#include "graphics/SrvManager.h"
+#include "model/MaterialManager.h"
+#include "model/Vertex.h"
+#include "texture/TextureManager.h"
 #include <DirectXMath.h>
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cwctype>
 #include <filesystem>
 #include <numbers>
+#include <stdexcept>
 #include <vector>
 
 using namespace DirectX;
@@ -25,7 +28,35 @@ constexpr std::array<Vertex, 4> kPlaneVertices = {{
 
 constexpr std::array<uint32_t, 6> kPlaneIndices = {0, 1, 2, 2, 1, 3};
 
+std::filesystem::path ResolveModelPath(const std::filesystem::path &path) {
+    return AssetManager::ResolvePath(path);
+}
+
+std::wstring NormalizeModelPathKey(const std::filesystem::path &path) {
+    std::wstring key = path.lexically_normal().wstring();
+#ifdef _WIN32
+    std::transform(key.begin(), key.end(), key.begin(),
+                   [](wchar_t c) { return static_cast<wchar_t>(towlower(c)); });
+#endif
+    return key;
+}
+
+void ResetModelPlayback(Model &model) {
+    if (!model.animations.empty()) {
+        model.currentAnimation = model.animations.begin()->first;
+        model.animationTime = 0.0f;
+        model.isLoop = true;
+        model.isPlaying = true;
+        model.animationFinished = false;
+    }
+}
+
 } // namespace
+
+ModelManager &ModelManager::GetInstance() {
+    static ModelManager instance;
+    return instance;
+}
 
 void ModelManager::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
                               TextureManager *textureManager) {
@@ -39,35 +70,56 @@ void ModelManager::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
 
     modelRenderer_.Initialize(dxCommon_, srvManager, &meshManager_,
                               textureManager_, &materialManager_);
-    skeletonDebugRenderer_.Initialize(dxCommon_);
+}
+
+void ModelManager::Finalize() {
+    modelPathToId_.clear();
+    models_.clear();
+    dxCommon_ = nullptr;
+    textureManager_ = nullptr;
 }
 
 uint32_t ModelManager::Load(const std::wstring &path) {
-    std::filesystem::path p = path;
+    std::filesystem::path p = ResolveModelPath(path);
+    if (!std::filesystem::exists(p)) {
+        throw std::runtime_error("Model file not found. requested=" +
+                                 std::filesystem::path(path).string() +
+                                 " resolved=" + p.string());
+    }
+
+    const std::wstring pathKey = NormalizeModelPathKey(p);
+    auto it = modelPathToId_.find(pathKey);
+    if (it != modelPathToId_.end()) {
+        Model &cached = models_.at(it->second);
+        ResetModelPlayback(cached);
+        animator_.Update(cached, 0.0f);
+        modelRenderer_.UpdateSkinClusters(cached);
+        return it->second;
+    }
+
     std::string pathStr = p.string();
 
     Model model = assimpLoader_.Load(pathStr);
     modelRenderer_.CreateSkinClusters(model);
 
-    if (!model.animations.empty()) {
-        model.currentAnimation = model.animations.begin()->first;
-        model.animationTime = 0.0f;
-        model.isLoop = true;
-        model.isPlaying = true;
-        model.animationFinished = false;
-    }
+    ResetModelPlayback(model);
 
     animator_.Update(model, 0.0f);
     modelRenderer_.UpdateSkinClusters(model);
 
-    models_.push_back(model);
+    models_.push_back(std::move(model));
     uint32_t modelId = static_cast<uint32_t>(models_.size() - 1);
+    modelPathToId_[pathKey] = modelId;
 
     return modelId;
 }
 
-uint32_t ModelManager::CreatePlane(uint32_t textureId, const Material &material) {
+uint32_t ModelManager::CreatePlane(uint32_t textureId,
+                                   const Material &material) {
     Material planeMaterial = material;
+    if (planeMaterial.baseColorTextureId == UINT32_MAX) {
+        planeMaterial.baseColorTextureId = textureId;
+    }
     XMStoreFloat4x4(&planeMaterial.uvTransform,
                     XMMatrixTranspose(XMMatrixIdentity()));
 
@@ -103,7 +155,11 @@ uint32_t ModelManager::CreateRing(uint32_t textureId, const Material &material,
     innerRadius = (std::clamp)(innerRadius, 0.0f, outerRadius - 0.0001f);
 
     Material ringMaterial = material;
-    XMStoreFloat4x4(&ringMaterial.uvTransform, XMMatrixTranspose(XMMatrixIdentity()));
+    if (ringMaterial.baseColorTextureId == UINT32_MAX) {
+        ringMaterial.baseColorTextureId = textureId;
+    }
+    XMStoreFloat4x4(&ringMaterial.uvTransform,
+                    XMMatrixTranspose(XMMatrixIdentity()));
 
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
@@ -128,18 +184,16 @@ uint32_t ModelManager::CreateRing(uint32_t textureId, const Material &material,
         const float uNext =
             static_cast<float>(index + 1) / static_cast<float>(divide);
 
-        vertices.push_back(
-            {{-sinV * outerRadius, cosV * outerRadius, 0.0f},
-             {0.0f, 0.0f, 1.0f},
-             {u, 0.0f}});
+        vertices.push_back({{-sinV * outerRadius, cosV * outerRadius, 0.0f},
+                            {0.0f, 0.0f, 1.0f},
+                            {u, 0.0f}});
         vertices.push_back(
             {{-sinNext * outerRadius, cosNext * outerRadius, 0.0f},
              {0.0f, 0.0f, 1.0f},
              {uNext, 0.0f}});
-        vertices.push_back(
-            {{-sinV * innerRadius, cosV * innerRadius, 0.0f},
-             {0.0f, 0.0f, 1.0f},
-             {u, 1.0f}});
+        vertices.push_back({{-sinV * innerRadius, cosV * innerRadius, 0.0f},
+                            {0.0f, 0.0f, 1.0f},
+                            {u, 1.0f}});
         vertices.push_back(
             {{-sinNext * innerRadius, cosNext * innerRadius, 0.0f},
              {0.0f, 0.0f, 1.0f},
@@ -185,6 +239,9 @@ uint32_t ModelManager::CreateCylinder(uint32_t textureId,
     height = (std::max)(height, 0.001f);
 
     Material cylinderMaterial = material;
+    if (cylinderMaterial.baseColorTextureId == UINT32_MAX) {
+        cylinderMaterial.baseColorTextureId = textureId;
+    }
     XMStoreFloat4x4(&cylinderMaterial.uvTransform,
                     XMMatrixTranspose(XMMatrixIdentity()));
 
@@ -193,8 +250,8 @@ uint32_t ModelManager::CreateCylinder(uint32_t textureId,
     vertices.reserve(static_cast<size_t>(divide) * 6u);
     indices.reserve(static_cast<size_t>(divide) * 6u);
 
-    const float radianPerDivide = std::numbers::pi_v<float> * 2.0f /
-                                  static_cast<float>(divide);
+    const float radianPerDivide =
+        std::numbers::pi_v<float> * 2.0f / static_cast<float>(divide);
 
     for (uint32_t index = 0; index < divide; ++index) {
         const uint32_t base = static_cast<uint32_t>(vertices.size());
@@ -211,27 +268,22 @@ uint32_t ModelManager::CreateCylinder(uint32_t textureId,
         const float uNext =
             static_cast<float>(index + 1) / static_cast<float>(divide);
 
-        vertices.push_back(
-            {{-sinV * topRadius, height, cosV * topRadius},
-             {-sinV, 0.0f, cosV},
-             {u, 1.0f}});
-        vertices.push_back(
-            {{-sinNext * topRadius, height, cosNext * topRadius},
-             {-sinNext, 0.0f, cosNext},
-             {uNext, 1.0f}});
-        vertices.push_back(
-            {{-sinV * bottomRadius, 0.0f, cosV * bottomRadius},
-             {-sinV, 0.0f, cosV},
-             {u, 0.0f}});
+        vertices.push_back({{-sinV * topRadius, height, cosV * topRadius},
+                            {-sinV, 0.0f, cosV},
+                            {u, 1.0f}});
+        vertices.push_back({{-sinNext * topRadius, height, cosNext * topRadius},
+                            {-sinNext, 0.0f, cosNext},
+                            {uNext, 1.0f}});
+        vertices.push_back({{-sinV * bottomRadius, 0.0f, cosV * bottomRadius},
+                            {-sinV, 0.0f, cosV},
+                            {u, 0.0f}});
 
-        vertices.push_back(
-            {{-sinV * bottomRadius, 0.0f, cosV * bottomRadius},
-             {-sinV, 0.0f, cosV},
-             {u, 0.0f}});
-        vertices.push_back(
-            {{-sinNext * topRadius, height, cosNext * topRadius},
-             {-sinNext, 0.0f, cosNext},
-             {uNext, 1.0f}});
+        vertices.push_back({{-sinV * bottomRadius, 0.0f, cosV * bottomRadius},
+                            {-sinV, 0.0f, cosV},
+                            {u, 0.0f}});
+        vertices.push_back({{-sinNext * topRadius, height, cosNext * topRadius},
+                            {-sinNext, 0.0f, cosNext},
+                            {uNext, 1.0f}});
         vertices.push_back(
             {{-sinNext * bottomRadius, 0.0f, cosNext * bottomRadius},
              {-sinNext, 0.0f, cosNext},
@@ -262,6 +314,18 @@ uint32_t ModelManager::CreateCylinder(uint32_t textureId,
     modelRenderer_.CreateSkinClusters(model);
     models_.push_back(model);
     return static_cast<uint32_t>(models_.size() - 1);
+}
+
+uint32_t ModelManager::CreateMesh(
+    const void *vertexData, uint32_t vertexStride, uint32_t vertexCount,
+    const uint32_t *indexData, uint32_t indexCount,
+    D3D12_PRIMITIVE_TOPOLOGY primitiveTopology) {
+    return meshManager_.CreateMesh(vertexData, vertexStride, vertexCount,
+                                   indexData, indexCount, primitiveTopology);
+}
+
+const Mesh &ModelManager::GetMesh(uint32_t meshId) const {
+    return meshManager_.GetMesh(meshId);
 }
 
 void ModelManager::UpdateAnimation(uint32_t modelId, float deltaTime) {
@@ -314,12 +378,74 @@ void ModelManager::SetMaterial(uint32_t materialId, const Material &material) {
     materialManager_.SetMaterial(materialId, material);
 }
 
-void ModelManager::DrawSkeleton(uint32_t modelId, const Transform &transform,
-                                const Camera &camera) {
+void ModelManager::Draw(uint32_t modelId, const Transform &transform,
+                        const Camera &camera, uint32_t environmentTextureId) {
     const Model *model = GetModel(modelId);
     if (!model) {
         return;
     }
 
-    skeletonDebugRenderer_.Draw(*model, transform, camera);
+    modelRenderer_.Draw(*model, transform, camera, environmentTextureId);
+}
+
+void ModelManager::DrawInstanced(uint32_t modelId, const Transform *transforms,
+                                 uint32_t instanceCount,
+                                 const Camera &camera,
+                                 uint32_t environmentTextureId) {
+    const Model *model = GetModel(modelId);
+    if (!model) {
+        return;
+    }
+
+    modelRenderer_.DrawInstanced(*model, transforms, instanceCount, camera,
+                                 environmentTextureId);
+}
+
+void ModelManager::DrawInstanced(uint32_t modelId,
+                                 const InstanceData *instances,
+                                 uint32_t instanceCount,
+                                 const Camera &camera,
+                                 uint32_t environmentTextureId) {
+    const Model *model = GetModel(modelId);
+    if (!model) {
+        return;
+    }
+
+    modelRenderer_.DrawInstanced(*model, instances, instanceCount, camera,
+                                 environmentTextureId);
+}
+
+void ModelManager::DrawShadow(
+    uint32_t modelId, const Transform &transform,
+    const DirectX::XMFLOAT4X4 &lightViewProjection) {
+    const Model *model = GetModel(modelId);
+    if (!model) {
+        return;
+    }
+
+    modelRenderer_.DrawShadow(*model, transform, lightViewProjection);
+}
+
+void ModelManager::DrawInstancedShadow(
+    uint32_t modelId, const Transform *transforms, uint32_t instanceCount,
+    const DirectX::XMFLOAT4X4 &lightViewProjection) {
+    const Model *model = GetModel(modelId);
+    if (!model) {
+        return;
+    }
+
+    modelRenderer_.DrawInstancedShadow(*model, transforms, instanceCount,
+                                       lightViewProjection);
+}
+
+void ModelManager::DrawInstancedShadow(
+    uint32_t modelId, const InstanceData *instances, uint32_t instanceCount,
+    const DirectX::XMFLOAT4X4 &lightViewProjection) {
+    const Model *model = GetModel(modelId);
+    if (!model) {
+        return;
+    }
+
+    modelRenderer_.DrawInstancedShadow(*model, instances, instanceCount,
+                                       lightViewProjection);
 }

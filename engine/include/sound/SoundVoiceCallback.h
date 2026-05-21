@@ -1,35 +1,39 @@
 #pragma once
+#include <atomic>
 #include <xaudio2.h>
 
-#ifdef _WIN32
-#include <Windows.h>
-#endif
-
 /// <summary>
-/// XAudio2 の再生コールバックを処理する
+/// XAudio2 の再生コールバックを受ける
 /// </summary>
 class SoundVoiceCallback : public IXAudio2VoiceCallback {
   public:
+    bool IsEnded() const {
+        return streamEnded_.load(std::memory_order_acquire) ||
+               endedBufferCount_.load(std::memory_order_acquire) > 0;
+    }
+
+    uint32_t ConsumeEndedBufferCount() {
+        return endedBufferCount_.exchange(0, std::memory_order_acq_rel);
+    }
+
+    void Reset() {
+        endedBufferCount_.store(0, std::memory_order_release);
+        streamEnded_.store(false, std::memory_order_release);
+    }
+
     /// <summary>
-    /// バッファ再生終了時にソースボイスを破棄する
+    /// バッファ再生終了通知を受け取る
     /// </summary>
-    /// <param name="context">再生終了したソースボイス</param>
-    void STDMETHODCALLTYPE OnBufferEnd(void *context) override {
-#ifdef _WIN32
-        if (!context) {
-            OutputDebugStringA("[SoundVoiceCallback] OnBufferEnd context=nullptr\n");
-        }
-#endif
-        auto *voice = reinterpret_cast<IXAudio2SourceVoice *>(context);
-        if (voice) {
-            voice->DestroyVoice();
-        }
+    void STDMETHODCALLTYPE OnBufferEnd(void *) override {
+        endedBufferCount_.fetch_add(1, std::memory_order_acq_rel);
     }
 
     /// <summary>
     /// ストリーム終了通知を受け取る
     /// </summary>
-    void STDMETHODCALLTYPE OnStreamEnd() override {}
+    void STDMETHODCALLTYPE OnStreamEnd() override {
+        streamEnded_.store(true, std::memory_order_release);
+    }
 
     /// <summary>
     /// 音声処理パス終了通知を受け取る
@@ -54,5 +58,11 @@ class SoundVoiceCallback : public IXAudio2VoiceCallback {
     /// <summary>
     /// 音声再生エラー通知を受け取る
     /// </summary>
-    void STDMETHODCALLTYPE OnVoiceError(void *, HRESULT) override {}
+    void STDMETHODCALLTYPE OnVoiceError(void *, HRESULT) override {
+        streamEnded_.store(true, std::memory_order_release);
+    }
+
+  private:
+    std::atomic_uint32_t endedBufferCount_{0};
+    std::atomic_bool streamEnded_{false};
 };

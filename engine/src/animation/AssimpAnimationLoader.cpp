@@ -1,4 +1,5 @@
-#include "AssimpAnimationLoader.h"
+#include "animation/AssimpAnimationLoader.h"
+#include <unordered_map>
 
 namespace {
 
@@ -8,9 +9,33 @@ float ToSeconds(double ticks, float ticksPerSecond) {
     return static_cast<float>(ticks) / safeTicksPerSecond;
 }
 
+const aiNode *FindNearestAnimatedNode(
+    const aiNode *node,
+    const std::unordered_map<std::string, NodeAnimation> &nodeAnimations) {
+    if (!node) {
+        return nullptr;
+    }
+
+    if (nodeAnimations.find(node->mName.C_Str()) != nodeAnimations.end()) {
+        return node;
+    }
+
+    for (unsigned int childIndex = 0; childIndex < node->mNumChildren;
+         ++childIndex) {
+        const aiNode *found = FindNearestAnimatedNode(
+            node->mChildren[childIndex], nodeAnimations);
+        if (found) {
+            return found;
+        }
+    }
+
+    return nullptr;
+}
+
 } // namespace
 
-void AssimpAnimationLoader::LoadAnimations(const aiScene *scene, Model &model) const {
+void AssimpAnimationLoader::LoadAnimations(const aiScene *scene,
+                                           Model &model) const {
     if (!scene || !scene->HasAnimations()) {
         return;
     }
@@ -55,6 +80,13 @@ void AssimpAnimationLoader::LoadAnimations(const aiScene *scene, Model &model) c
             }
 
             clip.nodeAnimations[channel->mNodeName.C_Str()] = nodeAnim;
+        }
+
+        if (const aiNode *rootAnimatedNode = FindNearestAnimatedNode(
+                scene->mRootNode, clip.nodeAnimations)) {
+            clip.rootNodeName = rootAnimatedNode->mName.C_Str();
+        } else if (clip.nodeAnimations.size() == 1) {
+            clip.rootNodeName = clip.nodeAnimations.begin()->first;
         }
 
         std::string animName = anim->mName.C_Str();

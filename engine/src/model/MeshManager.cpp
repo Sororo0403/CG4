@@ -1,7 +1,7 @@
-#include "MeshManager.h"
-#include "DirectXCommon.h"
-#include "DxHelpers.h"
-#include "DxUtils.h"
+#include "model/MeshManager.h"
+#include "graphics/DirectXCommon.h"
+#include "graphics/DxHelpers.h"
+#include "graphics/DxUtils.h"
 
 using namespace DxUtils;
 using Microsoft::WRL::ComPtr;
@@ -10,11 +10,12 @@ void MeshManager::Initialize(DirectXCommon *dxCommon) { dxCommon_ = dxCommon; }
 
 uint32_t MeshManager::CreateMesh(const void *vertexData, uint32_t vertexStride,
                                  uint32_t vertexCount,
-                                 const uint32_t *indexData,
-                                 uint32_t indexCount) {
+                                 const uint32_t *indexData, uint32_t indexCount,
+                                 D3D12_PRIMITIVE_TOPOLOGY primitiveTopology) {
     Mesh mesh{};
     mesh.indexCount = indexCount;
     mesh.vertexStride = vertexStride;
+    mesh.primitiveTopology = primitiveTopology;
 
     UINT vbSize = vertexStride * vertexCount;
 

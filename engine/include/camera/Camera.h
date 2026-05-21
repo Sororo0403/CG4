@@ -2,101 +2,54 @@
 #include <DirectXMath.h>
 
 /// <summary>
-/// カメラの挙動モード
-/// </summary>
-enum class CameraMode {
-    Free,  // Debug用
-    LookAt // 通常・三脚
-};
-
-/// <summary>
-/// ビュー行列と射影行列を管理するカメラ
+/// ビュー行列と射影行列を管理する基本カメラ
 /// </summary>
 class Camera {
   public:
+    Camera();
+
     /// <summary>
-    /// 初期化処理
+    /// 投影設定を初期化し、行列を再計算する
     /// </summary>
-    /// <param name="aspect">アスペクト比</param>
     void Initialize(float aspect);
 
     /// <summary>
-    /// 行列を更新
+    /// 現在の設定からビュー行列と射影行列を再計算する
     /// </summary>
     void UpdateMatrices();
 
-    /// <summary>
-    /// ターゲットを見るカメラ
-    /// </summary>
-    /// <param name="target">ターゲットの位置</param>
-    void LookAt(const DirectX::XMFLOAT3 &target);
+    void SetPosition(const DirectX::XMFLOAT3 &position);
+    void SetRotation(const DirectX::XMFLOAT3 &rotation);
+    void SetAspect(float aspect);
+    void SetPerspectiveFovDeg(float fovDeg);
+    void SetPerspectiveFovRad(float fovRad);
+    void SetClipRange(float nearZ, float farZ);
 
-    /// <summary>
-    /// カメラ位置を設定する
-    /// </summary>
-    /// <param name="pos">設定する位置</param>
-    void SetPosition(const DirectX::XMFLOAT3 &pos) { position_ = pos; }
-    /// <summary>
-    /// カメラのオイラー回転を設定する
-    /// </summary>
-    /// <param name="rot">設定する回転</param>
-    void SetRotation(const DirectX::XMFLOAT3 &rot) { rotation_ = rot; }
-    /// <summary>
-    /// 視野角を度数法で設定する
-    /// </summary>
-    /// <param name="fovDeg">垂直方向の視野角(度)</param>
-    void SetPerspectiveFovDeg(float fovDeg) {
-        fovY_ = DirectX::XMConvertToRadians(fovDeg);
-    }
-    /// <summary>
-    /// カメラモードを設定する
-    /// </summary>
-    /// <param name="mode">設定するモード</param>
-    void SetMode(CameraMode mode) { mode_ = mode; }
-    /// <summary>
-    /// アスペクト比を設定する
-    /// </summary>
-    /// <param name="aspect">新しいアスペクト比</param>
-    void SetAspect(float aspect) { aspect_ = aspect; }
-
-    /// <summary>
-    /// ビュー行列を取得する
-    /// </summary>
-    /// <returns>現在のビュー行列</returns>
     const DirectX::XMMATRIX &GetView() const { return view_; }
-    /// <summary>
-    /// 射影行列を取得する
-    /// </summary>
-    /// <returns>現在の射影行列</returns>
     const DirectX::XMMATRIX &GetProj() const { return proj_; }
-    /// <summary>
-    /// カメラ位置を取得する
-    /// </summary>
-    /// <returns>現在の位置</returns>
+    const DirectX::XMMATRIX &GetViewProjection() const {
+        return viewProjection_;
+    }
+
     const DirectX::XMFLOAT3 &GetPosition() const { return position_; }
-    /// <summary>
-    /// カメラ回転を取得する
-    /// </summary>
-    /// <returns>現在の回転</returns>
     const DirectX::XMFLOAT3 &GetRotation() const { return rotation_; }
-    /// <summary>
-    /// 注視対象を取得する
-    /// </summary>
-    /// <returns>現在のターゲット位置</returns>
-    const DirectX::XMFLOAT3 &GetTarget() const { return target_; }
+    float GetAspect() const { return aspect_; }
+    float GetFovY() const { return fovY_; }
+    float GetNearZ() const { return nearZ_; }
+    float GetFarZ() const { return farZ_; }
 
   private:
+    void SanitizeProjection();
+
     DirectX::XMFLOAT3 position_{0.0f, 0.0f, -5.0f};
     DirectX::XMFLOAT3 rotation_{0.0f, 0.0f, 0.0f};
-    DirectX::XMFLOAT3 target_{0.0f, 0.0f, 0.0f};
 
     float fovY_ = DirectX::XM_PIDIV4;
-    float aspect_ = 1.0f;
+    float aspect_ = 16.0f / 9.0f;
     float nearZ_ = 0.1f;
-    float farZ_ = 100.0f;
+    float farZ_ = 1000.0f;
 
-    DirectX::XMMATRIX view_{};
-    DirectX::XMMATRIX proj_{};
-
-    CameraMode mode_ = CameraMode::LookAt;
+    DirectX::XMMATRIX view_ = DirectX::XMMatrixIdentity();
+    DirectX::XMMATRIX proj_ = DirectX::XMMatrixIdentity();
+    DirectX::XMMATRIX viewProjection_ = DirectX::XMMatrixIdentity();
 };

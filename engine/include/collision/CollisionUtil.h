@@ -1,6 +1,6 @@
 #pragma once
-#include "AABB.h"
-#include "OBB.h"
+#include "collision/AABB.h"
+#include "collision/OBB.h"
 #include <DirectXMath.h>
 
 /// <summary>
@@ -8,8 +8,22 @@
 /// </summary>
 namespace CollisionUtil {
 
+struct CollisionResult {
+    bool hit = false;
+    DirectX::XMFLOAT3 normal = {0.0f, 0.0f, 0.0f};
+    float penetration = 0.0f;
+};
+
 /// <summary>
-/// 2つのOBBが衝突しているかを判定
+/// 2つのOBBの衝突有無と接触情報を計算する
+/// </summary>
+/// <param name="a">判定対象となる1つ目のOBB</param>
+/// <param name="b">判定対象となる2つ目のOBB</param>
+/// <returns>衝突有無、aからbへ向かう法線、めり込み量</returns>
+CollisionResult TestOBB(const OBB &a, const OBB &b);
+
+/// <summary>
+/// 2つのOBBが交差しているかを判定する
 /// </summary>
 /// <param name="a">判定対象となる1つ目のOBB</param>
 /// <param name="b">判定対象となる2つ目のOBB</param>
@@ -17,7 +31,7 @@ namespace CollisionUtil {
 bool CheckOBB(const OBB &a, const OBB &b);
 
 /// <summary>
-/// 矩形の当たり判定
+/// 2つのAABBが交差しているかを判定する
 /// </summary>
 /// <param name="a">当たり判定を行う矩形a</param>
 /// <param name="b">当たり判定を行う矩形b</param>

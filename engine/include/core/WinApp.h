@@ -8,7 +8,7 @@
 class WinApp {
   public:
     /// <summary>
-    /// デストラクタ
+    /// Win32ウィンドウ管理オブジェクトを破棄する
     /// </summary>
     ~WinApp() = default;
 
@@ -20,8 +20,9 @@ class WinApp {
     /// <param name="width">クライアント領域の幅</param>
     /// <param name="height">クライアント領域の高さ</param>
     /// <param name="title">ウィンドウタイトル</param>
+    /// <param name="fullscreen">起動時にボーダーレス全画面にする場合はtrue。</param>
     void Initialize(HINSTANCE hInstance, int nCmdShow, int width, int height,
-                    const std::wstring &title);
+                    const std::wstring &title, bool fullscreen = false);
 
     /// <summary>
     /// Windowsメッセージを処理する
@@ -30,15 +31,28 @@ class WinApp {
     bool ProcessMessage();
 
     /// <summary>
+    /// 次のメッセージ処理でアプリケーションを終了するよう要求する。
+    /// </summary>
+    void RequestClose();
+
+    /// <summary>
+    /// ウィンドウ上のOSマウスカーソル表示を切り替える。
+    /// </summary>
+    /// <param name="visible">表示する場合はtrue、隠す場合はfalse。</param>
+    void SetCursorVisible(bool visible);
+
+    /// <summary>
     /// クライアント領域の幅を取得する
     /// </summary>
     /// <returns>クライアント領域の幅</returns>
     int GetWidth() const;
+
     /// <summary>
     /// クライアント領域の高さを取得する
     /// </summary>
     /// <returns>クライアント領域の高さ</returns>
     int GetHeight() const;
+
     /// <summary>
     /// ウィンドウハンドルを取得する
     /// </summary>
@@ -60,6 +74,7 @@ class WinApp {
 
   private:
     static constexpr const wchar_t *kClassName = L"WindowClass";
+    static bool cursorVisible_;
 
     int width_;
     int height_;

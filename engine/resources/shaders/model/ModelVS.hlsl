@@ -4,6 +4,7 @@ cbuffer ObjectTransform : register(b0)
 {
     float4x4 matWVP;
     float4x4 matWorld;
+    float4x4 matWorldInverseTranspose;
 };
 
 ModelVSOutput main(ModelVSInput input)
@@ -14,7 +15,7 @@ ModelVSOutput main(ModelVSInput input)
     float3 localNormal = input.normal;
 
     float4 worldPos = mul(localPos, matWorld);
-    float3 worldNormal = mul(localNormal, (float3x3) matWorld);
+    float3 worldNormal = mul(localNormal, (float3x3) matWorldInverseTranspose);
     float normalLen = length(worldNormal);
     if (normalLen < 0.0001f)
     {
@@ -29,5 +30,9 @@ ModelVSOutput main(ModelVSInput input)
     o.uv = input.uv;
     o.worldPos = worldPos.xyz;
     o.worldNormal = worldNormal;
+    float3 worldTangent = mul(input.tangent.xyz, (float3x3) matWorld);
+    float tangentLen = length(worldTangent);
+    o.worldTangent = float4(tangentLen > 0.0001f ? worldTangent / tangentLen : float3(1.0f, 0.0f, 0.0f), input.tangent.w);
+    o.color = input.color;
     return o;
 }

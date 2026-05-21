@@ -1,5 +1,5 @@
 #pragma once
-#include "Model.h"
+#include "model/Model.h"
 #include <assimp/scene.h>
 
 /// <summary>

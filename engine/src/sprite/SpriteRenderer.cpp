@@ -1,11 +1,12 @@
-#include "SpriteRenderer.h"
-#include "DirectXCommon.h"
-#include "DxHelpers.h"
-#include "DxUtils.h"
-#include "ShaderCompiler.h"
-#include "Sprite.h"
-#include "SrvManager.h"
-#include "TextureManager.h"
+#include "sprite/SpriteRenderer.h"
+#include "graphics/DirectXCommon.h"
+#include "graphics/DxHelpers.h"
+#include "graphics/DxUtils.h"
+#include "graphics/ShaderCompiler.h"
+#include "graphics/ShaderPaths.h"
+#include "graphics/SrvManager.h"
+#include "sprite/Sprite.h"
+#include "texture/TextureManager.h"
 
 using namespace DirectX;
 using namespace DxUtils;
@@ -29,41 +30,80 @@ void SpriteRenderer::Initialize(DirectXCommon *dxCommon,
 
     CreateRootSignature();
     CreatePipelineState();
-    CreateVertexBuffer();
-    CreateConstantBuffer();
+    CreateUploadBuffer();
     UpdateProjection(width, height);
 }
 
 void SpriteRenderer::Draw(const Sprite &sprite) {
     auto cmd = dxCommon_->GetCommandList();
+    const float l = sprite.position.x;
+    const float t = sprite.position.y;
+    const float r = sprite.position.x + sprite.size.x;
+    const float b = sprite.position.y + sprite.size.y;
+    const float u0 = sprite.uvLeftTop.x;
+    const float v0 = sprite.uvLeftTop.y;
+    const float u1 = sprite.uvLeftTop.x + sprite.uvSize.x;
+    const float v1 = sprite.uvLeftTop.y + sprite.uvSize.y;
 
-    // 頂点生成
-    float l = sprite.position.x;
-    float t = sprite.position.y;
-    float r = sprite.position.x + sprite.size.x;
-    float b = sprite.position.y + sprite.size.y;
+    auto drawPass = [&](PipelineKind pipelineKind, const XMFLOAT4 &color) {
+        if (drawCursor_ >= kMaxSpriteDraws) {
+            return;
+        }
 
-    SpriteVertex vertices[6] = {
-        {{l, t, 0.0f}, {0.0f, 0.0f}, sprite.color},
-        {{r, t, 0.0f}, {1.0f, 0.0f}, sprite.color},
-        {{l, b, 0.0f}, {0.0f, 1.0f}, sprite.color},
+        if (activePipelineKind_ != pipelineKind) {
+            activePipelineKind_ = pipelineKind;
+            cmd->SetPipelineState(
+                pipelineStates_[static_cast<uint32_t>(activePipelineKind_)]
+                    .Get());
+        }
 
-        {{l, b, 0.0f}, {0.0f, 1.0f}, sprite.color},
-        {{r, t, 0.0f}, {1.0f, 0.0f}, sprite.color},
-        {{r, b, 0.0f}, {1.0f, 1.0f}, sprite.color},
+        SpriteVertex vertices[6] = {
+            {{l, t, 0.0f}, {u0, v0}, color}, {{r, t, 0.0f}, {u1, v0}, color},
+            {{l, b, 0.0f}, {u0, v1}, color},
+
+            {{l, b, 0.0f}, {u0, v1}, color}, {{r, t, 0.0f}, {u1, v0}, color},
+            {{r, b, 0.0f}, {u1, v1}, color},
+        };
+
+        ++drawCursor_;
+        const UploadAllocation allocation =
+            uploadBuffer_.WriteArray(vertices, kVerticesPerSprite,
+                                     alignof(SpriteVertex));
+        D3D12_VERTEX_BUFFER_VIEW view{};
+        view.BufferLocation = allocation.gpu;
+        view.SizeInBytes = sizeof(vertices);
+        view.StrideInBytes = sizeof(SpriteVertex);
+        cmd->IASetVertexBuffers(0, 1, &view);
+        cmd->SetGraphicsRootDescriptorTable(
+            1, textureManager_->GetGpuHandle(sprite.textureId));
+        cmd->DrawInstanced(6, 1, 0, 0);
     };
 
-    // VB 更新
-    SpriteVertex *mapped = nullptr;
-    vertexBuffer_->Map(0, nullptr, reinterpret_cast<void **>(&mapped));
-    memcpy(mapped, vertices, sizeof(vertices));
-    vertexBuffer_->Unmap(0, nullptr);
+    switch (sprite.blendMode) {
+    case SpriteBlendMode::Modulate:
+        drawPass(PipelineKind::Modulate, sprite.color);
+        break;
+    case SpriteBlendMode::PremultipliedMask: {
 
-    // テクスチャ
-    cmd->SetGraphicsRootDescriptorTable(
-        1, textureManager_->GetGpuHandle(sprite.textureId));
+        const XMFLOAT4 darkenColor = {
+            sprite.color.x * 0.60f, sprite.color.y * 0.60f,
+            sprite.color.z * 0.60f, sprite.color.w * 1.10f};
+        const XMFLOAT4 tintColor = {sprite.color.x, sprite.color.y,
+                                    sprite.color.z, sprite.color.w * 0.64f};
+        drawPass(PipelineKind::Modulate, darkenColor);
+        drawPass(PipelineKind::Alpha, tintColor);
+        break;
+    }
+    case SpriteBlendMode::Alpha:
+    default:
+        drawPass(PipelineKind::Alpha, sprite.color);
+        break;
+    }
+}
 
-    cmd->DrawInstanced(6, 1, 0, 0);
+void SpriteRenderer::BeginFrame() {
+    uploadBuffer_.BeginFrame();
+    drawCursor_ = 0;
 }
 
 void SpriteRenderer::PreDraw() {
@@ -72,51 +112,23 @@ void SpriteRenderer::PreDraw() {
     ID3D12DescriptorHeap *heaps[] = {srvManager_->GetHeap()};
     cmd->SetDescriptorHeaps(1, heaps);
 
-    cmd->SetPipelineState(pipelineState_.Get());
+    activePipelineKind_ = PipelineKind::Alpha;
+    cmd->SetPipelineState(
+        pipelineStates_[static_cast<uint32_t>(activePipelineKind_)].Get());
     cmd->SetGraphicsRootSignature(rootSignature_.Get());
 
-    cmd->SetGraphicsRootConstantBufferView(
-        0, constBuffer_->GetGPUVirtualAddress());
+    SpriteConstBuffer constants{};
+    constants.mat = matProjection_;
+    const UploadAllocation allocation = uploadBuffer_.Write(constants);
+    cmd->SetGraphicsRootConstantBufferView(0, allocation.gpu);
 
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    cmd->IASetVertexBuffers(0, 1, &vbView_);
 }
 
 void SpriteRenderer::PostDraw() {}
 
-void SpriteRenderer::CreateVertexBuffer() {
-    UINT size = sizeof(SpriteVertex) * 6;
-
-    CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
-    auto desc = CD3DX12_RESOURCE_DESC::Buffer(size);
-
-    ThrowIfFailed(dxCommon_->GetDevice()->CreateCommittedResource(
-                      &heap, D3D12_HEAP_FLAG_NONE, &desc,
-                      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                      IID_PPV_ARGS(&vertexBuffer_)),
-                  "Create sprite VB failed");
-
-    vbView_.BufferLocation = vertexBuffer_->GetGPUVirtualAddress();
-    vbView_.SizeInBytes = size;
-    vbView_.StrideInBytes = sizeof(SpriteVertex);
-}
-
-void SpriteRenderer::CreateConstantBuffer() {
-    UINT size = Align256(sizeof(SpriteConstBuffer));
-
-    CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
-    auto desc = CD3DX12_RESOURCE_DESC::Buffer(size);
-
-    ThrowIfFailed(dxCommon_->GetDevice()->CreateCommittedResource(
-                      &heap, D3D12_HEAP_FLAG_NONE, &desc,
-                      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                      IID_PPV_ARGS(&constBuffer_)),
-                  "Create sprite CB failed");
-
-    SpriteConstBuffer *mapped = nullptr;
-    constBuffer_->Map(0, nullptr, reinterpret_cast<void **>(&mapped));
-    mapped->mat = matProjection_;
-    constBuffer_->Unmap(0, nullptr);
+void SpriteRenderer::CreateUploadBuffer() {
+    uploadBuffer_.Initialize(dxCommon_->GetDevice(), kUploadBytesPerFrame, 2);
 }
 
 void SpriteRenderer::UpdateProjection(int width, int height) {
@@ -125,11 +137,6 @@ void SpriteRenderer::UpdateProjection(int width, int height) {
         1.0f);
 
     XMStoreFloat4x4(&matProjection_, XMMatrixTranspose(ortho));
-
-    SpriteConstBuffer *mapped = nullptr;
-    constBuffer_->Map(0, nullptr, reinterpret_cast<void **>(&mapped));
-    mapped->mat = matProjection_;
-    constBuffer_->Unmap(0, nullptr);
 }
 
 void SpriteRenderer::CreateRootSignature() {
@@ -159,10 +166,13 @@ void SpriteRenderer::CreateRootSignature() {
 }
 
 void SpriteRenderer::CreatePipelineState() {
-    auto vs = ShaderCompiler::Compile(L"engine/resources/shaders/sprite/SpriteVS.hlsl",
-                                      "main", "vs_5_0");
-    auto ps = ShaderCompiler::Compile(L"engine/resources/shaders/sprite/SpritePS.hlsl",
-                                      "main", "ps_5_0");
+    auto vs = ShaderCompiler::Compile(ShaderPaths::SpriteVS, "main", "vs_5_0");
+    auto psAlpha =
+        ShaderCompiler::Compile(ShaderPaths::SpritePS, "main", "ps_5_0");
+    auto psModulate = ShaderCompiler::Compile(ShaderPaths::SpritePS,
+                                              "mainModulate", "ps_5_0");
+    auto psPremultipliedMask = ShaderCompiler::Compile(
+        ShaderPaths::SpritePS, "mainPremultipliedMask", "ps_5_0");
 
     D3D12_INPUT_ELEMENT_DESC layout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
@@ -176,16 +186,14 @@ void SpriteRenderer::CreatePipelineState() {
     D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
     desc.pRootSignature = rootSignature_.Get();
     desc.VS = {vs->GetBufferPointer(), vs->GetBufferSize()};
-    desc.PS = {ps->GetBufferPointer(), ps->GetBufferSize()};
     desc.InputLayout = {layout, _countof(layout)};
     desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     desc.NumRenderTargets = 1;
-    desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    desc.RTVFormats[0] = DirectXCommon::kSceneColorFormat;
     desc.SampleDesc.Count = 1;
     desc.SampleMask = UINT_MAX;
     desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    D3D12_DEPTH_STENCIL_DESC depth =
-        CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    D3D12_DEPTH_STENCIL_DESC depth = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     depth.DepthEnable = FALSE;
     depth.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
     desc.DepthStencilState = depth;
@@ -202,7 +210,36 @@ void SpriteRenderer::CreatePipelineState() {
     rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
     desc.BlendState = blend;
 
-    ThrowIfFailed(dxCommon_->GetDevice()->CreateGraphicsPipelineState(
-                      &desc, IID_PPV_ARGS(&pipelineState_)),
-                  "CreateGraphicsPipelineState failed");
+    desc.PS = {psAlpha->GetBufferPointer(), psAlpha->GetBufferSize()};
+    ThrowIfFailed(
+        dxCommon_->GetDevice()->CreateGraphicsPipelineState(
+            &desc,
+            IID_PPV_ARGS(
+                &pipelineStates_[static_cast<uint32_t>(PipelineKind::Alpha)])),
+        "Create alpha sprite pipeline failed");
+
+    rt.SrcBlend = D3D12_BLEND_ZERO;
+    rt.DestBlend = D3D12_BLEND_SRC_COLOR;
+    rt.SrcBlendAlpha = D3D12_BLEND_ZERO;
+    rt.DestBlendAlpha = D3D12_BLEND_ONE;
+    desc.BlendState = blend;
+    desc.PS = {psModulate->GetBufferPointer(), psModulate->GetBufferSize()};
+    ThrowIfFailed(
+        dxCommon_->GetDevice()->CreateGraphicsPipelineState(
+            &desc, IID_PPV_ARGS(&pipelineStates_[static_cast<uint32_t>(
+                       PipelineKind::Modulate)])),
+        "Create modulate sprite pipeline failed");
+
+    rt.SrcBlend = D3D12_BLEND_ONE;
+    rt.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+    rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+    rt.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+    desc.BlendState = blend;
+    desc.PS = {psPremultipliedMask->GetBufferPointer(),
+               psPremultipliedMask->GetBufferSize()};
+    ThrowIfFailed(
+        dxCommon_->GetDevice()->CreateGraphicsPipelineState(
+            &desc, IID_PPV_ARGS(&pipelineStates_[static_cast<uint32_t>(
+                       PipelineKind::PremultipliedMask)])),
+        "Create premultiplied mask sprite pipeline failed");
 }

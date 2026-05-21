@@ -1,10 +1,13 @@
 #pragma once
-#include "Camera.h"
-#include "MaterialManager.h"
-#include "Model.h"
-#include "Transform.h"
+#include "camera/Camera.h"
+#include "graphics/Lighting.h"
+#include "graphics/UploadRingBuffer.h"
+#include "model/InstanceData.h"
+#include "model/MaterialManager.h"
+#include "model/Model.h"
+#include "model/Transform.h"
 #include <DirectXMath.h>
-#include <array>
+#include <cstddef>
 #include <d3d12.h>
 #include <wrl.h>
 
@@ -14,52 +17,12 @@ class MeshManager;
 class TextureManager;
 
 /// <summary>
-/// モデル描画時の一時エフェクト設定
-/// </summary>
-struct ModelDrawEffect {
-    bool enabled = false;
-    bool additiveBlend = false;
-    bool disableCulling = false;
-    DirectX::XMFLOAT4 color = {1.0f, 0.2f, 0.7f, 0.65f};
-    float intensity = 0.0f;
-    float fresnelPower = 3.5f;
-    float noiseAmount = 0.0f;
-    float time = 0.0f;
-};
-
-/// <summary>
-/// 点光源1灯分のパラメータ
-/// </summary>
-struct PointLight {
-    DirectX::XMFLOAT4 positionRange = {0.0f, 2.0f, -1.0f, 8.0f};
-    DirectX::XMFLOAT4 colorIntensity = {1.0f, 0.55f, 0.35f, 1.1f};
-};
-
-/// <summary>
-/// シーン全体で共有するライティング定数
-/// </summary>
-struct SceneLighting {
-    DirectX::XMFLOAT3 keyLightDirection = {-0.35f, -1.0f, 0.25f};
-    float padding0 = 0.0f;
-    DirectX::XMFLOAT4 keyLightColor = {1.20f, 1.08f, 0.96f, 1.0f};
-    DirectX::XMFLOAT3 fillLightDirection = {0.55f, -0.35f, -0.75f};
-    float padding1 = 0.0f;
-    DirectX::XMFLOAT4 fillLightColor = {0.22f, 0.32f, 0.48f, 0.38f};
-    DirectX::XMFLOAT4 ambientColor = {0.28f, 0.30f, 0.34f, 1.0f};
-    std::array<PointLight, 2> pointLights = {{
-        {{0.0f, 2.0f, -1.0f, 8.0f}, {1.0f, 0.55f, 0.35f, 1.1f}},
-        {{0.0f, 1.5f, 2.5f, 7.0f}, {0.25f, 0.45f, 1.0f, 0.75f}},
-    }};
-    DirectX::XMFLOAT4 lightingParams = {48.0f, 0.30f, 2.8f, 0.22f};
-};
-
-/// <summary>
 /// モデル描画パイプラインと定数バッファ更新を担当する
 /// </summary>
 class ModelRenderer {
   public:
     /// <summary>
-    /// 初期化処理
+    /// モデル描画に必要なパイプラインと各マネージャ参照を初期化する
     /// </summary>
     /// <param name="dxCommon">DirectX共通管理</param>
     /// <param name="srvManager">SRV管理</param>
@@ -70,29 +33,58 @@ class ModelRenderer {
                     MeshManager *meshManager, TextureManager *textureManager,
                     MaterialManager *materialManager);
 
+    void BeginFrame();
+
     /// <summary>
-    /// 描画処理
+    /// 指定モデルをTransformとカメラに基づいて描画する
     /// </summary>
     /// <param name="model">描画するモデル</param>
     /// <param name="transform">描画するモデルのTransform</param>
     /// <param name="camera">描画に使用するカメラ</param>
-    /// <param name="environmentTextureId">
-    /// この描画で使用する環境マップテクスチャID
-    /// UINT32_MAXを指定した場合はSetEnvironmentTextureの設定を使用
-    /// </param>
+    /// <param
+    /// name="environmentTextureId">この描画で使用する環境マップテクスチャID。UINT32_MAXの場合はSetEnvironmentTextureの設定を使用</param>
     void Draw(const Model &model, const Transform &transform,
-              const Camera &camera,
-              uint32_t environmentTextureId = UINT32_MAX);
+              const Camera &camera, uint32_t environmentTextureId = UINT32_MAX);
 
     /// <summary>
-    /// 現在フレームの描画エフェクトを設定する
+    /// 同一モデルを複数Transformでまとめて描画する
     /// </summary>
-    /// <param name="effect">適用するエフェクト</param>
-    void SetDrawEffect(const ModelDrawEffect &effect) { currentEffect_ = effect; }
+    void DrawInstanced(const Model &model, const Transform *transforms,
+                       uint32_t instanceCount, const Camera &camera,
+                       uint32_t environmentTextureId = UINT32_MAX);
+
     /// <summary>
-    /// 描画エフェクト設定を初期状態へ戻す
+    /// 同一モデルを複数InstanceDataでまとめて描画する
     /// </summary>
-    void ClearDrawEffect() { currentEffect_ = ModelDrawEffect{}; }
+    void DrawInstanced(const Model &model, const InstanceData *instances,
+                       uint32_t instanceCount, const Camera &camera,
+                       uint32_t environmentTextureId = UINT32_MAX);
+
+    /// <summary>
+    /// ShadowPass用の描画状態を設定する
+    /// </summary>
+    void PreDrawShadow();
+
+    /// <summary>
+    /// 指定モデルをShadowMapへ深度描画する
+    /// </summary>
+    void DrawShadow(const Model &model, const Transform &transform,
+                    const DirectX::XMFLOAT4X4 &lightViewProjection);
+
+    /// <summary>
+    /// 同一モデルを複数TransformでShadowMapへまとめて深度描画する
+    /// </summary>
+    void DrawInstancedShadow(const Model &model, const Transform *transforms,
+                             uint32_t instanceCount,
+                             const DirectX::XMFLOAT4X4 &lightViewProjection);
+
+    /// <summary>
+    /// 同一モデルを複数InstanceDataでShadowMapへまとめて深度描画する
+    /// </summary>
+    void DrawInstancedShadow(const Model &model, const InstanceData *instances,
+                             uint32_t instanceCount,
+                             const DirectX::XMFLOAT4X4 &lightViewProjection);
+
     /// <summary>
     /// シーンライティングを設定する
     /// </summary>
@@ -100,6 +92,13 @@ class ModelRenderer {
     void SetSceneLighting(const SceneLighting &lighting) {
         currentLighting_ = lighting;
     }
+
+    /// <summary>
+    /// シーンフォグを設定する
+    /// </summary>
+    /// <param name="fog">適用するフォグ定数</param>
+    void SetSceneFog(const SceneFog &fog) { currentFog_ = fog; }
+
     /// <summary>
     /// 環境マップに使うキューブマップテクスチャを設定する
     /// </summary>
@@ -108,15 +107,25 @@ class ModelRenderer {
         environmentTextureId_ = textureId;
         hasEnvironmentTexture_ = true;
     }
+
     /// <summary>
     /// 環境マップを無効化する
     /// </summary>
     void ClearEnvironmentTexture() { hasEnvironmentTexture_ = false; }
+
+    /// <summary>
+    /// 標準シェーダーが参照するShadowMapを設定する
+    /// </summary>
+    void SetShadowMap(D3D12_GPU_DESCRIPTOR_HANDLE shadowMap,
+                      const DirectX::XMFLOAT4X4 &lightViewProjection,
+                      const SceneShadowSettings &settings);
+
     /// <summary>
     /// モデル用スキンクラスターGPUリソースを生成する
     /// </summary>
     /// <param name="model">対象モデル</param>
     void CreateSkinClusters(Model &model);
+
     /// <summary>
     /// スキンクラスターのパレット内容を更新する
     /// </summary>
@@ -124,12 +133,12 @@ class ModelRenderer {
     void UpdateSkinClusters(Model &model);
 
     /// <summary>
-    /// 描画前処理
+    /// モデル描画用パイプラインを描画前に設定する
     /// </summary>
     void PreDraw();
 
     /// <summary>
-    /// 描画後処理
+    /// モデル描画後の状態を整理する
     /// </summary>
     void PostDraw();
 
@@ -138,22 +147,46 @@ class ModelRenderer {
     /// ルートシグネチャを生成する
     /// </summary>
     void CreateRootSignature();
+
     /// <summary>
     /// ComputeShader用ルートシグネチャを生成する
     /// </summary>
     void CreateSkinningRootSignature();
+
     /// <summary>
     /// パイプラインステートを生成する
     /// </summary>
     void CreatePipelineState();
+
+    /// <summary>
+    /// ShadowPass用のルートシグネチャを生成する
+    /// </summary>
+    void CreateShadowRootSignature();
+
+    /// <summary>
+    /// ShadowPass用のパイプラインステートを生成する
+    /// </summary>
+    void CreateShadowPipelineState();
+
     /// <summary>
     /// ComputeShader用パイプラインステートを生成する
     /// </summary>
     void CreateSkinningPipelineState();
-    /// <summary>
-    /// 定数バッファを生成する
-    /// </summary>
-    void CreateConstantBuffer();
+
+    void CreateUploadBuffer();
+    D3D12_GPU_VIRTUAL_ADDRESS WriteObjectConstants(
+        const DirectX::XMMATRIX &wvp, const DirectX::XMMATRIX &world,
+        const DirectX::XMMATRIX &worldInverseTranspose);
+    D3D12_GPU_VIRTUAL_ADDRESS WriteSceneConstants(const Camera &camera);
+    D3D12_VERTEX_BUFFER_VIEW WriteInstances(const Model &model,
+                                            const Transform *transforms,
+                                            uint32_t instanceCount);
+    D3D12_VERTEX_BUFFER_VIEW WriteInstances(const Model &model,
+                                            const InstanceData *instances,
+                                            uint32_t instanceCount);
+    void SetPipelineForMaterial(const Material &material);
+    void SetInstancedPipelineForMaterial(const Material &material);
+
     /// <summary>
     /// ComputeShaderでスキニング済み頂点を書き込む
     /// </summary>
@@ -161,6 +194,8 @@ class ModelRenderer {
 
   private:
     static constexpr uint32_t kMaxDraws = 4096;
+    static constexpr size_t kUploadBytesPerFrame = 16 * 1024 * 1024;
+    static constexpr size_t kPipelineVariantCount = 12;
 
     DirectXCommon *dxCommon_ = nullptr;
     SrvManager *srvManager_ = nullptr;
@@ -169,22 +204,30 @@ class ModelRenderer {
     MaterialManager *materialManager_ = nullptr;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> shadowRootSignature_;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> skinningRootSignature_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> opaquePSO_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> transparentPSO_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> additivePSO_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> additiveNoCullPSO_;
+    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
+               kPipelineVariantCount>
+        pipelineStates_;
+    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
+               kPipelineVariantCount>
+        instancedPipelineStates_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> shadowPSO_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> instancedShadowPSO_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> skinningPSO_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> objectConstBuffer_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> sceneConstBuffer_;
 
+    UploadRingBuffer uploadBuffer_;
     uint32_t drawIndex_ = 0;
-    uint32_t objectCbStride_ = 0;
-    uint32_t sceneCbStride_ = 0;
-    uint8_t *mappedObjectCB_ = nullptr;
-    uint8_t *mappedSceneCB_ = nullptr;
-    ModelDrawEffect currentEffect_{};
     SceneLighting currentLighting_{};
+    SceneFog currentFog_{};
     uint32_t environmentTextureId_ = 0;
     bool hasEnvironmentTexture_ = false;
+    D3D12_GPU_DESCRIPTOR_HANDLE shadowMapGpuHandle_{};
+    DirectX::XMFLOAT4X4 shadowLightViewProjection_ = {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f};
+    DirectX::XMFLOAT4 shadowParams_{0.0f, 0.0015f, 0.45f, 0.0f};
+    DirectX::XMFLOAT4 shadowFilterParams_{1.45f, 2600.0f, 0.045f, 0.0f};
 };

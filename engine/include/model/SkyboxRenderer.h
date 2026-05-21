@@ -1,5 +1,5 @@
 #pragma once
-#include "Camera.h"
+#include "camera/Camera.h"
 #include <DirectXMath.h>
 #include <cstdint>
 #include <d3d12.h>
@@ -26,7 +26,8 @@ class SkyboxRenderer {
     /// <summary>
     /// スカイボックスを描画する
     /// </summary>
-    /// <param name="textureId">描画に使用するキューブマップのテクスチャID</param>
+    /// <param
+    /// name="textureId">描画に使用するキューブマップのテクスチャID</param>
     /// <param name="camera">描画に使用するカメラ</param>
     void Draw(uint32_t textureId, const Camera &camera);
 

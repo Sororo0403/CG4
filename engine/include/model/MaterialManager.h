@@ -1,5 +1,5 @@
 #pragma once
-#include "Material.h"
+#include "model/Material.h"
 #include <cstdint>
 #include <d3d12.h>
 #include <vector>
@@ -13,7 +13,7 @@ class DirectXCommon;
 class MaterialManager {
   public:
     /// <summary>
-    /// 初期化処理
+    /// マテリアル用GPUリソースを生成できるようDirectX参照を設定する
     /// </summary>
     /// <param name="dxCommon">DirectXCommonインスタンス</param>
     void Initialize(DirectXCommon *dxCommon);
@@ -38,6 +38,7 @@ class MaterialManager {
     /// <param name="materialId">対象マテリアルID</param>
     /// <returns>定数バッファのGPU仮想アドレス</returns>
     D3D12_GPU_VIRTUAL_ADDRESS GetGPUVirtualAddress(uint32_t materialId) const;
+
     /// <summary>
     /// マテリアル情報を取得する
     /// </summary>

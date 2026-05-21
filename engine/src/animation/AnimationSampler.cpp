@@ -1,4 +1,4 @@
-#include "AnimationSampler.h"
+#include "animation/AnimationSampler.h"
 #include <DirectXMath.h>
 #include <cmath>
 
@@ -88,4 +88,3 @@ XMFLOAT4 AnimationSampler::SampleQuat(const AnimationCurve<XMFLOAT4> &curve,
 
     return keys.back().value;
 }
-

@@ -1,5 +1,5 @@
 #pragma once
-#include "AnimationTypes.h"
+#include "animation/AnimationTypes.h"
 
 /// <summary>
 /// キーフレーム列の補間を担当する

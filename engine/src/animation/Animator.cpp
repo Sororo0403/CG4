@@ -1,6 +1,6 @@
-#include "Animator.h"
-#include "AnimationSampler.h"
-#include "SkeletonPoseBuilder.h"
+#include "animation/Animator.h"
+#include "animation/AnimationSampler.h"
+#include "animation/SkeletonPoseBuilder.h"
 #include <DirectXMath.h>
 
 using namespace DirectX;
@@ -85,8 +85,13 @@ void Animator::Update(Model &model, float deltaTime) {
         model.hasRootAnimation = false;
         XMStoreFloat4x4(&model.rootAnimationMatrix, XMMatrixIdentity());
 
-        if (!clip.nodeAnimations.empty()) {
-            const NodeAnimation &rootAnim = clip.nodeAnimations.begin()->second;
+        if (!clip.rootNodeName.empty()) {
+            auto rootIt = clip.nodeAnimations.find(clip.rootNodeName);
+            if (rootIt == clip.nodeAnimations.end()) {
+                return;
+            }
+
+            const NodeAnimation &rootAnim = rootIt->second;
             XMFLOAT3 pos = rootAnim.translate.keyframes.empty()
                                ? XMFLOAT3{0.0f, 0.0f, 0.0f}
                                : AnimationSampler::SampleVec3(
@@ -100,10 +105,10 @@ void Animator::Update(Model &model, float deltaTime) {
                                : AnimationSampler::SampleQuat(
                                      rootAnim.rotate, model.animationTime);
 
-            XMMATRIX local =
-                XMMatrixScaling(scl.x, scl.y, scl.z) *
-                XMMatrixRotationQuaternion(XMQuaternionNormalize(XMLoadFloat4(&rot))) *
-                XMMatrixTranslation(pos.x, pos.y, pos.z);
+            XMMATRIX local = XMMatrixScaling(scl.x, scl.y, scl.z) *
+                             XMMatrixRotationQuaternion(
+                                 XMQuaternionNormalize(XMLoadFloat4(&rot))) *
+                             XMMatrixTranslation(pos.x, pos.y, pos.z);
             XMStoreFloat4x4(&model.rootAnimationMatrix, local);
             model.hasRootAnimation = true;
         }
@@ -124,4 +129,3 @@ void Animator::Update(Model &model, float deltaTime) {
                                              localMatrices);
     SkeletonPoseBuilder::UpdateSkeleton(model, localMatrices);
 }
-
