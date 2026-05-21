@@ -122,6 +122,7 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\camera\Camera.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\camera\CameraManager.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshPipelineFactory.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRenderer.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRendererBuffers.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRendererPipeline.cpp" />
@@ -279,6 +280,7 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\sprite\SpriteRenderer.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\sprite\SpriteManager.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\InstanceData.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MeshPipelineFactory.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MeshRenderer.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\ModelRenderer.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MeshManager.h" />

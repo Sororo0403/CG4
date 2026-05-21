@@ -1,0 +1,144 @@
+#include "model/MeshPipelineFactory.h"
+
+#include "graphics/DxHelpers.h"
+#include "graphics/DxUtils.h"
+#include "graphics/ShaderCompiler.h"
+
+using namespace DxUtils;
+using Microsoft::WRL::ComPtr;
+
+namespace {
+
+D3D12_CULL_MODE ToD3D12CullMode(const MaterialCullMode mode) {
+    switch (mode) {
+    case MaterialCullMode::None:
+        return D3D12_CULL_MODE_NONE;
+    case MaterialCullMode::Front:
+        return D3D12_CULL_MODE_FRONT;
+    case MaterialCullMode::Back:
+    default:
+        return D3D12_CULL_MODE_BACK;
+    }
+}
+
+D3D12_CULL_MODE ToD3D12CullMode(const MeshCullMode mode) {
+    switch (mode) {
+    case MeshCullMode::None:
+        return D3D12_CULL_MODE_NONE;
+    case MeshCullMode::Front:
+        return D3D12_CULL_MODE_FRONT;
+    case MeshCullMode::Back:
+    default:
+        return D3D12_CULL_MODE_BACK;
+    }
+}
+
+D3D12_BLEND_DESC MakeMeshBlendState(MeshBlendMode mode) {
+    D3D12_BLEND_DESC blend = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    blend.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+    if (mode == MeshBlendMode::Opaque) {
+        blend.RenderTarget[0].BlendEnable = FALSE;
+        return blend;
+    }
+
+    blend.RenderTarget[0].BlendEnable = TRUE;
+    blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+    blend.RenderTarget[0].DestBlend =
+        mode == MeshBlendMode::Additive ? D3D12_BLEND_ONE
+                                        : D3D12_BLEND_INV_SRC_ALPHA;
+    blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+    blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+    blend.RenderTarget[0].DestBlendAlpha =
+        mode == MeshBlendMode::Additive ? D3D12_BLEND_ONE : D3D12_BLEND_ZERO;
+    blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    return blend;
+}
+
+D3D12_DEPTH_STENCIL_DESC MakeMeshDepthState(MeshDepthMode mode) {
+    D3D12_DEPTH_STENCIL_DESC depth =
+        CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    depth.DepthEnable = mode == MeshDepthMode::None ? FALSE : TRUE;
+    depth.DepthWriteMask = mode == MeshDepthMode::TestWrite
+                               ? D3D12_DEPTH_WRITE_MASK_ALL
+                               : D3D12_DEPTH_WRITE_MASK_ZERO;
+    depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+    return depth;
+}
+
+MeshBlendMode MaterialBlendMode(bool transparent) {
+    return transparent ? MeshBlendMode::Alpha : MeshBlendMode::Opaque;
+}
+
+MeshDepthMode MaterialDepthMode(bool depthWrite) {
+    return depthWrite ? MeshDepthMode::TestWrite : MeshDepthMode::TestOnly;
+}
+
+size_t PipelineVariantIndex(bool transparent, MaterialCullMode cullMode,
+                            bool depthWrite) {
+    const size_t blendIndex = transparent ? 1 : 0;
+    const size_t cullIndex = static_cast<size_t>(cullMode);
+    const size_t depthIndex = depthWrite ? 1 : 0;
+    return blendIndex * 6 + cullIndex * 2 + depthIndex;
+}
+
+} // namespace
+
+MeshPipelineSet MeshPipelineFactory::CreatePipelineSet(
+    ID3D12Device *device, ID3D12RootSignature *rootSignature,
+    const MeshPipelineDesc &desc, D3D12_INPUT_LAYOUT_DESC inputLayout,
+    DXGI_FORMAT renderTargetFormat, DXGI_FORMAT depthStencilFormat) {
+    MeshPipelineSet pipelineSet{};
+    auto vs = ShaderCompiler::Compile(desc.vertexShader, "main", "vs_5_0");
+    auto ps = ShaderCompiler::Compile(desc.pixelShader, "main", "ps_5_0");
+
+    auto makePso = [&](MeshBlendMode blendMode, MeshDepthMode depthMode,
+                       D3D12_CULL_MODE cullMode,
+                       ComPtr<ID3D12PipelineState> &psoOut) {
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
+        pso.pRootSignature = rootSignature;
+        pso.VS = {vs->GetBufferPointer(), vs->GetBufferSize()};
+        pso.PS = {ps->GetBufferPointer(), ps->GetBufferSize()};
+        pso.InputLayout = inputLayout;
+        pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+        pso.NumRenderTargets = 1;
+        pso.RTVFormats[0] = renderTargetFormat;
+        pso.DSVFormat = depthStencilFormat;
+        pso.SampleDesc.Count = 1;
+        pso.SampleMask = UINT_MAX;
+        pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        pso.RasterizerState.CullMode = cullMode;
+        pso.BlendState = MakeMeshBlendState(blendMode);
+        pso.DepthStencilState = MakeMeshDepthState(depthMode);
+
+        ThrowIfFailed(device->CreateGraphicsPipelineState(
+                          &pso, IID_PPV_ARGS(&psoOut)),
+                      "CreateGraphicsPipelineState(MeshPipelineFactory) failed");
+    };
+
+    if (desc.variantMode == MeshPipelineVariantMode::Fixed) {
+        ComPtr<ID3D12PipelineState> pso;
+        makePso(desc.blend, desc.depth, ToD3D12CullMode(desc.cull), pso);
+        for (auto &variant : pipelineSet.pipelineStates) {
+            variant = pso;
+        }
+        return pipelineSet;
+    }
+
+    for (bool transparent : {false, true}) {
+        for (MaterialCullMode cullMode :
+             {MaterialCullMode::None, MaterialCullMode::Front,
+              MaterialCullMode::Back}) {
+            for (bool depthWrite : {false, true}) {
+                const size_t index =
+                    PipelineVariantIndex(transparent, cullMode, depthWrite);
+                makePso(MaterialBlendMode(transparent),
+                        MaterialDepthMode(depthWrite),
+                        ToD3D12CullMode(cullMode),
+                        pipelineSet.pipelineStates[index]);
+            }
+        }
+    }
+
+    return pipelineSet;
+}

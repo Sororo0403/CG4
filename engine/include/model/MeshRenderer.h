@@ -5,6 +5,7 @@
 #include "model/InstanceData.h"
 #include "model/Material.h"
 #include "model/MeshManager.h"
+#include "model/MeshPipelineFactory.h"
 #include "model/ModelRenderer.h"
 #include "model/Transform.h"
 #include <DirectXMath.h>
@@ -36,13 +37,22 @@ class MeshRenderer {
                   const Transform &transform, const Camera &camera,
                   uint32_t textureId = 0,
                   uint32_t normalTextureId = UINT32_MAX);
+    uint32_t CreatePipeline(const MeshPipelineDesc &desc);
     uint32_t CreatePipeline(const std::wstring &vertexShaderPath,
                             const std::wstring &pixelShaderPath);
+    uint32_t CreateAdditiveNoDepthPipeline(
+        const std::wstring &vertexShaderPath,
+        const std::wstring &pixelShaderPath);
     void DrawMeshWithPipeline(uint32_t pipelineId, const Mesh &mesh,
                               const Material &material,
                               const Transform &transform,
                               const Camera &camera, uint32_t textureId = 0,
                               uint32_t normalTextureId = UINT32_MAX);
+    void DrawMeshWithPipelineHandles(
+        uint32_t pipelineId, const Mesh &mesh, const Material &material,
+        const Transform &transform, const Camera &camera,
+        D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
+        D3D12_GPU_DESCRIPTOR_HANDLE normalTextureHandle);
 
     void DrawMeshInstanced(const Mesh &mesh, const Material &material,
                            const InstanceData *instances,
@@ -94,7 +104,7 @@ class MeshRenderer {
   private:
     static constexpr uint32_t kMaxDraws = 4096;
     static constexpr size_t kUploadBytesPerFrame = 16 * 1024 * 1024;
-    static constexpr size_t kPipelineVariantCount = 12;
+    static constexpr size_t kPipelineVariantCount = kMeshPipelineVariantCount;
 
     void CreateRootSignature();
     void CreatePipelineStates();
@@ -135,18 +145,13 @@ class MeshRenderer {
         instancedPipelineStates_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> shadowPSO_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> instancedShadowPSO_;
-    struct PipelineSet {
-        std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
-                   kPipelineVariantCount>
-            pipelineStates;
-    };
     struct InstancedPipelineSet {
         std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
                    kPipelineVariantCount>
             pipelineStates;
         Microsoft::WRL::ComPtr<ID3D12PipelineState> shadowPipelineState;
     };
-    std::vector<PipelineSet> customPipelines_;
+    std::vector<MeshPipelineSet> customPipelines_;
     std::vector<InstancedPipelineSet> customInstancedPipelines_;
 
     UploadRingBuffer uploadBuffer_;

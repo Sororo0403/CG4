@@ -192,6 +192,9 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshManager.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshPipelineFactory.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRenderer.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
@@ -375,6 +378,9 @@
       <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\InstanceData.h">
+      <Filter>include\model</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MeshPipelineFactory.h">
       <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MeshRenderer.h">

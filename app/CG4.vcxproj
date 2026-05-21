@@ -73,7 +73,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
-      <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;imgui.lib;dinput8.lib;dxguid.lib;assimp-vc145-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;imgui.lib;dinput8.lib;dxguid.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;assimp-vc145-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(SolutionDir)engine\externals\assimp\lib\;$(SolutionDir)..\generated\outputs\$(Configuration)\imgui\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
@@ -107,7 +107,7 @@ if exist "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" (
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <TreatLinkerWarningAsErrors>false</TreatLinkerWarningAsErrors>
-      <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;imgui.lib;dinput8.lib;dxguid.lib;assimp-vc145-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;imgui.lib;dinput8.lib;dxguid.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;assimp-vc145-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(SolutionDir)engine\externals\assimp\lib\;$(SolutionDir)..\generated\outputs\$(Configuration)\imgui\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>

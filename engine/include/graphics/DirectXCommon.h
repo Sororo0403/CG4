@@ -54,6 +54,14 @@ class DirectXCommon {
     void BeginScenePass();
 
     /// <summary>
+    /// シーンカラーRTへ描画できる状態を復元する
+    /// </summary>
+    /// <param name="clearDepth">
+    /// trueの場合、意図的に深度を破棄する。透明エフェクト前の復元ではfalseにする。
+    /// </param>
+    void RestoreSceneRenderState(bool clearDepth = false);
+
+    /// <summary>
     /// シーンカラー用レンダーターゲットをシェーダー読み取り可能な状態へ戻す
     /// </summary>
     void EndScenePass();
@@ -246,6 +254,24 @@ class DirectXCommon {
     void UpdateSceneColorSrv();
 
     /// <summary>
+    /// シーン描画用のビューポートとシザー矩形を適用する
+    /// </summary>
+    void ApplySceneViewportAndScissor();
+
+    /// <summary>
+    /// シーンカラーRTのリソース状態を必要な状態へ遷移する
+    /// </summary>
+    /// <remarks>
+    /// sceneColorBuffer_のResourceBarrierは必ずこの関数を通す。
+    /// </remarks>
+    void TransitionSceneColor(D3D12_RESOURCE_STATES afterState);
+
+    /// <summary>
+    /// バックバッファのリソース状態を必要な状態へ遷移する
+    /// </summary>
+    void TransitionBackBuffer(UINT index, D3D12_RESOURCE_STATES afterState);
+
+    /// <summary>
     /// 現在のバックバッファRTVハンドルを取得する
     /// </summary>
     D3D12_CPU_DESCRIPTOR_HANDLE GetBackBufferRtvHandle() const;
@@ -281,7 +307,10 @@ class DirectXCommon {
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap_;
     Microsoft::WRL::ComPtr<ID3D12Resource> backBuffers_[kSwapChainBufferCount];
+    D3D12_RESOURCE_STATES backBufferStates_[kSwapChainBufferCount]{};
     Microsoft::WRL::ComPtr<ID3D12Resource> sceneColorBuffer_;
+    D3D12_RESOURCE_STATES sceneColorState_ =
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     UINT sceneSrvIndex_ = UINT_MAX;
     UINT rtvDescriptorSize_ = 0;
     UINT backBufferIndex_ = 0;
@@ -291,8 +320,8 @@ class DirectXCommon {
     UINT64 frameFenceValues_[kSwapChainBufferCount]{};
     HANDLE fenceEvent_ = nullptr;
 
-    D3D12_VIEWPORT viewport_{};
-    D3D12_RECT scissorRect_{};
+    D3D12_VIEWPORT sceneViewport_{};
+    D3D12_RECT sceneScissorRect_{};
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap_;
     Microsoft::WRL::ComPtr<ID3D12Resource> depthBuffer_;

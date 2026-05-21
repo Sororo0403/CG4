@@ -56,6 +56,14 @@ class SoundManager {
     uint32_t LoadOrCreateSilent(const std::wstring &path);
 
     /// <summary>
+    /// メモリ上で生成した16bit PCM音声を登録する
+    /// </summary>
+    uint32_t CreatePcm16Sound(const std::wstring &cacheKey,
+                              const std::vector<int16_t> &pcmSamples,
+                              uint32_t sampleRate = 48000,
+                              uint16_t channels = 1);
+
+    /// <summary>
     /// 登録済み音声IDのデコード済みデータをソースボイスで再生する
     /// </summary>
     /// <param name="soundId">再生する音声id</param>

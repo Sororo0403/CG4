@@ -363,6 +363,7 @@ FodyWeavers.xsd
 
 # imgui
 /app/imgui.ini
+imgui.ini
 
 # Codex local state
 .codex/

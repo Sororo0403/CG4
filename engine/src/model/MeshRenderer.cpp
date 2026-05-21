@@ -245,6 +245,43 @@ void MeshRenderer::DrawMeshWithPipeline(
     ++drawIndex_;
 }
 
+void MeshRenderer::DrawMeshWithPipelineHandles(
+    uint32_t pipelineId, const Mesh &mesh, const Material &material,
+    const Transform &transform, const Camera &camera,
+    D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
+    D3D12_GPU_DESCRIPTOR_HANDLE normalTextureHandle) {
+    if (pipelineId >= customPipelines_.size() || drawIndex_ >= kMaxDraws) {
+        return;
+    }
+
+    auto *cmd = dxCommon_->GetCommandList();
+    const XMMATRIX world = MakeWorldMatrix(transform);
+    const XMMATRIX worldInverseTranspose = MakeWorldInverseTranspose(world);
+    const XMMATRIX wvp = world * camera.GetView() * camera.GetProj();
+    const Material drawMaterial = NormalizeMaterialForDraw(material);
+
+    const D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr =
+        WriteObjectConstants(wvp, world, worldInverseTranspose);
+    const D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr = WriteSceneConstants(camera);
+    const D3D12_GPU_VIRTUAL_ADDRESS materialCbAddr =
+        WriteMaterialConstants(drawMaterial);
+
+    SetPipelineForMaterial(customPipelines_[pipelineId].pipelineStates,
+                           drawMaterial);
+    cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
+    cmd->SetGraphicsRootConstantBufferView(1, sceneCbAddr);
+    cmd->SetGraphicsRootConstantBufferView(2, materialCbAddr);
+    cmd->SetGraphicsRootDescriptorTable(3, textureHandle);
+    cmd->SetGraphicsRootDescriptorTable(4, shadowMapGpuHandle_);
+    cmd->SetGraphicsRootDescriptorTable(5, normalTextureHandle);
+    cmd->IASetVertexBuffers(0, 1, &mesh.vbView);
+    cmd->IASetIndexBuffer(&mesh.ibView);
+    cmd->IASetPrimitiveTopology(mesh.primitiveTopology);
+    cmd->DrawIndexedInstanced(mesh.indexCount, 1, 0, 0, 0);
+
+    ++drawIndex_;
+}
+
 void MeshRenderer::DrawMeshInstanced(const Mesh &mesh, const Material &material,
                                      const InstanceData *instances,
                                      uint32_t instanceCount,

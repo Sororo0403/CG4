@@ -43,6 +43,8 @@ struct Material {
     float normalStrength = 1.0f;
     int32_t enableNormalMap = 0;
     DirectX::XMFLOAT4 customParams = {0.0f, 0.0f, 0.0f, 0.0f};
+    DirectX::XMFLOAT4 customParams2 = {0.0f, 0.0f, 0.0f, 0.0f};
+    DirectX::XMFLOAT4 customParams3 = {0.0f, 0.0f, 0.0f, 0.0f};
     uint32_t baseColorTextureId = UINT32_MAX;
     uint32_t normalTextureId = UINT32_MAX;
     uint32_t roughnessTextureId = UINT32_MAX;

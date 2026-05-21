@@ -7,6 +7,29 @@
 
 namespace {
 
+#ifndef DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2                           \
+    reinterpret_cast<DPI_AWARENESS_CONTEXT>(-4)
+#endif
+
+void EnableDpiAwareness() {
+    using SetProcessDpiAwarenessContextProc =
+        BOOL(WINAPI *)(DPI_AWARENESS_CONTEXT);
+
+    if (HMODULE user32 = GetModuleHandleW(L"user32.dll")) {
+        auto setProcessDpiAwarenessContext =
+            reinterpret_cast<SetProcessDpiAwarenessContextProc>(
+                GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
+        if (setProcessDpiAwarenessContext &&
+            setProcessDpiAwarenessContext(
+                DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)) {
+            return;
+        }
+    }
+
+    SetProcessDPIAware();
+}
+
 std::unique_ptr<BaseScene> CreateGameScene() {
     return std::make_unique<GameScene>();
 }
@@ -24,6 +47,8 @@ void ShowErrorMessage(const char *message) {
 } // namespace
 
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int showCommand) {
+    EnableDpiAwareness();
+
     try {
         EngineRuntime engine;
         return engine.Run(instance, showCommand, CreateGameScene(),

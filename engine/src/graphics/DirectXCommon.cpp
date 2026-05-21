@@ -38,46 +38,49 @@ void DirectXCommon::BeginFrame() {
                   "commandList_->Reset failed");
     isCommandListRecording_ = true;
 
-    commandList_->RSSetViewports(1, &viewport_);
-    commandList_->RSSetScissorRects(1, &scissorRect_);
+    ApplySceneViewportAndScissor();
 }
 
 void DirectXCommon::BeginScenePass() {
-    auto toRenderTarget = CD3DX12_RESOURCE_BARRIER::Transition(
-        sceneColorBuffer_.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-        D3D12_RESOURCE_STATE_RENDER_TARGET);
-    commandList_->ResourceBarrier(1, &toRenderTarget);
+    TransitionSceneColor(D3D12_RESOURCE_STATE_RENDER_TARGET);
 
     auto sceneRtv = GetSceneRtvHandle();
     auto dsvHandle = dsvHeap_->GetCPUDescriptorHandleForHeapStart();
 
+    ApplySceneViewportAndScissor();
     commandList_->OMSetRenderTargets(1, &sceneRtv, FALSE, &dsvHandle);
     commandList_->ClearRenderTargetView(sceneRtv, kClearColor, 0, nullptr);
     commandList_->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f,
                                         0, 0, nullptr);
 }
 
+void DirectXCommon::RestoreSceneRenderState(bool clearDepth) {
+    TransitionSceneColor(D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+    auto sceneRtv = GetSceneRtvHandle();
+    auto dsvHandle = dsvHeap_->GetCPUDescriptorHandleForHeapStart();
+
+    ApplySceneViewportAndScissor();
+    commandList_->OMSetRenderTargets(1, &sceneRtv, FALSE, &dsvHandle);
+    if (clearDepth) {
+        commandList_->ClearDepthStencilView(
+            dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+    }
+}
+
 void DirectXCommon::EndScenePass() {
-    auto toShaderResource = CD3DX12_RESOURCE_BARRIER::Transition(
-        sceneColorBuffer_.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET,
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-    commandList_->ResourceBarrier(1, &toShaderResource);
+    TransitionSceneColor(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 }
 
 void DirectXCommon::BeginBackBufferPass(bool bindDepth) {
-    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        backBuffers_[backBufferIndex_].Get(), D3D12_RESOURCE_STATE_PRESENT,
-        D3D12_RESOURCE_STATE_RENDER_TARGET);
-    commandList_->ResourceBarrier(1, &barrier);
+    TransitionBackBuffer(backBufferIndex_,
+                         D3D12_RESOURCE_STATE_RENDER_TARGET);
 
     SetBackBufferRenderTarget(true, bindDepth);
 }
 
 void DirectXCommon::EndFrame() {
-    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        backBuffers_[backBufferIndex_].Get(),
-        D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-    commandList_->ResourceBarrier(1, &barrier);
+    TransitionBackBuffer(backBufferIndex_, D3D12_RESOURCE_STATE_PRESENT);
 
     ThrowIfFailed(commandList_->Close(), "commandList_->Close failed");
     isCommandListRecording_ = false;
@@ -176,8 +179,7 @@ void DirectXCommon::SetBackBufferRenderTarget(bool clear, bool bindDepth) {
     D3D12_CPU_DESCRIPTOR_HANDLE *dsvHandlePtr =
         bindDepth ? &dsvHandle : nullptr;
 
-    commandList_->RSSetViewports(1, &viewport_);
-    commandList_->RSSetScissorRects(1, &scissorRect_);
+    ApplySceneViewportAndScissor();
     commandList_->OMSetRenderTargets(1, &rtvHandle, FALSE, dsvHandlePtr);
 
     if (clear) {
@@ -187,6 +189,35 @@ void DirectXCommon::SetBackBufferRenderTarget(bool clear, bool bindDepth) {
                 dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
         }
     }
+}
+
+void DirectXCommon::ApplySceneViewportAndScissor() {
+    commandList_->RSSetViewports(1, &sceneViewport_);
+    commandList_->RSSetScissorRects(1, &sceneScissorRect_);
+}
+
+void DirectXCommon::TransitionSceneColor(D3D12_RESOURCE_STATES afterState) {
+    if (!sceneColorBuffer_ || sceneColorState_ == afterState) {
+        return;
+    }
+
+    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+        sceneColorBuffer_.Get(), sceneColorState_, afterState);
+    commandList_->ResourceBarrier(1, &barrier);
+    sceneColorState_ = afterState;
+}
+
+void DirectXCommon::TransitionBackBuffer(
+    UINT index, D3D12_RESOURCE_STATES afterState) {
+    if (index >= kSwapChainBufferCount || !backBuffers_[index] ||
+        backBufferStates_[index] == afterState) {
+        return;
+    }
+
+    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+        backBuffers_[index].Get(), backBufferStates_[index], afterState);
+    commandList_->ResourceBarrier(1, &barrier);
+    backBufferStates_[index] = afterState;
 }
 
 void DirectXCommon::CreateDepthStencilSrv(SrvManager *srvManager) {
@@ -315,6 +346,7 @@ void DirectXCommon::CreateRTV() {
 
         device_->CreateRenderTargetView(backBuffers_[i].Get(), &rtvDesc,
                                         handle);
+        backBufferStates_[i] = D3D12_RESOURCE_STATE_PRESENT;
 
         handle.Offset(1, rtvDescriptorSize_);
     }
@@ -346,6 +378,7 @@ void DirectXCommon::CreateSceneRenderTarget(int width, int height) {
                       D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &clearValue,
                       IID_PPV_ARGS(&sceneColorBuffer_)),
                   "CreateCommittedResource(SceneRenderTarget) failed");
+    sceneColorState_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
     D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
     rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
@@ -356,19 +389,19 @@ void DirectXCommon::CreateSceneRenderTarget(int width, int height) {
 }
 
 void DirectXCommon::CreateViewport(int width, int height) {
-    viewport_.TopLeftX = 0.0f;
-    viewport_.TopLeftY = 0.0f;
-    viewport_.Width = static_cast<float>(width);
-    viewport_.Height = static_cast<float>(height);
-    viewport_.MinDepth = 0.0f;
-    viewport_.MaxDepth = 1.0f;
+    sceneViewport_.TopLeftX = 0.0f;
+    sceneViewport_.TopLeftY = 0.0f;
+    sceneViewport_.Width = static_cast<float>(width);
+    sceneViewport_.Height = static_cast<float>(height);
+    sceneViewport_.MinDepth = 0.0f;
+    sceneViewport_.MaxDepth = 1.0f;
 }
 
 void DirectXCommon::CreateScissor(int width, int height) {
-    scissorRect_.left = 0;
-    scissorRect_.top = 0;
-    scissorRect_.right = width;
-    scissorRect_.bottom = height;
+    sceneScissorRect_.left = 0;
+    sceneScissorRect_.top = 0;
+    sceneScissorRect_.right = width;
+    sceneScissorRect_.bottom = height;
 }
 
 void DirectXCommon::CreateDepthStencil(int width, int height) {

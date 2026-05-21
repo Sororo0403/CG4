@@ -76,7 +76,8 @@ class GPUParticleSystem {
         DirectX::XMFLOAT2 scale{0.1f, 0.1f};
         float seed = 0.0f;
         uint32_t isActive = 0;
-        DirectX::XMFLOAT3 params{};
+        DirectX::XMFLOAT4 params0{};
+        DirectX::XMFLOAT4 params1{};
     };
 
     struct UpdateConstantBufferData {
@@ -84,24 +85,18 @@ class GPUParticleSystem {
     };
 
     struct EmitterForGPU {
-        DirectX::XMFLOAT3 translate{};
-        float radius = 0.35f;
-        uint32_t count = 10;
-        float frequency = 0.5f;
-        float frequencyTime = 0.0f;
-        uint32_t emit = 0;
+        DirectX::XMFLOAT4 position{};
+        DirectX::XMFLOAT4 spawnOffsetScale{0.1f, 0.1f, 0.1f, 0.0f};
+        DirectX::XMFLOAT4 directionAndDirectionalVelocity{0.0f, 1.0f, 0.0f,
+                                                          0.0f};
+        DirectX::XMFLOAT4 velocityBiasAndRadialVelocity{0.0f, 0.0f, 0.0f,
+                                                        1.0f};
+        DirectX::XMFLOAT4 lifeAndFade{0.5f, 0.2f, 0.0f, 0.2f};
+        DirectX::XMFLOAT4 scale{0.2f, 0.0f, 0.1f, 0.0f};
+        DirectX::XMFLOAT4 accelerationAndTurbulence{};
+        DirectX::XMFLOAT4 motion{1.0f, 1.0f, 0.0f, 0.0f};
         DirectX::XMFLOAT4 tintColor{1.0f, 1.0f, 1.0f, 1.0f};
-        DirectX::XMFLOAT4 directionSpeed{0.0f, 1.0f, 0.0f, 1.0f};
-        uint32_t emissionMode = 0;
-        float baseLifeTime = 0.34f;
-        float lifeTimeRandom = 0.36f;
-        float baseScale = 0.022f;
-        float scaleRandom = 0.036f;
-        float gravity = -1.70f;
-        float turbulence = 0.25f;
-        float alpha = 1.0f;
-        float stretch = 4.8f;
-        DirectX::XMFLOAT3 reserved{};
+        DirectX::XMUINT4 config{};
     };
 
     struct DrawConstantBufferData {

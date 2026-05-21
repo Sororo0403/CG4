@@ -11,7 +11,8 @@ struct Particle
     float2 scale;
     float seed;
     uint isActive;
-    float3 params;
+    float4 params0;
+    float4 params1;
 };
 
 struct ParticleVSOutput

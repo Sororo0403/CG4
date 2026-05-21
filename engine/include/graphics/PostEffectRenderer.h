@@ -154,6 +154,19 @@ class PostEffectRenderer {
     void SetDissolve(float amount, float softness, float scale);
 
     /// <summary>
+    /// 太陽のスクリーン空間レンズフレアを設定する
+    /// </summary>
+    void SetLensFlare(bool enabled, float visibility, float sunUvX,
+                      float sunUvY, float sunDepth, float occlusionBias,
+                      float glareRadius, float glareIntensity,
+                      float glareAlpha, const float glareColor[3],
+                      float ghostIntensity, float ghostAlpha,
+                      const float ghostWarmColor[3],
+                      const float ghostCoolColor[3],
+                      float streakIntensity, float streakAlpha,
+                      float streakWidth, const float streakColor[3]);
+
+    /// <summary>
     /// HDRトーンマップの有効状態を取得する
     /// </summary>
     bool IsTonemapEnabled() const { return tonemapEnabled_; }
@@ -239,6 +252,23 @@ class PostEffectRenderer {
     float dissolveAmount_ = 0.0f;
     float dissolveSoftness_ = 0.08f;
     float dissolveScale_ = 42.0f;
+    bool lensFlareEnabled_ = false;
+    float lensFlareVisibility_ = 0.0f;
+    float lensFlareSunUv_[2]{0.5f, 0.5f};
+    float lensFlareSunDepth_ = 1.0f;
+    float lensFlareOcclusionBias_ = 0.0015f;
+    float lensFlareGlareRadius_ = 0.22f;
+    float lensFlareGlareIntensity_ = 0.0f;
+    float lensFlareGlareAlpha_ = 0.0f;
+    float lensFlareGlareColor_[3]{1.0f, 0.74f, 0.48f};
+    float lensFlareGhostIntensity_ = 0.0f;
+    float lensFlareGhostAlpha_ = 0.0f;
+    float lensFlareGhostWarmColor_[3]{1.0f, 0.50f, 0.30f};
+    float lensFlareGhostCoolColor_[3]{0.46f, 0.56f, 1.0f};
+    float lensFlareStreakIntensity_ = 0.0f;
+    float lensFlareStreakAlpha_ = 0.0f;
+    float lensFlareStreakWidth_ = 0.018f;
+    float lensFlareStreakColor_[3]{1.0f, 0.70f, 0.40f};
     int width_ = 1;
     int height_ = 1;
 };

@@ -21,17 +21,27 @@ constexpr uint32_t kParticleThreadCount = 256u;
 
 ParticleEmitterSettings
 NormalizeParticleEmitterSettings(ParticleEmitterSettings settings) {
-    settings.radius = (std::max)(0.01f, settings.radius);
-    settings.count = (std::max)(1u, settings.count);
-    settings.frequency = (std::max)(0.01f, settings.frequency);
-    settings.speed = (std::max)(0.0f, settings.speed);
+    settings.maxParticles = (std::max)(1u, settings.maxParticles);
+    settings.emitRate = (std::max)(0.0f, settings.emitRate);
+    settings.burstCount = (std::max)(1u, settings.burstCount);
+    settings.spawnOffsetScale.x = (std::max)(0.0f, settings.spawnOffsetScale.x);
+    settings.spawnOffsetScale.y = (std::max)(0.0f, settings.spawnOffsetScale.y);
+    settings.spawnOffsetScale.z = (std::max)(0.0f, settings.spawnOffsetScale.z);
+    settings.radialVelocity = (std::max)(0.0f, settings.radialVelocity);
+    settings.directionalVelocity =
+        (std::max)(0.0f, settings.directionalVelocity);
     settings.baseLifeTime = (std::max)(0.01f, settings.baseLifeTime);
     settings.lifeTimeRandom = (std::max)(0.0f, settings.lifeTimeRandom);
-    settings.baseScale = (std::max)(0.001f, settings.baseScale);
+    settings.startScale = (std::max)(0.001f, settings.startScale);
+    settings.endScale = (std::max)(0.0f, settings.endScale);
     settings.scaleRandom = (std::max)(0.0f, settings.scaleRandom);
+    settings.stretch = (std::max)(0.0f, settings.stretch);
     settings.turbulence = (std::max)(0.0f, settings.turbulence);
-    settings.alpha = (std::clamp)(settings.alpha, 0.0f, 1.0f);
-    settings.stretch = (std::max)(0.1f, settings.stretch);
+    settings.damping = (std::clamp)(settings.damping, 0.0f, 1.0f);
+    settings.fadeInTime = (std::max)(0.0f, settings.fadeInTime);
+    settings.fadeOutTime = (std::max)(0.0f, settings.fadeOutTime);
+    settings.fadeOutPower = (std::max)(0.01f, settings.fadeOutPower);
+    settings.tintColor.w = (std::clamp)(settings.tintColor.w, 0.0f, 1.0f);
     return settings;
 }
 
@@ -68,6 +78,8 @@ void GPUParticleSystem::Initialize(DirectXCommon *dxCommon,
         particle.scale = {0.0f, 0.0f};
         particle.seed = dist01(randomEngine) * 10000.0f;
         particle.isActive = 0;
+        particle.params0 = {};
+        particle.params1 = {};
     }
 
     CreateRootSignatures();
@@ -109,8 +121,11 @@ void GPUParticleSystem::Update(float deltaTime) {
     if (emitOncePending_) {
         emitOncePending_ = false;
         emit = 1;
-    } else if (emitterFrequencyTime_ >= emitterSettings_.frequency) {
-        emitterFrequencyTime_ -= emitterSettings_.frequency;
+    } else if (emitterSettings_.emissionType ==
+                   ParticleEmissionType::Continuous &&
+               emitterSettings_.emitRate > 0.0f &&
+               emitterFrequencyTime_ >= 1.0f / emitterSettings_.emitRate) {
+        emitterFrequencyTime_ -= 1.0f / emitterSettings_.emitRate;
         emit = 1;
     }
 
@@ -205,27 +220,33 @@ void GPUParticleSystem::DispatchUpdate() {
 GPUParticleSystem::EmitterForGPU
 GPUParticleSystem::BuildEmitterForGPU(uint32_t emit) const {
     EmitterForGPU emitter{};
-    emitter.translate = emitterSettings_.position;
-    emitter.radius = emitterSettings_.radius;
-    emitter.count = emitterSettings_.count;
-    emitter.frequency = emitterSettings_.frequency;
-    emitter.frequencyTime = emitterFrequencyTime_;
-    emitter.emit = emit;
+    emitter.position = {emitterSettings_.position.x, emitterSettings_.position.y,
+                        emitterSettings_.position.z, 0.0f};
+    emitter.spawnOffsetScale = {
+        emitterSettings_.spawnOffsetScale.x, emitterSettings_.spawnOffsetScale.y,
+        emitterSettings_.spawnOffsetScale.z, 0.0f};
+    emitter.directionAndDirectionalVelocity = {
+        emitterSettings_.direction.x, emitterSettings_.direction.y,
+        emitterSettings_.direction.z, emitterSettings_.directionalVelocity};
+    emitter.velocityBiasAndRadialVelocity = {
+        emitterSettings_.velocityBias.x, emitterSettings_.velocityBias.y,
+        emitterSettings_.velocityBias.z, emitterSettings_.radialVelocity};
+    emitter.lifeAndFade = {emitterSettings_.baseLifeTime,
+                           emitterSettings_.lifeTimeRandom,
+                           emitterSettings_.fadeInTime,
+                           emitterSettings_.fadeOutTime};
+    emitter.scale = {emitterSettings_.startScale, emitterSettings_.endScale,
+                     emitterSettings_.scaleRandom, emitterSettings_.stretch};
+    emitter.accelerationAndTurbulence = {
+        emitterSettings_.acceleration.x, emitterSettings_.acceleration.y,
+        emitterSettings_.acceleration.z, emitterSettings_.turbulence};
+    emitter.motion = {emitterSettings_.damping, emitterSettings_.fadeOutPower,
+                      emitterSettings_.emitRate, 0.0f};
     emitter.tintColor = emitterSettings_.tintColor;
-    emitter.directionSpeed = {emitterSettings_.direction.x,
-                              emitterSettings_.direction.y,
-                              emitterSettings_.direction.z,
-                              emitterSettings_.speed};
-    emitter.emissionMode =
-        static_cast<uint32_t>(emitterSettings_.emissionMode);
-    emitter.baseLifeTime = emitterSettings_.baseLifeTime;
-    emitter.lifeTimeRandom = emitterSettings_.lifeTimeRandom;
-    emitter.baseScale = emitterSettings_.baseScale;
-    emitter.scaleRandom = emitterSettings_.scaleRandom;
-    emitter.gravity = emitterSettings_.gravity;
-    emitter.turbulence = emitterSettings_.turbulence;
-    emitter.alpha = emitterSettings_.alpha;
-    emitter.stretch = emitterSettings_.stretch;
+    emitter.config = {
+        static_cast<uint32_t>(emitterSettings_.emissionType),
+        static_cast<uint32_t>(emitterSettings_.spawnShape),
+        (std::min)(emitterSettings_.burstCount, maxParticles_), emit};
     return emitter;
 }
 

@@ -50,6 +50,14 @@ std::wstring NormalizePathKey(const std::filesystem::path &path) {
     return key;
 }
 
+std::wstring NormalizeCacheKey(std::wstring key) {
+#ifdef _WIN32
+    std::transform(key.begin(), key.end(), key.begin(),
+                   [](wchar_t c) { return static_cast<wchar_t>(towlower(c)); });
+#endif
+    return key;
+}
+
 XMVECTOR LoadFloat3OrDefault(const XMFLOAT3 &value, FXMVECTOR fallback) {
     XMVECTOR v = XMLoadFloat3(&value);
     if (XMVectorGetX(XMVector3LengthSq(v)) <= 0.000001f) {
@@ -283,6 +291,50 @@ uint32_t SoundManager::LoadOrCreateSilent(const std::wstring &path) {
     }
 
     return CreateSilentSound(key);
+}
+
+uint32_t SoundManager::CreatePcm16Sound(const std::wstring &cacheKey,
+                                        const std::vector<int16_t> &pcmSamples,
+                                        uint32_t sampleRate,
+                                        uint16_t channels) {
+    const std::wstring key = NormalizeCacheKey(L"procedural:" + cacheKey);
+    const auto cached = pathToSoundId_.find(key);
+    if (cached != pathToSoundId_.end()) {
+        return cached->second;
+    }
+
+    if (pcmSamples.empty() || sampleRate == 0u || channels == 0u ||
+        (pcmSamples.size() % channels) != 0u) {
+        return CreateSilentSound(key);
+    }
+
+    WAVEFORMATEX format{};
+    format.wFormatTag = WAVE_FORMAT_PCM;
+    format.nChannels = channels;
+    format.nSamplesPerSec = sampleRate;
+    format.wBitsPerSample = 16;
+    format.nBlockAlign =
+        static_cast<WORD>((format.nChannels * format.wBitsPerSample) / 8u);
+    format.nAvgBytesPerSec = format.nSamplesPerSec * format.nBlockAlign;
+
+    SoundResource resource{};
+    resource.data.waveFormat.resize(sizeof(WAVEFORMATEX));
+    std::memcpy(resource.data.waveFormat.data(), &format, sizeof(format));
+    resource.data.decodedPcm.resize(pcmSamples.size() * sizeof(int16_t));
+    std::memcpy(resource.data.decodedPcm.data(), pcmSamples.data(),
+                resource.data.decodedPcm.size());
+    resource.data.info.sampleRate = sampleRate;
+    resource.data.info.channels = channels;
+    resource.data.info.bitsPerSample = 16;
+    resource.data.info.durationSeconds =
+        static_cast<float>(pcmSamples.size() / channels) /
+        static_cast<float>(sampleRate);
+    resource.data.info.decodedBytes = resource.data.decodedPcm.size();
+
+    sounds_.push_back(std::move(resource));
+    const uint32_t soundId = static_cast<uint32_t>(sounds_.size() - 1);
+    pathToSoundId_[key] = soundId;
+    return soundId;
 }
 
 uint32_t SoundManager::Play(uint32_t soundId, float volume, bool loop) {

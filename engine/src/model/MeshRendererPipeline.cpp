@@ -316,13 +316,7 @@ void MeshRenderer::CreatePipelineStates() {
     }
 }
 
-uint32_t MeshRenderer::CreatePipeline(const std::wstring &vertexShaderPath,
-                                      const std::wstring &pixelShaderPath) {
-    auto *device = dxCommon_->GetDevice();
-    PipelineSet pipelineSet{};
-    auto vs = ShaderCompiler::Compile(vertexShaderPath, "main", "vs_5_0");
-    auto ps = ShaderCompiler::Compile(pixelShaderPath, "main", "ps_5_0");
-
+uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc &desc) {
     D3D12_INPUT_ELEMENT_DESC baseLayout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
@@ -343,64 +337,35 @@ uint32_t MeshRenderer::CreatePipeline(const std::wstring &vertexShaderPath,
          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     };
 
-    auto makePso = [&](bool transparent, MaterialCullMode cullMode,
-                       bool depthWrite,
-                       ComPtr<ID3D12PipelineState> &psoOut) {
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
-        pso.pRootSignature = rootSignature_.Get();
-        pso.VS = {vs->GetBufferPointer(), vs->GetBufferSize()};
-        pso.PS = {ps->GetBufferPointer(), ps->GetBufferSize()};
-        pso.InputLayout = {baseLayout, _countof(baseLayout)};
-        pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        pso.NumRenderTargets = 1;
-        pso.RTVFormats[0] = DirectXCommon::kSceneColorFormat;
-        pso.DSVFormat = DirectXCommon::kDepthStencilFormat;
-        pso.SampleDesc.Count = 1;
-        pso.SampleMask = UINT_MAX;
-        pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-        pso.RasterizerState.CullMode = ToD3D12CullMode(cullMode);
-
-        D3D12_BLEND_DESC blend = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-        blend.RenderTarget[0].BlendEnable = transparent ? TRUE : FALSE;
-        blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-        blend.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-        blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-        blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].RenderTargetWriteMask =
-            D3D12_COLOR_WRITE_ENABLE_ALL;
-        pso.BlendState = blend;
-
-        D3D12_DEPTH_STENCIL_DESC depth =
-            CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-        depth.DepthEnable = TRUE;
-        depth.DepthWriteMask = depthWrite ? D3D12_DEPTH_WRITE_MASK_ALL
-                                          : D3D12_DEPTH_WRITE_MASK_ZERO;
-        depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
-        pso.DepthStencilState = depth;
-
-        ThrowIfFailed(device->CreateGraphicsPipelineState(
-                          &pso, IID_PPV_ARGS(&psoOut)),
-                      "CreateGraphicsPipelineState(CustomMesh) failed");
-    };
-
-    for (bool transparent : {false, true}) {
-        for (MaterialCullMode cullMode :
-             {MaterialCullMode::None, MaterialCullMode::Front,
-              MaterialCullMode::Back}) {
-            for (bool depthWrite : {false, true}) {
-                const size_t index =
-                    PipelineVariantIndex(transparent, cullMode, depthWrite);
-                makePso(transparent, cullMode, depthWrite,
-                        pipelineSet.pipelineStates[index]);
-            }
-        }
-    }
-
+    MeshPipelineSet pipelineSet = MeshPipelineFactory::CreatePipelineSet(
+        dxCommon_->GetDevice(), rootSignature_.Get(), desc,
+        {baseLayout, _countof(baseLayout)}, DirectXCommon::kSceneColorFormat,
+        DirectXCommon::kDepthStencilFormat);
     const uint32_t pipelineId = static_cast<uint32_t>(customPipelines_.size());
     customPipelines_.push_back(std::move(pipelineSet));
     return pipelineId;
+}
+
+uint32_t MeshRenderer::CreatePipeline(const std::wstring &vertexShaderPath,
+                                      const std::wstring &pixelShaderPath) {
+    MeshPipelineDesc desc{};
+    desc.vertexShader = vertexShaderPath;
+    desc.pixelShader = pixelShaderPath;
+    desc.variantMode = MeshPipelineVariantMode::MaterialDriven;
+    return CreatePipeline(desc);
+}
+
+uint32_t MeshRenderer::CreateAdditiveNoDepthPipeline(
+    const std::wstring &vertexShaderPath,
+    const std::wstring &pixelShaderPath) {
+    MeshPipelineDesc desc{};
+    desc.vertexShader = vertexShaderPath;
+    desc.pixelShader = pixelShaderPath;
+    desc.blend = MeshBlendMode::Additive;
+    desc.depth = MeshDepthMode::None;
+    desc.cull = MeshCullMode::None;
+    desc.variantMode = MeshPipelineVariantMode::Fixed;
+    return CreatePipeline(desc);
 }
 
 uint32_t MeshRenderer::CreateInstancedPipeline(

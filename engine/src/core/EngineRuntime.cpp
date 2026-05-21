@@ -17,6 +17,7 @@
 #include "scene/BaseScene.h"
 #include "scene/SceneContext.h"
 #include "scene/SceneManager.h"
+#include "sound/SoundManager.h"
 #include "texture/TextureManager.h"
 
 #ifdef _DEBUG
@@ -24,6 +25,7 @@
 #endif
 
 #include <algorithm>
+#include <exception>
 
 struct EngineRuntime::Systems {
     WinApp winApp;
@@ -50,6 +52,7 @@ struct EngineRuntime::Systems {
 EngineRuntime::EngineRuntime() : systems_(std::make_unique<Systems>()) {}
 
 EngineRuntime::~EngineRuntime() {
+    SoundManager::GetInstance().StopAll();
     systems_->winApp.SetCursorVisible(true);
     systems_->dxCommon.WaitForGpu();
 }
@@ -66,6 +69,7 @@ int EngineRuntime::Run(HINSTANCE instance, int showCommand,
         UpdateFrameContext();
         systems_->input.Update(systems_->sceneContext.frame.deltaTime);
         systems_->sceneManager.Update();
+        SoundManager::GetInstance().Update();
         RenderFrame();
     }
 
@@ -87,6 +91,7 @@ int EngineRuntime::Run(HINSTANCE instance, int showCommand,
         UpdateFrameContext();
         systems_->input.Update(systems_->sceneContext.frame.deltaTime);
         systems_->sceneManager.Update();
+        SoundManager::GetInstance().Update();
         RenderFrame();
     }
 
@@ -127,6 +132,18 @@ void EngineRuntime::Initialize(HINSTANCE instance, int showCommand,
     systems_->shadowMapRenderer.Initialize(&systems_->dxCommon, &systems_->srvManager);
     systems_->renderPassController.Initialize(&systems_->dxCommon, &systems_->srvManager);
     systems_->input.Initialize(instance, systems_->winApp.GetHwnd());
+    try {
+        SoundManager::GetInstance().Initialize();
+        systems_->sceneContext.systems.sound = &SoundManager::GetInstance();
+    } catch (const std::exception &e) {
+        DebugLog::Get().Write("Sound", "EngineRuntime", "initialize_failed",
+                              e.what());
+        systems_->sceneContext.systems.sound = nullptr;
+    } catch (...) {
+        DebugLog::Get().Write("Sound", "EngineRuntime", "initialize_failed",
+                              "unknown error");
+        systems_->sceneContext.systems.sound = nullptr;
+    }
 
 #ifdef _DEBUG
     systems_->imguiManager.Initialize(&systems_->winApp, &systems_->dxCommon, &systems_->srvManager);

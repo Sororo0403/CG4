@@ -7,24 +7,16 @@ cbuffer ParticleUpdateParams : register(b0)
 
 cbuffer EmitterParams : register(b1)
 {
-    float3 emitterTranslate;
-    float emitterRadius;
-    uint emitterCount;
-    float emitterFrequency;
-    float emitterFrequencyTime;
-    uint emitterEmit;
+    float4 emitterPosition;
+    float4 emitterSpawnOffsetScale;
+    float4 emitterDirectionAndDirectionalVelocity;
+    float4 emitterVelocityBiasAndRadialVelocity;
+    float4 emitterLifeAndFade;
+    float4 emitterScale;
+    float4 emitterAccelerationAndTurbulence;
+    float4 emitterMotion;
     float4 emitterTintColor;
-    float4 emitterDirectionSpeed;
-    uint emitterEmissionMode;
-    float emitterBaseLifeTime;
-    float emitterLifeTimeRandom;
-    float emitterBaseScale;
-    float emitterScaleRandom;
-    float emitterGravity;
-    float emitterTurbulence;
-    float emitterAlpha;
-    float emitterStretch;
-    float3 emitterReserved;
+    uint4 emitterConfig;
 };
 
 RWStructuredBuffer<Particle> gParticles : register(u0);
@@ -32,6 +24,11 @@ RWStructuredBuffer<uint> gFreeList : register(u1);
 RWStructuredBuffer<int> gFreeListIndex : register(u2);
 
 #define PARTICLE_THREAD_COUNT 256
+#define SPAWN_SHAPE_POINT 0u
+#define SPAWN_SHAPE_SPHERE 1u
+#define SPAWN_SHAPE_BOX 2u
+#define SPAWN_SHAPE_RING 3u
+#define SPAWN_SHAPE_DISK 4u
 
 struct RandomGenerator
 {
@@ -51,17 +48,62 @@ struct RandomGenerator
         state ^= state << 5;
         return (float) (state & 0x00FFFFFFu) / 16777216.0f;
     }
-
-    float3 Generate3d()
-    {
-        return float3(Generate1d(), Generate1d(), Generate1d());
-    }
 };
+
+float3 SafeNormalize(float3 value, float3 fallback)
+{
+    float len = length(value);
+    return len < 0.0001f ? fallback : value / len;
+}
+
+float3 MakeSphereDirection(float u0, float u1)
+{
+    float z = u0 * 2.0f - 1.0f;
+    float angle = u1 * 6.2831853f;
+    float radius = sqrt(max(0.0f, 1.0f - z * z));
+    return float3(cos(angle) * radius, z, sin(angle) * radius);
+}
+
+float3 MakeSpawnOffset(uint spawnShape, float r0, float r1, float r2)
+{
+    if (spawnShape == SPAWN_SHAPE_POINT)
+    {
+        return float3(0.0f, 0.0f, 0.0f);
+    }
+
+    if (spawnShape == SPAWN_SHAPE_BOX)
+    {
+        return float3(r0 * 2.0f - 1.0f, r1 * 2.0f - 1.0f,
+                      r2 * 2.0f - 1.0f);
+    }
+
+    float angle = r0 * 6.2831853f;
+    if (spawnShape == SPAWN_SHAPE_RING)
+    {
+        return float3(cos(angle), 0.0f, sin(angle));
+    }
+
+    if (spawnShape == SPAWN_SHAPE_DISK)
+    {
+        float radius = sqrt(r1);
+        return float3(cos(angle) * radius, 0.0f, sin(angle) * radius);
+    }
+
+    float radius3d = pow(max(r2, 0.0001f), 0.3333333f);
+    return MakeSphereDirection(r0, r1) * radius3d;
+}
+
+float3 MakeTurbulence(float seed, float age)
+{
+    return float3(sin(age * 11.7f + seed * 0.31f),
+                  cos(age * 9.1f + seed * 0.43f),
+                  sin(age * 7.4f + seed * 0.59f));
+}
 
 void Respawn(uint index, inout Particle particle)
 {
     RandomGenerator generator;
-    generator.Initialize(index, particle.seed + emitterFrequencyTime);
+    generator.Initialize(index, particle.seed + time.x);
     float r0 = generator.Generate1d();
     float r1 = generator.Generate1d();
     float r2 = generator.Generate1d();
@@ -70,69 +112,40 @@ void Respawn(uint index, inout Particle particle)
     float r5 = generator.Generate1d();
     float r6 = generator.Generate1d();
 
-    float angle = r0 * 6.2831853f;
-    float radius = emitterRadius * sqrt(r1);
-    float tangent = (r5 < 0.5f) ? -1.0f : 1.0f;
-    float3 emitDir = normalize(emitterDirectionSpeed.xyz);
-    if (length(emitterDirectionSpeed.xyz) < 0.0001f)
+    uint spawnShape = emitterConfig.y;
+    float3 offset = MakeSpawnOffset(spawnShape, r0, r1, r2);
+    float3 fallbackDirection = MakeSphereDirection(r3, r4);
+    float3 radialDirection = SafeNormalize(offset, fallbackDirection);
+    if (spawnShape == SPAWN_SHAPE_RING || spawnShape == SPAWN_SHAPE_DISK)
     {
-        emitDir = float3(0.0f, 1.0f, 0.0f);
+        radialDirection = SafeNormalize(float3(offset.x, 0.0f, offset.z),
+                                        float3(1.0f, 0.0f, 0.0f));
     }
-    float3 radial = normalize(float3(cos(angle), r2 * 0.65f + 0.12f, sin(angle)));
 
-    particle.translate = emitterTranslate +
-                         float3(cos(angle) * radius, (r2 - 0.58f) * emitterRadius,
-                                sin(angle) * radius * 0.24f);
-    if (emitterEmissionMode == 0u)
-    {
-        float3 side = normalize(float3(-emitDir.z, 0.0f, emitDir.x) +
-                                radial * (r3 - 0.5f) * 0.65f);
-        particle.velocity = emitDir * (1.10f + r0 * 1.90f) * emitterDirectionSpeed.w +
-                            side * (1.20f + r1 * 1.80f) +
-                            float3(0.0f, 0.76f + r2 * 0.72f, 0.0f);
-    } else if (emitterEmissionMode == 1u)
-    {
-        particle.velocity = radial * (1.15f + r0 * 1.95f) * emitterDirectionSpeed.w +
-                            emitDir * (0.24f + r6 * 0.50f) +
-                            float3(0.0f, 0.48f + r3 * 0.85f, 0.0f);
-    } else if (emitterEmissionMode == 3u)
-    {
-        particle.translate = emitterTranslate +
-                             float3((r0 - 0.5f) * emitterRadius * 0.20f,
-                                    (r1 - 0.5f) * emitterRadius * 0.20f,
-                                    (r2 - 0.5f) * emitterRadius * 0.08f);
-        particle.velocity = radial * (0.16f + r0 * 0.42f) *
-                            emitterDirectionSpeed.w;
-    } else
-    {
-        float3 buoyantDir = normalize(radial * float3(1.0f, 0.45f, 1.0f) +
-                                      float3(0.0f, 0.65f + r3 * 0.55f, 0.0f));
-        particle.velocity = buoyantDir * (0.42f + r0 * 0.80f) * emitterDirectionSpeed.w +
-                            emitDir * (0.08f + r6 * 0.18f);
-    }
+    float3 direction =
+        SafeNormalize(emitterDirectionAndDirectionalVelocity.xyz,
+                      float3(0.0f, 1.0f, 0.0f));
+    float directionalVelocity = emitterDirectionAndDirectionalVelocity.w;
+    float3 velocityBias = emitterVelocityBiasAndRadialVelocity.xyz;
+    float radialVelocity = emitterVelocityBiasAndRadialVelocity.w;
+
+    particle.translate =
+        emitterPosition.xyz + offset * emitterSpawnOffsetScale.xyz;
+    particle.velocity = radialDirection * radialVelocity +
+                        direction * directionalVelocity + velocityBias;
     particle.currentTime = 0.0f;
-    particle.lifeTime = emitterBaseLifeTime + r2 * emitterLifeTimeRandom;
+    particle.lifeTime =
+        max(0.01f, emitterLifeAndFade.x + r5 * emitterLifeAndFade.y);
 
-    float brightness = 0.78f + r4 * 0.34f;
-    if (emitterEmissionMode == 2u)
-    {
-        brightness = 0.46f + r4 * 0.28f;
-    } else if (emitterEmissionMode == 3u)
-    {
-        brightness = 0.92f + r4 * 0.34f;
-    }
-    particle.color = float4(saturate(emitterTintColor.rgb * brightness),
-                            emitterAlpha);
-
-    float scale = emitterBaseScale + r0 * emitterScaleRandom;
-    particle.scale = emitterEmissionMode == 0u
-                         ? float2(scale * (emitterStretch + r3 * emitterStretch * 0.48f),
-                                  scale * 0.26f)
-                         : float2(scale * (0.90f + r3 * 0.36f), scale);
-    particle.seed += 19.19f + time.x;
-    particle.params.x = (float) emitterEmissionMode;
-    particle.params.y = r4;
-    particle.params.z = emitterAlpha;
+    float startScale = max(0.0f, emitterScale.x + r6 * emitterScale.z);
+    float endScale = max(0.0f, emitterScale.y);
+    particle.scale = float2(startScale, startScale);
+    particle.color = emitterTintColor;
+    particle.seed += 19.19f + time.x + r4;
+    particle.params0 =
+        float4(startScale, endScale, emitterLifeAndFade.z, emitterLifeAndFade.w);
+    particle.params1 = float4(max(0.01f, emitterMotion.y),
+                              max(0.0f, emitterScale.w), r4, 0.0f);
     particle.isActive = 1;
 }
 
@@ -152,36 +165,6 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     {
         float deltaTime = time.y;
         particle.currentTime += deltaTime;
-        float ageRate = saturate(particle.currentTime / max(particle.lifeTime, 0.001f));
-        float wave = sin(time.x * 3.6f + particle.seed);
-        float3 wander = float3(0.14f + wave * 0.18f,
-                               sin(time.x * 2.0f + particle.seed) * 0.09f,
-                               cos(time.x * 1.7f + particle.seed) * 0.04f) *
-                        emitterTurbulence;
-        float3 gravity = float3(0.0f, emitterGravity, 0.0f);
-        if (particle.params.x > 1.5f)
-        {
-            wander = float3(0.08f + wave * 0.12f,
-                            0.18f + sin(time.x * 1.3f + particle.seed) * 0.05f,
-                            cos(time.x * 1.1f + particle.seed) * 0.08f) *
-                    emitterTurbulence;
-        }
-
-        particle.velocity += (wander + gravity) * deltaTime;
-        particle.translate += particle.velocity * deltaTime;
-        particle.color.a = particle.params.x < 0.5f
-                               ? saturate(1.0f - ageRate) * particle.params.z
-                               : particle.params.x > 2.5f &&
-                                         particle.params.x < 3.5f
-                                     ? smoothstep(0.0f, 0.08f, ageRate) *
-                                           saturate(1.0f - ageRate) *
-                                           particle.params.z
-                               : particle.params.x > 1.5f
-                                     ? smoothstep(0.0f, 0.18f, ageRate) *
-                                           saturate(1.0f - ageRate) *
-                                           particle.params.z
-                                     : saturate(1.0f - ageRate) *
-                                           particle.params.z;
 
         if (particle.currentTime >= particle.lifeTime)
         {
@@ -200,11 +183,36 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             }
         } else
         {
+            float turbulence = emitterAccelerationAndTurbulence.w;
+            float3 wander =
+                MakeTurbulence(particle.seed, particle.currentTime) * turbulence;
+            float damping = pow(max(emitterMotion.x, 0.0f), deltaTime * 60.0f);
+            particle.velocity +=
+                (emitterAccelerationAndTurbulence.xyz + wander) * deltaTime;
+            particle.velocity *= damping;
+            particle.translate += particle.velocity * deltaTime;
+
+            float alpha = emitterTintColor.a;
+            float fadeInTime = particle.params0.z;
+            if (fadeInTime > 0.0f)
+            {
+                alpha *= saturate(particle.currentTime / fadeInTime);
+            }
+
+            float fadeOutTime = particle.params0.w;
+            if (fadeOutTime > 0.0f)
+            {
+                float remaining = particle.lifeTime - particle.currentTime;
+                float fade = saturate(remaining / fadeOutTime);
+                alpha *= pow(fade, particle.params1.x);
+            }
+            particle.color = emitterTintColor;
+            particle.color.a = alpha;
             gParticles[index] = particle;
         }
     }
 
-    if (emitterEmit != 0 && index < emitterCount)
+    if (emitterConfig.w != 0u && index < emitterConfig.z)
     {
         int freeListIndex = 0;
         InterlockedAdd(gFreeListIndex[0], -1, freeListIndex);

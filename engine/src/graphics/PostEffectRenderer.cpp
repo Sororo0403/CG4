@@ -165,6 +165,36 @@ void PostEffectRenderer::SetDissolve(float amount, float softness,
     UpdateConstantBuffer();
 }
 
+void PostEffectRenderer::SetLensFlare(
+    bool enabled, float visibility, float sunUvX, float sunUvY, float sunDepth,
+    float occlusionBias, float glareRadius, float glareIntensity,
+    float glareAlpha, const float glareColor[3], float ghostIntensity,
+    float ghostAlpha, const float ghostWarmColor[3],
+    const float ghostCoolColor[3], float streakIntensity, float streakAlpha,
+    float streakWidth, const float streakColor[3]) {
+    lensFlareEnabled_ = enabled;
+    lensFlareVisibility_ = std::clamp(visibility, 0.0f, 1.0f);
+    lensFlareSunUv_[0] = std::clamp(sunUvX, -0.25f, 1.25f);
+    lensFlareSunUv_[1] = std::clamp(sunUvY, -0.25f, 1.25f);
+    lensFlareSunDepth_ = std::clamp(sunDepth, 0.0f, 1.0f);
+    lensFlareOcclusionBias_ = (std::max)(occlusionBias, 0.0f);
+    lensFlareGlareRadius_ = (std::max)(glareRadius, 0.001f);
+    lensFlareGlareIntensity_ = (std::max)(glareIntensity, 0.0f);
+    lensFlareGlareAlpha_ = std::clamp(glareAlpha, 0.0f, 1.0f);
+    lensFlareGhostIntensity_ = (std::max)(ghostIntensity, 0.0f);
+    lensFlareGhostAlpha_ = std::clamp(ghostAlpha, 0.0f, 1.0f);
+    lensFlareStreakIntensity_ = (std::max)(streakIntensity, 0.0f);
+    lensFlareStreakAlpha_ = std::clamp(streakAlpha, 0.0f, 1.0f);
+    lensFlareStreakWidth_ = (std::max)(streakWidth, 0.001f);
+    for (int i = 0; i < 3; ++i) {
+        lensFlareGlareColor_[i] = glareColor[i];
+        lensFlareGhostWarmColor_[i] = ghostWarmColor[i];
+        lensFlareGhostCoolColor_[i] = ghostCoolColor[i];
+        lensFlareStreakColor_[i] = streakColor[i];
+    }
+    UpdateConstantBuffer();
+}
+
 void PostEffectRenderer::CreateRootSignature() {
     CD3DX12_DESCRIPTOR_RANGE textureRange{};
     textureRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
@@ -285,4 +315,29 @@ void PostEffectRenderer::UpdateConstantBuffer() {
     mappedConstBuffer_->dissolveAmount = dissolveAmount_;
     mappedConstBuffer_->dissolveSoftness = dissolveSoftness_;
     mappedConstBuffer_->dissolveScale = dissolveScale_;
+    mappedConstBuffer_->lensFlareEnabled = lensFlareEnabled_ ? 1 : 0;
+    mappedConstBuffer_->lensFlareVisibility = lensFlareVisibility_;
+    mappedConstBuffer_->lensFlareSunUv[0] = lensFlareSunUv_[0];
+    mappedConstBuffer_->lensFlareSunUv[1] = lensFlareSunUv_[1];
+    mappedConstBuffer_->lensFlareSunDepth = lensFlareSunDepth_;
+    mappedConstBuffer_->lensFlareOcclusionBias = lensFlareOcclusionBias_;
+    mappedConstBuffer_->lensFlareGlareRadius = lensFlareGlareRadius_;
+    mappedConstBuffer_->lensFlareGlareIntensity = lensFlareGlareIntensity_;
+    mappedConstBuffer_->lensFlareGhostIntensity = lensFlareGhostIntensity_;
+    mappedConstBuffer_->lensFlareStreakIntensity = lensFlareStreakIntensity_;
+    mappedConstBuffer_->lensFlareStreakWidth = lensFlareStreakWidth_;
+    mappedConstBuffer_->lensFlarePadding0 = 0.0f;
+    for (int i = 0; i < 3; ++i) {
+        mappedConstBuffer_->lensFlareGlareColor[i] = lensFlareGlareColor_[i];
+        mappedConstBuffer_->lensFlareGhostWarmColor[i] =
+            lensFlareGhostWarmColor_[i];
+        mappedConstBuffer_->lensFlareGhostCoolColor[i] =
+            lensFlareGhostCoolColor_[i];
+        mappedConstBuffer_->lensFlareStreakColor[i] =
+            lensFlareStreakColor_[i];
+    }
+    mappedConstBuffer_->lensFlareGlareAlpha = lensFlareGlareAlpha_;
+    mappedConstBuffer_->lensFlareGhostAlpha = lensFlareGhostAlpha_;
+    mappedConstBuffer_->lensFlareStreakAlpha = lensFlareStreakAlpha_;
+    mappedConstBuffer_->lensFlarePadding1 = 0.0f;
 }

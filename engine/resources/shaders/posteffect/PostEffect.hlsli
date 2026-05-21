@@ -37,6 +37,25 @@ cbuffer PostEffectConstants : register(b0)
     float dissolveSoftness;
     float dissolveScale;
     float postEffectPadding;
+    int lensFlareEnabled;
+    float lensFlareVisibility;
+    float2 lensFlareSunUv;
+    float lensFlareSunDepth;
+    float lensFlareOcclusionBias;
+    float lensFlareGlareRadius;
+    float lensFlareGlareIntensity;
+    float lensFlareGhostIntensity;
+    float lensFlareStreakIntensity;
+    float lensFlareStreakWidth;
+    float lensFlarePadding0;
+    float3 lensFlareGlareColor;
+    float lensFlareGlareAlpha;
+    float3 lensFlareGhostWarmColor;
+    float lensFlareGhostAlpha;
+    float3 lensFlareGhostCoolColor;
+    float lensFlareStreakAlpha;
+    float3 lensFlareStreakColor;
+    float lensFlarePadding1;
 };
 
 #endif // POST_EFFECT_HLSLI
