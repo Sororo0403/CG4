@@ -8,6 +8,7 @@
 #include "texture/TextureManager.h"
 #include <algorithm>
 #include <cstring>
+#include <map>
 #include <random>
 #include <stdexcept>
 
@@ -18,6 +19,10 @@ using Microsoft::WRL::ComPtr;
 namespace {
 
 constexpr uint32_t kParticleThreadCount = 256u;
+
+ID3D12Device *gCachedParticleDrawDevice = nullptr;
+ComPtr<ID3D12RootSignature> gCachedParticleDrawRootSignature;
+std::map<std::wstring, ComPtr<ID3D12PipelineState>> gParticleDrawPsoCache;
 
 ParticleEmitterSettings
 NormalizeParticleEmitterSettings(ParticleEmitterSettings settings) {
@@ -36,6 +41,15 @@ NormalizeParticleEmitterSettings(ParticleEmitterSettings settings) {
     settings.endScale = (std::max)(0.0f, settings.endScale);
     settings.scaleRandom = (std::max)(0.0f, settings.scaleRandom);
     settings.stretch = (std::max)(0.0f, settings.stretch);
+    settings.atlasColumns = (std::max)(1u, settings.atlasColumns);
+    settings.atlasRows = (std::max)(1u, settings.atlasRows);
+    const uint32_t atlasFrameCapacity =
+        settings.atlasColumns * settings.atlasRows;
+    settings.atlasFrameStart =
+        (std::min)(settings.atlasFrameStart, atlasFrameCapacity - 1u);
+    settings.atlasFrameCount =
+        (std::clamp)(settings.atlasFrameCount, 1u,
+                     atlasFrameCapacity - settings.atlasFrameStart);
     settings.turbulence = (std::max)(0.0f, settings.turbulence);
     settings.damping = (std::clamp)(settings.damping, 0.0f, 1.0f);
     settings.fadeInTime = (std::max)(0.0f, settings.fadeInTime);
@@ -43,6 +57,114 @@ NormalizeParticleEmitterSettings(ParticleEmitterSettings settings) {
     settings.fadeOutPower = (std::max)(0.01f, settings.fadeOutPower);
     settings.tintColor.w = (std::clamp)(settings.tintColor.w, 0.0f, 1.0f);
     return settings;
+}
+
+void ResetParticleDrawCacheIfDeviceChanged(ID3D12Device *device) {
+    if (gCachedParticleDrawDevice == device) {
+        return;
+    }
+
+    gCachedParticleDrawDevice = device;
+    gCachedParticleDrawRootSignature.Reset();
+    gParticleDrawPsoCache.clear();
+}
+
+ID3D12RootSignature *GetSharedParticleDrawRootSignature(ID3D12Device *device) {
+    ResetParticleDrawCacheIfDeviceChanged(device);
+    if (gCachedParticleDrawRootSignature) {
+        return gCachedParticleDrawRootSignature.Get();
+    }
+
+    CD3DX12_ROOT_PARAMETER params[4];
+    params[0].InitAsConstantBufferView(0);
+
+    CD3DX12_DESCRIPTOR_RANGE particleRange;
+    particleRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    params[1].InitAsDescriptorTable(1, &particleRange);
+
+    CD3DX12_DESCRIPTOR_RANGE textureRange;
+    textureRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+    params[2].InitAsDescriptorTable(1, &textureRange);
+
+    CD3DX12_DESCRIPTOR_RANGE noiseTextureRange;
+    noiseTextureRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
+    params[3].InitAsDescriptorTable(1, &noiseTextureRange);
+
+    CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
+    sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+
+    CD3DX12_ROOT_SIGNATURE_DESC desc;
+    desc.Init(_countof(params), params, 1, &sampler,
+              D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+    ComPtr<ID3DBlob> blob, error;
+    ThrowIfFailed(D3D12SerializeRootSignature(
+                      &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error),
+                  "D3D12SerializeRootSignature(GPUParticleDraw) failed");
+    ThrowIfFailed(device->CreateRootSignature(
+                      0, blob->GetBufferPointer(), blob->GetBufferSize(),
+                      IID_PPV_ARGS(&gCachedParticleDrawRootSignature)),
+                  "CreateRootSignature(GPUParticleDraw) failed");
+    return gCachedParticleDrawRootSignature.Get();
+}
+
+ID3D12PipelineState *GetOrCreateParticleDrawPso(
+    ID3D12Device *device, ID3D12RootSignature *rootSignature,
+    const std::wstring &pixelShaderPath) {
+    ResetParticleDrawCacheIfDeviceChanged(device);
+
+    auto found = gParticleDrawPsoCache.find(pixelShaderPath);
+    if (found != gParticleDrawPsoCache.end()) {
+        return found->second.Get();
+    }
+
+    auto vs =
+        ShaderCompiler::Compile(ShaderPaths::ParticleVS, "main", "vs_5_0");
+    auto ps = ShaderCompiler::Compile(pixelShaderPath, "main", "ps_5_0");
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC drawPso{};
+    drawPso.pRootSignature = rootSignature;
+    drawPso.VS = {vs->GetBufferPointer(), vs->GetBufferSize()};
+    drawPso.PS = {ps->GetBufferPointer(), ps->GetBufferSize()};
+    drawPso.InputLayout = {nullptr, 0};
+    drawPso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    drawPso.NumRenderTargets = 1;
+    drawPso.RTVFormats[0] = DirectXCommon::kSceneColorFormat;
+    drawPso.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    drawPso.SampleDesc.Count = 1;
+    drawPso.SampleMask = UINT_MAX;
+
+    D3D12_RASTERIZER_DESC rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    rasterizer.CullMode = D3D12_CULL_MODE_NONE;
+    drawPso.RasterizerState = rasterizer;
+
+    D3D12_BLEND_DESC blend = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    blend.RenderTarget[0].BlendEnable = TRUE;
+    blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+    blend.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+    blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+    blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+    blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
+    blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    blend.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    drawPso.BlendState = blend;
+
+    D3D12_DEPTH_STENCIL_DESC depth = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    depth.DepthEnable = FALSE;
+    depth.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+    drawPso.DepthStencilState = depth;
+
+    ComPtr<ID3D12PipelineState> pso;
+    ThrowIfFailed(device->CreateGraphicsPipelineState(
+                      &drawPso, IID_PPV_ARGS(&pso)),
+                  "CreateGraphicsPipelineState(GPUParticleDraw) failed");
+
+    ID3D12PipelineState *result = pso.Get();
+    gParticleDrawPsoCache[pixelShaderPath] = std::move(pso);
+    return result;
 }
 
 }
@@ -101,6 +223,11 @@ void GPUParticleSystem::SetTextureFromFile(const std::wstring &filePath) {
     }
 
     textureId_ = textureManager_->Load(filePath);
+}
+
+void GPUParticleSystem::SetMaterialSettings(
+    const GPUParticleMaterialSettings &settings) {
+    materialSettings_ = settings;
 }
 
 void GPUParticleSystem::EmitOnce(const ParticleEmitterSettings &settings) {
@@ -167,6 +294,18 @@ void GPUParticleSystem::Draw(const Camera &camera) {
     mappedDrawCB_->cameraRight = {right.x, right.y, right.z, 0.0f};
     mappedDrawCB_->cameraUp = {up.x, up.y, up.z, 0.0f};
     mappedDrawCB_->tintColor = {1.0f, 1.0f, 1.0f, 1.0f};
+    mappedDrawCB_->atlasInfo = {
+        static_cast<float>((std::max)(1u, emitterSettings_.atlasColumns)),
+        static_cast<float>((std::max)(1u, emitterSettings_.atlasRows)),
+        0.0f,
+        0.0f};
+    mappedDrawCB_->materialParams0 = materialSettings_.params0;
+    mappedDrawCB_->materialParams1 = materialSettings_.params1;
+
+    const uint32_t noiseTextureId =
+        materialSettings_.noiseTextureId != UINT32_MAX
+            ? materialSettings_.noiseTextureId
+            : textureManager_->GetWhiteTextureId();
 
     cmd->SetGraphicsRootSignature(drawRootSignature_.Get());
     cmd->SetPipelineState(drawPSO_.Get());
@@ -176,6 +315,8 @@ void GPUParticleSystem::Draw(const Camera &camera) {
     cmd->SetGraphicsRootDescriptorTable(1, particleSrvGpuHandle_);
     cmd->SetGraphicsRootDescriptorTable(
         2, textureManager_->GetGpuHandle(textureId_));
+    cmd->SetGraphicsRootDescriptorTable(
+        3, textureManager_->GetGpuHandle(noiseTextureId));
     cmd->DrawInstanced(6, maxParticles_, 0, 0);
 }
 
@@ -242,6 +383,10 @@ GPUParticleSystem::BuildEmitterForGPU(uint32_t emit) const {
         emitterSettings_.acceleration.z, emitterSettings_.turbulence};
     emitter.motion = {emitterSettings_.damping, emitterSettings_.fadeOutPower,
                       emitterSettings_.emitRate, 0.0f};
+    emitter.atlasAndRotation = {
+        static_cast<float>(emitterSettings_.atlasFrameStart),
+        static_cast<float>(emitterSettings_.atlasFrameCount),
+        emitterSettings_.rotationSpeed, 0.0f};
     emitter.tintColor = emitterSettings_.tintColor;
     emitter.config = {
         static_cast<uint32_t>(emitterSettings_.emissionType),
@@ -281,36 +426,8 @@ void GPUParticleSystem::CreateRootSignatures() {
                       "CreateRootSignature(GPUParticleUpdate) failed");
     }
 
-    {
-        CD3DX12_ROOT_PARAMETER params[3];
-        params[0].InitAsConstantBufferView(0);
-
-        CD3DX12_DESCRIPTOR_RANGE particleRange;
-        particleRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-        params[1].InitAsDescriptorTable(1, &particleRange);
-
-        CD3DX12_DESCRIPTOR_RANGE textureRange;
-        textureRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
-        params[2].InitAsDescriptorTable(1, &textureRange);
-
-        CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
-        sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-        sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-        sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-
-        CD3DX12_ROOT_SIGNATURE_DESC desc;
-        desc.Init(_countof(params), params, 1, &sampler,
-                  D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
-        ComPtr<ID3DBlob> blob, error;
-        ThrowIfFailed(D3D12SerializeRootSignature(
-                          &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error),
-                      "D3D12SerializeRootSignature(GPUParticleDraw) failed");
-        ThrowIfFailed(dxCommon_->GetDevice()->CreateRootSignature(
-                          0, blob->GetBufferPointer(), blob->GetBufferSize(),
-                          IID_PPV_ARGS(&drawRootSignature_)),
-                      "CreateRootSignature(GPUParticleDraw) failed");
-    }
+    drawRootSignature_ =
+        GetSharedParticleDrawRootSignature(dxCommon_->GetDevice());
 }
 
 void GPUParticleSystem::CreatePipelineStates() {
@@ -325,47 +442,12 @@ void GPUParticleSystem::CreatePipelineStates() {
                                                      IID_PPV_ARGS(&updatePSO_)),
                   "CreateComputePipelineState(GPUParticleUpdate) failed");
 
-    auto vs =
-        ShaderCompiler::Compile(ShaderPaths::ParticleVS, "main", "vs_5_0");
-    auto ps =
-        ShaderCompiler::Compile(ShaderPaths::ParticlePS, "main", "ps_5_0");
-
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC drawPso{};
-    drawPso.pRootSignature = drawRootSignature_.Get();
-    drawPso.VS = {vs->GetBufferPointer(), vs->GetBufferSize()};
-    drawPso.PS = {ps->GetBufferPointer(), ps->GetBufferSize()};
-    drawPso.InputLayout = {nullptr, 0};
-    drawPso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    drawPso.NumRenderTargets = 1;
-    drawPso.RTVFormats[0] = DirectXCommon::kSceneColorFormat;
-    drawPso.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-    drawPso.SampleDesc.Count = 1;
-    drawPso.SampleMask = UINT_MAX;
-
-    D3D12_RASTERIZER_DESC rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    rasterizer.CullMode = D3D12_CULL_MODE_NONE;
-    drawPso.RasterizerState = rasterizer;
-
-    D3D12_BLEND_DESC blend = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-    blend.RenderTarget[0].BlendEnable = TRUE;
-    blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-    blend.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-    blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-    blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-    blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
-    blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-    blend.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-    drawPso.BlendState = blend;
-
-    D3D12_DEPTH_STENCIL_DESC depth = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    depth.DepthEnable = FALSE;
-    depth.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-    depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-    drawPso.DepthStencilState = depth;
-
-    ThrowIfFailed(
-        device->CreateGraphicsPipelineState(&drawPso, IID_PPV_ARGS(&drawPSO_)),
-        "CreateGraphicsPipelineState(GPUParticleDraw) failed");
+    const std::wstring pixelShaderPath =
+        materialSettings_.pixelShaderPath.empty()
+            ? std::wstring(ShaderPaths::ParticlePS)
+            : materialSettings_.pixelShaderPath;
+    drawPSO_ = GetOrCreateParticleDrawPso(device, drawRootSignature_.Get(),
+                                          pixelShaderPath);
 }
 
 void GPUParticleSystem::CreateParticleBuffer(

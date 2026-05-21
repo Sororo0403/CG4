@@ -6,6 +6,9 @@ cbuffer ParticleDrawParams : register(b0)
     float4 cameraRight;
     float4 cameraUp;
     float4 tintColor;
+    float4 atlasInfo;
+    float4 materialParams0;
+    float4 materialParams1;
 };
 
 StructuredBuffer<Particle> gParticles : register(t0);
@@ -42,7 +45,7 @@ ParticleVSOutput main(uint vertexId : SV_VertexID, uint instanceId : SV_Instance
     float2 localScale = float2(scale * (1.0f + stretch), scale);
     float2 local = kPositions[quadVertexId] * localScale;
 
-    float roll = particle.seed * 0.017f + particle.currentTime * 0.7f;
+    float roll = particle.seed * 0.017f + particle.currentTime * particle.scale.y;
     float s = sin(roll);
     float c = cos(roll);
     local = float2(local.x * c - local.y * s, local.x * s + local.y * c);
@@ -54,7 +57,22 @@ ParticleVSOutput main(uint vertexId : SV_VertexID, uint instanceId : SV_Instance
 
     ParticleVSOutput output;
     output.position = mul(float4(worldPosition, 1.0f), viewProjection);
-    output.uv = kUvs[quadVertexId];
+    uint atlasColumns = max(1u, (uint) round(atlasInfo.x));
+    uint atlasRows = max(1u, (uint) round(atlasInfo.y));
+    uint atlasFrameCount = atlasColumns * atlasRows;
+    uint frameIndex =
+        atlasFrameCount > 0u
+            ? ((uint) max(0.0f, floor(particle.scale.x + 0.5f))) %
+                  atlasFrameCount
+            : 0u;
+    float2 atlasScale = 1.0f / float2((float) atlasColumns, (float) atlasRows);
+    float2 atlasOffset =
+        float2((float) (frameIndex % atlasColumns),
+               (float) (frameIndex / atlasColumns)) *
+        atlasScale;
+
+    output.uv = atlasOffset + kUvs[quadVertexId] * atlasScale;
+    output.localUv = kUvs[quadVertexId];
     output.color = particle.color * tintColor;
     output.params = float2(ageRate, particle.params1.z);
     return output;

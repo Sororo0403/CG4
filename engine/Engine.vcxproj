@@ -109,6 +109,7 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\collision\CollisionManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\collision\CollisionUtil.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\debug\DebugLog.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\effect\EffectManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleSystem.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\SceneManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\input\Input.cpp" />
@@ -237,6 +238,8 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\collision\CollisionManager.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\collision\CollisionUtil.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\collision\OBB.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\effect\EffectAsset.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\effect\EffectManager.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\particle\GPUParticleSystem.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\particle\ParticleEmitterSettings.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\Transform.h" />

@@ -10,6 +10,8 @@ constexpr DirectX::XMFLOAT3 kCameraInitialPosition{0.0f, 0.0f, -12.0f};
 constexpr float kBurstInterval = 0.86f;
 constexpr float kCameraFovYDeg = 45.0f;
 constexpr DirectX::XMFLOAT3 kDebugOriginPosition{0.0f, 0.0f, 0.0f};
+constexpr const char *kPlushHitEffectPath =
+    "app/resources/effects/plush_hit.effect.json";
 
 float CurrentAspect(const SceneContext &ctx) {
     const float width = static_cast<float>(
@@ -23,122 +25,13 @@ float CurrentAspect(const SceneContext &ctx) {
     return width / (std::max)(height, 1.0f);
 }
 
-ParticleEmitterSettings
-MakeCorePulseSettings(const DirectX::XMFLOAT3 &position) {
-    ParticleEmitterSettings settings{};
-    settings.position = position;
-    settings.emissionType = ParticleEmissionType::Burst;
-    settings.spawnShape = ParticleSpawnShape::Point;
-    settings.burstCount = 1;
-    settings.spawnOffsetScale = {0.0f, 0.0f, 0.0f};
-    settings.tintColor = {0.2f, 1.0f, 0.35f, 1.0f};
-    settings.direction = {0.0f, 0.0f, 1.0f};
-    settings.radialVelocity = 0.0f;
-    settings.directionalVelocity = 0.0f;
-    settings.velocityBias = {0.0f, 0.0f, 0.0f};
-    settings.baseLifeTime = 8.0f;
-    settings.lifeTimeRandom = 0.0f;
-    settings.startScale = 2.0f;
-    settings.endScale = 2.0f;
-    settings.scaleRandom = 0.0f;
-    settings.acceleration = {0.0f, 0.0f, 0.0f};
-    settings.turbulence = 0.0f;
-    settings.damping = 1.0f;
-    settings.fadeInTime = 0.0f;
-    settings.fadeOutTime = 0.0f;
-    settings.fadeOutPower = 1.0f;
-    settings.stretch = 0.0f;
-    return settings;
-}
-
-ParticleEmitterSettings
-MakeRadialBurstSettings(const DirectX::XMFLOAT3 &position) {
-    ParticleEmitterSettings settings{};
-    settings.position = position;
-    settings.emissionType = ParticleEmissionType::Burst;
-    settings.spawnShape = ParticleSpawnShape::Sphere;
-    settings.burstCount = 96;
-    settings.spawnOffsetScale = {0.04f, 0.04f, 0.04f};
-    settings.tintColor = {1.0f, 0.74f, 0.50f, 1.0f};
-    settings.direction = {0.0f, 0.0f, 1.0f};
-    settings.radialVelocity = 1.10f;
-    settings.directionalVelocity = 0.0f;
-    settings.velocityBias = {0.0f, 0.0f, 0.0f};
-    settings.baseLifeTime = 0.42f;
-    settings.lifeTimeRandom = 0.20f;
-    settings.startScale = 0.022f;
-    settings.endScale = 0.0f;
-    settings.scaleRandom = 0.026f;
-    settings.acceleration = {0.0f, -0.08f, 0.0f};
-    settings.turbulence = 0.18f;
-    settings.damping = 0.98f;
-    settings.fadeInTime = 0.0f;
-    settings.fadeOutTime = 0.26f;
-    settings.fadeOutPower = 1.2f;
-    settings.stretch = 0.0f;
-    return settings;
-}
-
-ParticleEmitterSettings MakeSparkSettings(const DirectX::XMFLOAT3 &position) {
-    ParticleEmitterSettings settings{};
-    settings.position = position;
-    settings.emissionType = ParticleEmissionType::Burst;
-    settings.spawnShape = ParticleSpawnShape::Sphere;
-    settings.burstCount = 48;
-    settings.spawnOffsetScale = {0.03f, 0.03f, 0.03f};
-    settings.tintColor = {0.72f, 0.92f, 1.0f, 1.0f};
-    settings.direction = {0.35f, 0.16f, 0.0f};
-    settings.radialVelocity = 0.90f;
-    settings.directionalVelocity = 1.40f;
-    settings.velocityBias = {0.0f, 0.0f, 0.0f};
-    settings.baseLifeTime = 0.28f;
-    settings.lifeTimeRandom = 0.22f;
-    settings.startScale = 0.014f;
-    settings.endScale = 0.0f;
-    settings.scaleRandom = 0.018f;
-    settings.acceleration = {0.0f, -0.55f, 0.0f};
-    settings.turbulence = 0.22f;
-    settings.damping = 0.98f;
-    settings.fadeInTime = 0.0f;
-    settings.fadeOutTime = 0.16f;
-    settings.fadeOutPower = 2.0f;
-    settings.stretch = 5.8f;
-    return settings;
-}
-
-ParticleEmitterSettings MakeDustSettings(const DirectX::XMFLOAT3 &position) {
-    ParticleEmitterSettings settings{};
-    settings.position = position;
-    settings.emissionType = ParticleEmissionType::Burst;
-    settings.spawnShape = ParticleSpawnShape::Sphere;
-    settings.burstCount = 42;
-    settings.spawnOffsetScale = {0.10f, 0.06f, 0.10f};
-    settings.tintColor = {0.62f, 0.50f, 0.82f, 0.42f};
-    settings.direction = {0.0f, 0.35f, 0.06f};
-    settings.radialVelocity = 0.25f;
-    settings.directionalVelocity = 0.0f;
-    settings.velocityBias = {0.0f, 0.30f, 0.0f};
-    settings.baseLifeTime = 0.72f;
-    settings.lifeTimeRandom = 0.34f;
-    settings.startScale = 0.035f;
-    settings.endScale = 0.18f;
-    settings.scaleRandom = 0.052f;
-    settings.acceleration = {0.0f, 0.00f, 0.0f};
-    settings.turbulence = 0.25f;
-    settings.damping = 0.99f;
-    settings.fadeInTime = 0.08f;
-    settings.fadeOutTime = 0.40f;
-    settings.fadeOutPower = 1.0f;
-    settings.stretch = 0.0f;
-    return settings;
-}
-
 } // namespace
 
 void GameScene::Initialize(const SceneContext &ctx) {
     BaseScene::Initialize(ctx);
     lastHitWorldPosition_ = kDebugOriginPosition;
     InitializeCamera();
+    effectManager_.LoadEffect("plush_hit", kPlushHitEffectPath);
 }
 
 void GameScene::Update() {
@@ -155,28 +48,25 @@ void GameScene::Update() {
     }
 
     UpdateCameraAspect();
-    UpdateParticleSystems(deltaTime);
+    effectManager_.Update(deltaTime);
 }
 
 void GameScene::Draw() {}
 
 void GameScene::DrawTransparent() {
-    if (!particleSystemsInitialized_) {
-        InitializeParticleSystems();
+    if (!effectsInitialized_) {
+        InitializeEffects();
     }
-    if (!particleSystemsInitialized_) {
+    if (!effectsInitialized_) {
         return;
     }
 
     if (pendingHitBurst_) {
         EmitHitBurst(lastHitWorldPosition_);
     }
-    UpdateParticleSystems(0.0f);
+    effectManager_.Update(0.0f);
 
-    dustParticles_.Draw(camera_);
-    radialBurstParticles_.Draw(camera_);
-    sparkParticles_.Draw(camera_);
-    corePulseParticles_.Draw(camera_);
+    effectManager_.Draw(camera_);
 }
 
 void GameScene::InitializeCamera() {
@@ -191,26 +81,14 @@ void GameScene::InitializeCamera() {
     camera_.SetPosition(kCameraInitialPosition);
 }
 
-void GameScene::InitializeParticleSystems() {
+void GameScene::InitializeEffects() {
     if (!ctx_ || !ctx_->rendering.dxCommon || !ctx_->rendering.srv ||
         !ctx_->rendering.texture ||
         !ctx_->rendering.dxCommon->IsCommandListRecording()) {
         return;
     }
 
-    const uint32_t whiteTexture = ctx_->rendering.texture->GetWhiteTextureId();
-    corePulseParticles_.Initialize(ctx_->rendering.dxCommon, ctx_->rendering.srv,
-                                   ctx_->rendering.texture, whiteTexture, 128);
-    radialBurstParticles_.Initialize(ctx_->rendering.dxCommon,
-                                     ctx_->rendering.srv,
-                                     ctx_->rendering.texture, whiteTexture,
-                                     256);
-    sparkParticles_.Initialize(ctx_->rendering.dxCommon, ctx_->rendering.srv,
-                               ctx_->rendering.texture, whiteTexture, 192);
-    dustParticles_.Initialize(ctx_->rendering.dxCommon, ctx_->rendering.srv,
-                              ctx_->rendering.texture, whiteTexture, 192);
-
-    particleSystemsInitialized_ = true;
+    effectsInitialized_ = effectManager_.InitializeGpu(ctx_->rendering);
     pendingHitBurst_ = true;
 }
 
@@ -219,30 +97,20 @@ void GameScene::UpdateCameraAspect() {
         return;
     }
 
+    const DirectX::XMFLOAT3 shake = effectManager_.GetCameraShakeOffset();
+    camera_.SetPosition({kCameraInitialPosition.x + shake.x,
+                         kCameraInitialPosition.y + shake.y,
+                         kCameraInitialPosition.z + shake.z});
     camera_.SetAspect(CurrentAspect(*ctx_));
-}
-
-void GameScene::UpdateParticleSystems(float deltaTime) {
-    if (!particleSystemsInitialized_) {
-        return;
-    }
-
-    corePulseParticles_.Update(deltaTime);
-    radialBurstParticles_.Update(deltaTime);
-    sparkParticles_.Update(deltaTime);
-    dustParticles_.Update(deltaTime);
 }
 
 void GameScene::EmitHitBurst(const DirectX::XMFLOAT3 &worldPosition) {
     lastHitWorldPosition_ = worldPosition;
-    if (!particleSystemsInitialized_) {
+    if (!effectsInitialized_) {
         pendingHitBurst_ = true;
         return;
     }
 
-    corePulseParticles_.EmitOnce(MakeCorePulseSettings(worldPosition));
-    radialBurstParticles_.EmitOnce(MakeRadialBurstSettings(worldPosition));
-    sparkParticles_.EmitOnce(MakeSparkSettings(worldPosition));
-    dustParticles_.EmitOnce(MakeDustSettings(worldPosition));
+    effectManager_.Play("plush_hit", worldPosition);
     pendingHitBurst_ = false;
 }

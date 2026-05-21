@@ -20,7 +20,7 @@ float ParticleMask(float2 p, float ageRate, float randomValue)
 
 float4 main(ParticleVSOutput input) : SV_TARGET
 {
-    float2 p = input.uv * 2.0f - 1.0f;
+    float2 p = input.localUv * 2.0f - 1.0f;
     float ageRate = input.params.x;
     float randomValue = input.params.y;
 

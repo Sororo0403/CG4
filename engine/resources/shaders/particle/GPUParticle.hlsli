@@ -21,6 +21,7 @@ struct ParticleVSOutput
     float2 uv : TEXCOORD0;
     float4 color : COLOR0;
     float2 params : TEXCOORD1;
+    float2 localUv : TEXCOORD2;
 };
 
 #endif // GPU_PARTICLE_HLSLI

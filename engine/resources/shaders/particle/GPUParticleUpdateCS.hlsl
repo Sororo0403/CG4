@@ -15,6 +15,7 @@ cbuffer EmitterParams : register(b1)
     float4 emitterScale;
     float4 emitterAccelerationAndTurbulence;
     float4 emitterMotion;
+    float4 emitterAtlasAndRotation;
     float4 emitterTintColor;
     uint4 emitterConfig;
 };
@@ -139,7 +140,10 @@ void Respawn(uint index, inout Particle particle)
 
     float startScale = max(0.0f, emitterScale.x + r6 * emitterScale.z);
     float endScale = max(0.0f, emitterScale.y);
-    particle.scale = float2(startScale, startScale);
+    float atlasFrameCount = max(1.0f, emitterAtlasAndRotation.y);
+    float frameIndex =
+        emitterAtlasAndRotation.x + floor(r3 * atlasFrameCount);
+    particle.scale = float2(frameIndex, emitterAtlasAndRotation.z);
     particle.color = emitterTintColor;
     particle.seed += 19.19f + time.x + r4;
     particle.params0 =

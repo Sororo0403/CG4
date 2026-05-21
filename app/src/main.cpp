@@ -3,6 +3,7 @@
 
 #include <Windows.h>
 #include <exception>
+#include <filesystem>
 #include <memory>
 
 namespace {
@@ -44,10 +45,16 @@ void ShowErrorMessage(const char *message) {
     MessageBoxA(nullptr, message, "CG4 Error", MB_OK | MB_ICONERROR);
 }
 
+void ConfigureAssetRoot() {
+    const std::filesystem::path sourceFile = __FILE__;
+    AssetManager::SetAssetRoot(sourceFile.parent_path().parent_path().parent_path());
+}
+
 } // namespace
 
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int showCommand) {
     EnableDpiAwareness();
+    ConfigureAssetRoot();
 
     try {
         EngineRuntime engine;

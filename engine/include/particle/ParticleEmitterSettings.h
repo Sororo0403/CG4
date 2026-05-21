@@ -39,6 +39,12 @@ struct ParticleEmitterSettings {
     float endScale = 0.0f;
     float scaleRandom = 0.1f;
     float stretch = 0.0f;
+    float rotationSpeed = 0.7f;
+
+    uint32_t atlasColumns = 1;
+    uint32_t atlasRows = 1;
+    uint32_t atlasFrameStart = 0;
+    uint32_t atlasFrameCount = 1;
 
     DirectX::XMFLOAT3 acceleration{0.0f, 0.0f, 0.0f};
     float turbulence = 0.0f;

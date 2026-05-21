@@ -12,6 +12,13 @@ class DirectXCommon;
 class SrvManager;
 class TextureManager;
 
+struct GPUParticleMaterialSettings {
+    std::wstring pixelShaderPath;
+    DirectX::XMFLOAT4 params0{0.0f, 0.0f, 0.0f, 0.0f};
+    DirectX::XMFLOAT4 params1{0.0f, 0.0f, 0.0f, 0.0f};
+    uint32_t noiseTextureId = UINT32_MAX;
+};
+
 /// <summary>
 /// 計算シェーダーで更新し、構造化バッファを使ってインスタンス描画するGPUパーティクル。
 /// </summary>
@@ -57,6 +64,11 @@ class GPUParticleSystem {
     void SetTexture(uint32_t textureId) { textureId_ = textureId; }
 
     /// <summary>
+    /// 描画用PixelShaderとマテリアル定数を設定する
+    /// </summary>
+    void SetMaterialSettings(const GPUParticleMaterialSettings &settings);
+
+    /// <summary>
     /// TextureManager経由でテクスチャを読み込み、描画テクスチャを切り替える
     /// </summary>
     void SetTextureFromFile(const std::wstring &filePath);
@@ -95,6 +107,7 @@ class GPUParticleSystem {
         DirectX::XMFLOAT4 scale{0.2f, 0.0f, 0.1f, 0.0f};
         DirectX::XMFLOAT4 accelerationAndTurbulence{};
         DirectX::XMFLOAT4 motion{1.0f, 1.0f, 0.0f, 0.0f};
+        DirectX::XMFLOAT4 atlasAndRotation{0.0f, 1.0f, 0.7f, 0.0f};
         DirectX::XMFLOAT4 tintColor{1.0f, 1.0f, 1.0f, 1.0f};
         DirectX::XMUINT4 config{};
     };
@@ -104,6 +117,9 @@ class GPUParticleSystem {
         DirectX::XMFLOAT4 cameraRight{};
         DirectX::XMFLOAT4 cameraUp{};
         DirectX::XMFLOAT4 tintColor{};
+        DirectX::XMFLOAT4 atlasInfo{1.0f, 1.0f, 0.0f, 0.0f};
+        DirectX::XMFLOAT4 materialParams0{};
+        DirectX::XMFLOAT4 materialParams1{};
     };
 
     /// <summary>
@@ -153,6 +169,7 @@ class GPUParticleSystem {
     bool updatePending_ = false;
     bool emitOncePending_ = false;
     ParticleEmitterSettings emitterSettings_{};
+    GPUParticleMaterialSettings materialSettings_{};
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> updateRootSignature_;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> drawRootSignature_;

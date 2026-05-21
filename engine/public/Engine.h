@@ -14,6 +14,8 @@
 #include "core/ResourceHandle.h"
 #include "core/WinApp.h"
 #include "debug/DebugLog.h"
+#include "effect/EffectAsset.h"
+#include "effect/EffectManager.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/Culling.h"
 #include "graphics/DynamicBuffer.h"

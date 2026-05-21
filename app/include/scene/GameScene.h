@@ -1,7 +1,7 @@
 #pragma once
 #include "BaseScene.h"
 #include "camera/Camera.h"
-#include "particle/GPUParticleSystem.h"
+#include "effect/EffectManager.h"
 
 class GameScene : public BaseScene {
   public:
@@ -28,18 +28,14 @@ class GameScene : public BaseScene {
 
   private:
     void InitializeCamera();
-    void InitializeParticleSystems();
+    void InitializeEffects();
     void UpdateCameraAspect();
-    void UpdateParticleSystems(float deltaTime);
     void EmitHitBurst(const DirectX::XMFLOAT3 &worldPosition);
 
     Camera camera_{};
     DirectX::XMFLOAT3 lastHitWorldPosition_{0.0f, 0.0f, 0.0f};
     float effectTime_ = 0.0f;
-    bool particleSystemsInitialized_ = false;
+    bool effectsInitialized_ = false;
     bool pendingHitBurst_ = true;
-    GPUParticleSystem corePulseParticles_{};
-    GPUParticleSystem radialBurstParticles_{};
-    GPUParticleSystem sparkParticles_{};
-    GPUParticleSystem dustParticles_{};
+    EffectManager effectManager_{};
 };

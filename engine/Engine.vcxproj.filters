@@ -94,6 +94,12 @@
     <Filter Include="src\debug">
       <UniqueIdentifier>{b907d81f-c99a-4109-b551-fae7e77b5baa}</UniqueIdentifier>
     </Filter>
+    <Filter Include="include\effect">
+      <UniqueIdentifier>{34492f89-47d7-4e16-a3f1-017f0a942e17}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\effect">
+      <UniqueIdentifier>{ef6ca823-7aa4-4de3-92c9-e4c5f2a2ac46}</UniqueIdentifier>
+    </Filter>
     <Filter Include="resources">
       <UniqueIdentifier>{a7d15aa3-a2e6-492d-8656-1d600e7d5081}</UniqueIdentifier>
     </Filter>
@@ -243,6 +249,9 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\debug\DebugLog.cpp">
       <Filter>src\debug</Filter>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\effect\EffectManager.cpp">
+      <Filter>src\effect</Filter>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\animation\Animator.cpp">
       <Filter>src\animation</Filter>
     </ClCompile>
@@ -301,6 +310,12 @@
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\debug\DebugLog.h">
       <Filter>include\debug</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\effect\EffectAsset.h">
+      <Filter>include\effect</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\effect\EffectManager.h">
+      <Filter>include\effect</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\DirectXCommon.h">
       <Filter>include\graphics</Filter>
