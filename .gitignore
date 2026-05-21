@@ -364,6 +364,9 @@ FodyWeavers.xsd
 # imgui
 /app/imgui.ini
 
+# Codex local state
+.codex/
+
 # track resources
 !resources/
 !resources/**
