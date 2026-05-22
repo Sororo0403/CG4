@@ -386,7 +386,8 @@ GPUParticleSystem::BuildEmitterForGPU(uint32_t emit) const {
     emitter.atlasAndRotation = {
         static_cast<float>(emitterSettings_.atlasFrameStart),
         static_cast<float>(emitterSettings_.atlasFrameCount),
-        emitterSettings_.rotationSpeed, 0.0f};
+        emitterSettings_.rotationSpeed,
+        emitterSettings_.randomStartRotation ? 1.0f : 0.0f};
     emitter.tintColor = emitterSettings_.tintColor;
     emitter.config = {
         static_cast<uint32_t>(emitterSettings_.emissionType),

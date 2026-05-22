@@ -475,6 +475,7 @@ ParticleEmitterSettings EffectManager::BuildEmitterSettings(
     settings.endScale = desc.endScale;
     settings.scaleRandom = desc.scaleRandom;
     settings.stretch = desc.stretch;
+    settings.randomStartRotation = desc.rotation.randomStart;
     settings.rotationSpeed = desc.rotation.spin;
     settings.acceleration = {0.0f, 0.0f, 0.0f};
     settings.turbulence = desc.velocity.random;

@@ -45,7 +45,7 @@ ParticleVSOutput main(uint vertexId : SV_VertexID, uint instanceId : SV_Instance
     float2 localScale = float2(scale * (1.0f + stretch), scale);
     float2 local = kPositions[quadVertexId] * localScale;
 
-    float roll = particle.seed * 0.017f + particle.currentTime * particle.scale.y;
+    float roll = particle.params1.w + particle.currentTime * particle.scale.y;
     float s = sin(roll);
     float c = cos(roll);
     local = float2(local.x * c - local.y * s, local.x * s + local.y * c);

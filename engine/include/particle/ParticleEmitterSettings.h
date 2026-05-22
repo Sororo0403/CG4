@@ -39,6 +39,7 @@ struct ParticleEmitterSettings {
     float endScale = 0.0f;
     float scaleRandom = 0.1f;
     float stretch = 0.0f;
+    bool randomStartRotation = true;
     float rotationSpeed = 0.7f;
 
     uint32_t atlasColumns = 1;

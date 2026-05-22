@@ -148,8 +148,11 @@ void Respawn(uint index, inout Particle particle)
     particle.seed += 19.19f + time.x + r4;
     particle.params0 =
         float4(startScale, endScale, emitterLifeAndFade.z, emitterLifeAndFade.w);
+    float initialRoll = emitterAtlasAndRotation.w > 0.5f
+                            ? 6.2831853f * r4
+                            : 0.0f;
     particle.params1 = float4(max(0.01f, emitterMotion.y),
-                              max(0.0f, emitterScale.w), r4, 0.0f);
+                              max(0.0f, emitterScale.w), r4, initialRoll);
     particle.isActive = 1;
 }
 
