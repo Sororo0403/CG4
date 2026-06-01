@@ -9,14 +9,26 @@ class SrvManager;
 
 class ShadowMapRenderer {
   public:
+    ~ShadowMapRenderer();
+
     void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
                     uint32_t width = 2048, uint32_t height = 2048);
+    /// <summary>
+    /// Releaseを実行する
+    /// </summary>
+    void Release();
     void Resize(uint32_t width, uint32_t height);
 
     void Begin();
+    /// <summary>
+    /// Endを実行する
+    /// </summary>
     void End();
 
-    D3D12_GPU_DESCRIPTOR_HANDLE GetGpuHandle() const { return srvGpuHandle_; }
+    D3D12_GPU_DESCRIPTOR_HANDLE GetGpuHandle() const;
+    /// <summary>
+    /// DsvHandleを取得する
+    /// </summary>
     D3D12_CPU_DESCRIPTOR_HANDLE GetDsvHandle() const;
     const DirectX::XMFLOAT4X4 &GetLightViewProjection() const {
         return lightViewProjection_;
@@ -30,6 +42,10 @@ class ShadowMapRenderer {
     uint32_t GetHeight() const { return height_; }
 
   private:
+    /// <summary>
+    /// DepthResourcesを解放する
+    /// </summary>
+    void ReleaseDepthResources();
     void CreateResources();
     void UpdateSrv();
 

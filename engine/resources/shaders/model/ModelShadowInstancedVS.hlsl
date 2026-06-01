@@ -17,6 +17,8 @@ ModelVSOutput main(ModelInstanceInput input)
     output.worldPos = worldPos.xyz;
     output.worldNormal = float3(0.0f, 1.0f, 0.0f);
     output.worldTangent = float4(1.0f, 0.0f, 0.0f, input.tangent.w);
+    output.localPos = input.pos;
+    output.bindPos = float3(0.0f, 0.0f, 0.0f);
     output.color = input.color * input.instanceColor;
     output.color.a *= input.fade;
     return output;

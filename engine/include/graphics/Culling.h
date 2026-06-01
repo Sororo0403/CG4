@@ -7,6 +7,9 @@ class Camera;
 
 class Frustum {
   public:
+    /// <summary>
+    /// Buildを実行する
+    /// </summary>
     void Build(const DirectX::XMMATRIX &viewProjection);
     void Build(const Camera &camera);
 

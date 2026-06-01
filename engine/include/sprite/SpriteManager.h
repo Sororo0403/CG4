@@ -60,12 +60,18 @@ class SpriteManager {
     /// <summary>
     /// スプライト描画の開始状態を設定する
     /// </summary>
-    void PreDraw();
+    void PreDraw(bool backBufferTarget = false);
 
     /// <summary>
     /// スプライト描画の終了状態を設定する
     /// </summary>
     void PostDraw();
+
+    /// <summary>
+    /// 低レベルのスプライト描画器を取得する
+    /// </summary>
+    SpriteRenderer *GetRenderer() { return &spriteRenderer_; }
+    const SpriteRenderer *GetRenderer() const { return &spriteRenderer_; }
 
     /// <summary>
     /// スプライトを取得する
@@ -81,6 +87,11 @@ class SpriteManager {
     /// 管理中のスプライト数を取得する
     /// </summary>
     size_t GetCount() const { return sprites_.size(); }
+
+    /// <summary>
+    /// 指定IDが有効なスプライトを指しているかを取得する
+    /// </summary>
+    bool IsValidSpriteId(uint32_t id) const;
 
     /// <summary>
     /// 描画領域サイズに合わせて投影行列を更新する

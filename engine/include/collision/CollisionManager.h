@@ -23,6 +23,9 @@ class CollisionManager {
         OBB obb{};
         AABB aabb{};
 
+        /// <summary>
+        /// FromOBBを実行する
+        /// </summary>
         static Shape FromOBB(const OBB &box);
         static Shape FromAABB(const AABB &box);
     };
@@ -148,6 +151,7 @@ class CollisionManager {
     /// BodyDescから内部Bodyを作成する
     /// </summary>
     Body CreateBody(const BodyDesc &desc);
+    BodyId AllocateBodyId();
 
   private:
     std::vector<Body> bodies_;

@@ -20,6 +20,9 @@ struct CollisionResult {
 /// <param name="a">判定対象となる1つ目のOBB</param>
 /// <param name="b">判定対象となる2つ目のOBB</param>
 /// <returns>衝突有無、aからbへ向かう法線、めり込み量</returns>
+/// <summary>
+/// TestOBBを実行する
+/// </summary>
 CollisionResult TestOBB(const OBB &a, const OBB &b);
 
 /// <summary>
@@ -28,6 +31,9 @@ CollisionResult TestOBB(const OBB &a, const OBB &b);
 /// <param name="a">判定対象となる1つ目のOBB</param>
 /// <param name="b">判定対象となる2つ目のOBB</param>
 /// <returns>2つのOBBが交差している場合はtrue、交差していない場合はfalse</returns>
+/// <summary>
+/// CheckOBBを実行する
+/// </summary>
 bool CheckOBB(const OBB &a, const OBB &b);
 
 /// <summary>
@@ -36,6 +42,9 @@ bool CheckOBB(const OBB &a, const OBB &b);
 /// <param name="a">当たり判定を行う矩形a</param>
 /// <param name="b">当たり判定を行う矩形b</param>
 /// <returns>当たっていたらtrue,当たっていなかったらfalse</returns>
+/// <summary>
+/// CheckAABBを実行する
+/// </summary>
 bool CheckAABB(const AABB &a, const AABB &b);
 
 } // namespace CollisionUtil

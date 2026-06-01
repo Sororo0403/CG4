@@ -1,5 +1,7 @@
 #pragma once
 #include <DirectXMath.h>
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 
 /// <summary>
@@ -12,3 +14,49 @@ struct InstanceData {
     uint32_t seed = 0;
     DirectX::XMFLOAT2 padding{};
 };
+
+namespace InstanceDataDetail {
+inline float FiniteOr(float value, float fallback) {
+    return std::isfinite(value) ? value : fallback;
+}
+
+inline DirectX::XMFLOAT4 FiniteFloat4(const DirectX::XMFLOAT4 &value,
+                                      const DirectX::XMFLOAT4 &fallback) {
+    return {FiniteOr(value.x, fallback.x), FiniteOr(value.y, fallback.y),
+            FiniteOr(value.z, fallback.z), FiniteOr(value.w, fallback.w)};
+}
+
+inline DirectX::XMFLOAT4X4 IdentityMatrix() {
+    return {1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f};
+}
+
+inline DirectX::XMFLOAT4X4 SanitizeMatrix(DirectX::XMFLOAT4X4 value) {
+    const DirectX::XMFLOAT4X4 fallback = IdentityMatrix();
+    for (int row = 0; row < 4; ++row) {
+        for (int column = 0; column < 4; ++column) {
+            value.m[row][column] =
+                FiniteOr(value.m[row][column], fallback.m[row][column]);
+        }
+    }
+    return value;
+}
+} // namespace InstanceDataDetail
+
+inline InstanceData SanitizeInstanceDataForDraw(InstanceData instance) {
+    const InstanceData fallback{};
+    instance.world = InstanceDataDetail::SanitizeMatrix(instance.world);
+    instance.color =
+        InstanceDataDetail::FiniteFloat4(instance.color, fallback.color);
+    instance.color.w = std::clamp(
+        InstanceDataDetail::FiniteOr(instance.color.w, fallback.color.w),
+        0.0f, 1.0f);
+    instance.fade = std::clamp(
+        InstanceDataDetail::FiniteOr(instance.fade, fallback.fade), 0.0f,
+        1.0f);
+    instance.padding.x = 0.0f;
+    instance.padding.y = 0.0f;
+    return instance;
+}

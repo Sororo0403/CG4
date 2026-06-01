@@ -1,7 +1,6 @@
 #include "model/SkyboxRenderer.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
-#include "graphics/DxUtils.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
@@ -9,9 +8,9 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 using namespace DirectX;
-using namespace DxUtils;
 
 namespace {
 
@@ -21,6 +20,15 @@ struct SkyboxVertex {
 
 bool NearlyEqual(float a, float b, float epsilon = 1.0e-6f) {
     return std::fabs(a - b) <= epsilon;
+}
+
+float FiniteOr(float value, float fallback) {
+    return std::isfinite(value) ? value : fallback;
+}
+
+XMFLOAT3 SanitizeFloat3(const XMFLOAT3 &value) {
+    return {FiniteOr(value.x, 0.0f), FiniteOr(value.y, 0.0f),
+            FiniteOr(value.z, 0.0f)};
 }
 
 bool IsSameFloat3(const XMFLOAT3 &lhs, const XMFLOAT3 &rhs) {
@@ -40,10 +48,66 @@ bool IsSameMatrix(const XMFLOAT4X4 &lhs, const XMFLOAT4X4 &rhs) {
     return true;
 }
 
+uint32_t ResolveSkyboxTextureId(TextureManager *textureManager,
+                                uint32_t textureId) {
+    if (textureManager == nullptr) {
+        return UINT32_MAX;
+    }
+    if (textureId != UINT32_MAX &&
+        textureManager->IsValidTextureId(textureId)) {
+        return textureId;
+    }
+    const uint32_t fallbackTextureId = textureManager->GetWhiteCubeTextureId();
+    return textureManager->IsValidTextureId(fallbackTextureId)
+               ? fallbackTextureId
+               : UINT32_MAX;
+}
+
+UINT Align256(size_t size) {
+    if (size > static_cast<size_t>((std::numeric_limits<UINT>::max)()) - 0xFFu) {
+        return 0;
+    }
+    return static_cast<UINT>((size + 0xFFu) & ~size_t{0xFFu});
+}
+
+bool CreateCommittedResourceChecked(
+    ID3D12Device *device, const D3D12_HEAP_PROPERTIES *heapProperties,
+    D3D12_HEAP_FLAGS heapFlags, const D3D12_RESOURCE_DESC *resourceDesc,
+    D3D12_RESOURCE_STATES initialState, ID3D12Resource **resource) {
+    if (device == nullptr || heapProperties == nullptr ||
+        resourceDesc == nullptr || resource == nullptr) {
+        return false;
+    }
+    *resource = nullptr;
+    return SUCCEEDED(device->CreateCommittedResource(
+        heapProperties, heapFlags, resourceDesc, initialState, nullptr,
+        IID_PPV_ARGS(resource))) &&
+           *resource != nullptr;
+}
+
+bool MapResourceChecked(ID3D12Resource *resource, void **mapped) {
+    if (resource == nullptr || mapped == nullptr) {
+        return false;
+    }
+    *mapped = nullptr;
+    return SUCCEEDED(resource->Map(0, nullptr, mapped)) && *mapped != nullptr;
+}
+
 } // namespace
+
+SkyboxRenderer::~SkyboxRenderer() {
+    Finalize();
+}
 
 void SkyboxRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
                                 TextureManager *textureManager) {
+    if (!dxCommon || !dxCommon->GetDevice() || !srvManager || !textureManager) {
+        Finalize();
+        return;
+    }
+
+    Finalize();
+
     dxCommon_ = dxCommon;
     srvManager_ = srvManager;
     textureManager_ = textureManager;
@@ -52,12 +116,67 @@ void SkyboxRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
     CreatePipelineState();
     CreateMesh();
     CreateConstantBuffer();
+    if (!rootSignature_ || !pipelineState_ || !vertexBuffer_ ||
+        !indexBuffer_ || !constBuffer_ || mappedCB_ == nullptr ||
+        indexCount_ == 0) {
+        Finalize();
+    }
+}
+
+void SkyboxRenderer::Finalize() {
+    if ((constBuffer_ || indexBuffer_ || vertexBuffer_) && dxCommon_ != nullptr &&
+        !dxCommon_->IsDeviceRemoved() &&
+        !dxCommon_->IsCommandListRecording()) {
+        dxCommon_->WaitForGpuIfPossible();
+    }
+
+    if (constBuffer_ && mappedCB_ != nullptr) {
+        constBuffer_->Unmap(0, nullptr);
+        mappedCB_ = nullptr;
+    }
+
+    constBuffer_.Reset();
+    indexBuffer_.Reset();
+    vertexBuffer_.Reset();
+    pipelineState_.Reset();
+    rootSignature_.Reset();
+    vbView_ = {};
+    ibView_ = {};
+    indexCount_ = 0;
+    hasCachedCameraState_ = false;
+    cachedCameraPosition_ = {};
+    cachedView_ = {};
+    cachedProj_ = {};
+    dxCommon_ = nullptr;
+    srvManager_ = nullptr;
+    textureManager_ = nullptr;
 }
 
 void SkyboxRenderer::Draw(uint32_t textureId, const Camera &camera) {
-    auto *cmd = dxCommon_->GetCommandList();
+    if (!dxCommon_ || !srvManager_ || !textureManager_ || !pipelineState_ ||
+        !rootSignature_ || !vertexBuffer_ || !indexBuffer_ || !constBuffer_ ||
+        mappedCB_ == nullptr || indexCount_ == 0) {
+        return;
+    }
 
-    ID3D12DescriptorHeap *heaps[] = {srvManager_->GetHeap()};
+    const uint32_t boundTextureId =
+        ResolveSkyboxTextureId(textureManager_, textureId);
+    if (boundTextureId == UINT32_MAX) {
+        return;
+    }
+
+    auto *cmd = dxCommon_->GetCommandList();
+    ID3D12DescriptorHeap *srvHeap = srvManager_->GetHeap();
+    const D3D12_GPU_VIRTUAL_ADDRESS constBufferAddress =
+        constBuffer_->GetGPUVirtualAddress();
+    const D3D12_GPU_DESCRIPTOR_HANDLE textureHandle =
+        textureManager_->GetGpuHandle(boundTextureId);
+    if (cmd == nullptr || srvHeap == nullptr || constBufferAddress == 0 ||
+        textureHandle.ptr == 0) {
+        return;
+    }
+
+    ID3D12DescriptorHeap *heaps[] = {srvHeap};
     cmd->SetDescriptorHeaps(1, heaps);
 
     cmd->SetPipelineState(pipelineState_.Get());
@@ -70,35 +189,37 @@ void SkyboxRenderer::Draw(uint32_t textureId, const Camera &camera) {
     XMFLOAT4X4 currentProj{};
     XMStoreFloat4x4(&currentView, camera.GetView());
     XMStoreFloat4x4(&currentProj, camera.GetProj());
+    const XMFLOAT3 cameraPosition = SanitizeFloat3(camera.GetPosition());
 
     const bool needsConstantBufferUpdate =
         !hasCachedCameraState_ ||
-        !IsSameFloat3(camera.GetPosition(), cachedCameraPosition_) ||
+        !IsSameFloat3(cameraPosition, cachedCameraPosition_) ||
         !IsSameMatrix(currentView, cachedView_) ||
         !IsSameMatrix(currentProj, cachedProj_);
 
     if (needsConstantBufferUpdate) {
         XMMATRIX world =
             XMMatrixScaling(50.0f, 50.0f, 50.0f) *
-            XMMatrixTranslation(camera.GetPosition().x, camera.GetPosition().y,
-                                camera.GetPosition().z);
+            XMMatrixTranslation(cameraPosition.x, cameraPosition.y,
+                                cameraPosition.z);
         XMMATRIX wvp = world * camera.GetView() * camera.GetProj();
         XMStoreFloat4x4(&mappedCB_->matWVP, XMMatrixTranspose(wvp));
 
-        cachedCameraPosition_ = camera.GetPosition();
+        cachedCameraPosition_ = cameraPosition;
         cachedView_ = currentView;
         cachedProj_ = currentProj;
         hasCachedCameraState_ = true;
     }
 
-    cmd->SetGraphicsRootConstantBufferView(
-        0, constBuffer_->GetGPUVirtualAddress());
-    cmd->SetGraphicsRootDescriptorTable(
-        1, textureManager_->GetGpuHandle(textureId));
+    cmd->SetGraphicsRootConstantBufferView(0, constBufferAddress);
+    cmd->SetGraphicsRootDescriptorTable(1, textureHandle);
     cmd->DrawIndexedInstanced(indexCount_, 1, 0, 0, 0);
 }
 
 void SkyboxRenderer::CreateRootSignature() {
+    if (!dxCommon_ || !dxCommon_->GetDevice()) {
+        return;
+    }
     CD3DX12_ROOT_PARAMETER params[2]{};
     params[0].InitAsConstantBufferView(0);
 
@@ -114,21 +235,30 @@ void SkyboxRenderer::CreateRootSignature() {
 
     Microsoft::WRL::ComPtr<ID3DBlob> blob, error;
 
-    ThrowIfFailed(D3D12SerializeRootSignature(
-                      &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error),
-                  "SerializeRootSignature(Skybox) failed");
+    if (FAILED(D3D12SerializeRootSignature(
+            &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error)) ||
+        !blob) {
+        return;
+    }
 
-    ThrowIfFailed(dxCommon_->GetDevice()->CreateRootSignature(
-                      0, blob->GetBufferPointer(), blob->GetBufferSize(),
-                      IID_PPV_ARGS(&rootSignature_)),
-                  "CreateRootSignature(Skybox) failed");
+    if (FAILED(dxCommon_->GetDevice()->CreateRootSignature(
+            0, blob->GetBufferPointer(), blob->GetBufferSize(),
+            IID_PPV_ARGS(&rootSignature_)))) {
+        rootSignature_.Reset();
+    }
 }
 
 void SkyboxRenderer::CreatePipelineState() {
+    if (!dxCommon_ || !dxCommon_->GetDevice() || !rootSignature_) {
+        return;
+    }
     auto vs =
-        ShaderCompiler::Compile(ShaderPaths::SkyboxVS, "main", "vs_5_0");
+        ShaderCompiler::Compile(ShaderPaths::SkyboxVS, "main", "vs_6_6");
     auto ps =
-        ShaderCompiler::Compile(ShaderPaths::SkyboxPS, "main", "ps_5_0");
+        ShaderCompiler::Compile(ShaderPaths::SkyboxPS, "main", "ps_6_6");
+    if (!vs || !ps) {
+        return;
+    }
 
     D3D12_INPUT_ELEMENT_DESC layout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
@@ -159,12 +289,16 @@ void SkyboxRenderer::CreatePipelineState() {
     depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
     desc.DepthStencilState = depth;
 
-    ThrowIfFailed(dxCommon_->GetDevice()->CreateGraphicsPipelineState(
-                      &desc, IID_PPV_ARGS(&pipelineState_)),
-                  "CreateGraphicsPipelineState(Skybox) failed");
+    if (FAILED(dxCommon_->GetDevice()->CreateGraphicsPipelineState(
+            &desc, IID_PPV_ARGS(&pipelineState_)))) {
+        pipelineState_.Reset();
+    }
 }
 
 void SkyboxRenderer::CreateMesh() {
+    if (!dxCommon_ || !dxCommon_->GetDevice()) {
+        return;
+    }
     static constexpr std::array<SkyboxVertex, 8> kVertices = {{
         {{-1.0f, -1.0f, -1.0f}},
         {{-1.0f, 1.0f, -1.0f}},
@@ -189,15 +323,18 @@ void SkyboxRenderer::CreateMesh() {
     CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
 
     auto vbDesc = CD3DX12_RESOURCE_DESC::Buffer(vbSize);
-    ThrowIfFailed(dxCommon_->GetDevice()->CreateCommittedResource(
-                      &heap, D3D12_HEAP_FLAG_NONE, &vbDesc,
-                      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                      IID_PPV_ARGS(&vertexBuffer_)),
-                  "CreateCommittedResource(SkyboxVB) failed");
+    if (!CreateCommittedResourceChecked(
+            dxCommon_->GetDevice(), &heap, D3D12_HEAP_FLAG_NONE, &vbDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ, vertexBuffer_.GetAddressOf())) {
+        indexCount_ = 0;
+        return;
+    }
 
     void *vbMapped = nullptr;
-    ThrowIfFailed(vertexBuffer_->Map(0, nullptr, &vbMapped),
-                  "Map(SkyboxVB) failed");
+    if (!MapResourceChecked(vertexBuffer_.Get(), &vbMapped)) {
+        indexCount_ = 0;
+        return;
+    }
     memcpy(vbMapped, kVertices.data(), sizeof(kVertices));
     vertexBuffer_->Unmap(0, nullptr);
 
@@ -206,15 +343,18 @@ void SkyboxRenderer::CreateMesh() {
     vbView_.StrideInBytes = sizeof(SkyboxVertex);
 
     auto ibDesc = CD3DX12_RESOURCE_DESC::Buffer(ibSize);
-    ThrowIfFailed(dxCommon_->GetDevice()->CreateCommittedResource(
-                      &heap, D3D12_HEAP_FLAG_NONE, &ibDesc,
-                      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                      IID_PPV_ARGS(&indexBuffer_)),
-                  "CreateCommittedResource(SkyboxIB) failed");
+    if (!CreateCommittedResourceChecked(
+            dxCommon_->GetDevice(), &heap, D3D12_HEAP_FLAG_NONE, &ibDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ, indexBuffer_.GetAddressOf())) {
+        indexCount_ = 0;
+        return;
+    }
 
     void *ibMapped = nullptr;
-    ThrowIfFailed(indexBuffer_->Map(0, nullptr, &ibMapped),
-                  "Map(SkyboxIB) failed");
+    if (!MapResourceChecked(indexBuffer_.Get(), &ibMapped)) {
+        indexCount_ = 0;
+        return;
+    }
     memcpy(ibMapped, kIndices.data(), sizeof(kIndices));
     indexBuffer_->Unmap(0, nullptr);
 
@@ -224,20 +364,27 @@ void SkyboxRenderer::CreateMesh() {
 }
 
 void SkyboxRenderer::CreateConstantBuffer() {
+    if (!dxCommon_ || !dxCommon_->GetDevice()) {
+        return;
+    }
     const UINT size = Align256(sizeof(ConstBufferData));
+    if (size == 0) {
+        return;
+    }
 
     CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
     auto desc = CD3DX12_RESOURCE_DESC::Buffer(size);
 
-    ThrowIfFailed(dxCommon_->GetDevice()->CreateCommittedResource(
-                      &heap, D3D12_HEAP_FLAG_NONE, &desc,
-                      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                      IID_PPV_ARGS(&constBuffer_)),
-                  "CreateCommittedResource(SkyboxCB) failed");
+    if (!CreateCommittedResourceChecked(
+            dxCommon_->GetDevice(), &heap, D3D12_HEAP_FLAG_NONE, &desc,
+            D3D12_RESOURCE_STATE_GENERIC_READ, constBuffer_.GetAddressOf())) {
+        return;
+    }
 
-    ThrowIfFailed(
-        constBuffer_->Map(0, nullptr, reinterpret_cast<void **>(&mappedCB_)),
-        "Map(SkyboxCB) failed");
+    if (!MapResourceChecked(constBuffer_.Get(),
+                            reinterpret_cast<void **>(&mappedCB_))) {
+        return;
+    }
 
     XMStoreFloat4x4(&mappedCB_->matWVP, XMMatrixTranspose(XMMatrixIdentity()));
 }

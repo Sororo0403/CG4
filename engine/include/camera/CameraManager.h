@@ -10,6 +10,10 @@
 class CameraManager {
   public:
     static CameraManager &GetInstance();
+    /// <summary>
+    /// ActiveInstanceを設定する
+    /// </summary>
+    static void SetActiveInstance(CameraManager *instance);
 
     CameraManager() = default;
     CameraManager(const CameraManager &) = delete;
@@ -18,6 +22,9 @@ class CameraManager {
     Camera &CreateCamera(const std::string &name, float aspect);
     bool RegisterCamera(const std::string &name,
                         std::unique_ptr<Camera> camera);
+    /// <summary>
+    /// ActiveCameraを設定する
+    /// </summary>
     bool SetActiveCamera(const std::string &name);
 
     Camera *GetActiveCamera();
@@ -25,6 +32,9 @@ class CameraManager {
     Camera *FindCamera(const std::string &name);
     const Camera *FindCamera(const std::string &name) const;
 
+    /// <summary>
+    /// RemoveCameraを実行する
+    /// </summary>
     void RemoveCamera(const std::string &name);
     void Clear();
 

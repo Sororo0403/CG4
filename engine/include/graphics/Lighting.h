@@ -10,6 +10,13 @@ struct PointLight {
     DirectX::XMFLOAT4 colorIntensity = {1.0f, 0.55f, 0.35f, 1.1f};
 };
 
+struct SpotLight {
+    DirectX::XMFLOAT4 positionRange = {0.0f, 0.0f, 0.0f, 1.0f};
+    DirectX::XMFLOAT4 direction = {0.0f, -1.0f, 0.0f, 0.0f};
+    DirectX::XMFLOAT4 colorIntensity = {1.0f, 0.86f, 0.58f, 0.0f};
+    DirectX::XMFLOAT4 angleParams = {0.94f, 0.72f, 2.4f, 0.0f};
+};
+
 /// <summary>
 /// シーン全体で共有するライティング定数
 /// </summary>
@@ -25,6 +32,7 @@ struct SceneLighting {
         {{0.0f, 2.0f, -1.0f, 8.0f}, {1.0f, 0.55f, 0.35f, 1.1f}},
         {{0.0f, 1.5f, 2.5f, 7.0f}, {0.25f, 0.45f, 1.0f, 0.75f}},
     }};
+    SpotLight spotLight{};
     DirectX::XMFLOAT4 lightingParams = {48.0f, 0.30f, 2.8f, 0.22f};
     /// <summary>
     /// x: 0=Phong, 1=Blinn-Phong

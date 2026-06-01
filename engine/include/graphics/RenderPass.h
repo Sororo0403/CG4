@@ -5,13 +5,13 @@ enum class RenderPass : uint8_t {
     None,
     Shadow,
     SceneColor,
+    Foreground3D,
     Transparent,
-    PostEffect,
+    PostProcess,
     Debug,
     UI,
     BackBuffer,
 
     Scene = SceneColor,
-    PostProcess = PostEffect,
     DebugUi = UI,
 };

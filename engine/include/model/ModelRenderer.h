@@ -4,11 +4,14 @@
 #include "graphics/UploadRingBuffer.h"
 #include "model/InstanceData.h"
 #include "model/MaterialManager.h"
+#include "model/ModelDrawEffect.h"
 #include "model/Model.h"
 #include "model/Transform.h"
 #include <DirectXMath.h>
+#include <array>
 #include <cstddef>
 #include <d3d12.h>
+#include <vector>
 #include <wrl.h>
 
 class DirectXCommon;
@@ -33,6 +36,9 @@ class ModelRenderer {
                     MeshManager *meshManager, TextureManager *textureManager,
                     MaterialManager *materialManager);
 
+    /// <summary>
+    /// Frameを開始する
+    /// </summary>
     void BeginFrame();
 
     /// <summary>
@@ -86,12 +92,28 @@ class ModelRenderer {
                              const DirectX::XMFLOAT4X4 &lightViewProjection);
 
     /// <summary>
+    /// 描画前に必要なGPUスキニングを実行する
+    /// </summary>
+    void PrepareSkinning(const Model &model);
+    void PrepareSkinning(const std::vector<const Model *> &models);
+
+    /// <summary>
     /// シーンライティングを設定する
     /// </summary>
     /// <param name="lighting">適用するライティング定数</param>
     void SetSceneLighting(const SceneLighting &lighting) {
         currentLighting_ = lighting;
     }
+
+    /// <summary>
+    /// 現在フレームの描画エフェクトを設定する
+    /// </summary>
+    void SetDrawEffect(const ModelDrawEffect &effect) { currentEffect_ = effect; }
+
+    /// <summary>
+    /// 描画エフェクト設定を初期状態へ戻す
+    /// </summary>
+    void ClearDrawEffect() { currentEffect_ = ModelDrawEffect{}; }
 
     /// <summary>
     /// シーンフォグを設定する
@@ -177,25 +199,39 @@ class ModelRenderer {
     D3D12_GPU_VIRTUAL_ADDRESS WriteObjectConstants(
         const DirectX::XMMATRIX &wvp, const DirectX::XMMATRIX &world,
         const DirectX::XMMATRIX &worldInverseTranspose);
+    /// <summary>
+    /// データを書き込む
+    /// </summary>
     D3D12_GPU_VIRTUAL_ADDRESS WriteSceneConstants(const Camera &camera);
+    D3D12_GPU_VIRTUAL_ADDRESS WriteDrawEffectConstants();
     D3D12_VERTEX_BUFFER_VIEW WriteInstances(const Model &model,
                                             const Transform *transforms,
                                             uint32_t instanceCount);
     D3D12_VERTEX_BUFFER_VIEW WriteInstances(const Model &model,
                                             const InstanceData *instances,
                                             uint32_t instanceCount);
-    void SetPipelineForMaterial(const Material &material);
-    void SetInstancedPipelineForMaterial(const Material &material);
+    /// <summary>
+    /// PipelineForMaterialを設定する
+    /// </summary>
+    bool SetPipelineForMaterial(const Material &material);
+    bool SetInstancedPipelineForMaterial(const Material &material);
 
     /// <summary>
-    /// ComputeShaderでスキニング済み頂点を書き込む
+    /// ComputeShaderで必要なスキニング済み頂点をまとめて書き込む
+    /// </summary>
+    void DispatchSkinningBatch(const Model &model);
+    void DispatchSkinningBatch(const std::vector<const Model *> &models);
+    void DispatchSkinningJobs(const std::vector<const ModelSubMesh *> &jobs);
+    /// <summary>
+    /// DispatchSkinningを実行する
     /// </summary>
     void DispatchSkinning(const ModelSubMesh &subMesh);
+    bool NeedsSkinningDispatch(const ModelSubMesh &subMesh) const;
 
   private:
     static constexpr uint32_t kMaxDraws = 4096;
     static constexpr size_t kUploadBytesPerFrame = 16 * 1024 * 1024;
-    static constexpr size_t kPipelineVariantCount = 12;
+    static constexpr size_t kPipelineVariantCount = 18;
 
     DirectXCommon *dxCommon_ = nullptr;
     SrvManager *srvManager_ = nullptr;
@@ -218,9 +254,14 @@ class ModelRenderer {
 
     UploadRingBuffer uploadBuffer_;
     uint32_t drawIndex_ = 0;
+    uint64_t skinningFrameId_ = 0;
     SceneLighting currentLighting_{};
     SceneFog currentFog_{};
     uint32_t environmentTextureId_ = 0;
+    uint32_t dissolveNoiseTextureId_ = 0;
+    ModelDrawEffect currentEffect_{};
+    ID3D12RootSignature *currentGraphicsRootSignature_ = nullptr;
+    ID3D12PipelineState *currentGraphicsPipelineState_ = nullptr;
     bool hasEnvironmentTexture_ = false;
     D3D12_GPU_DESCRIPTOR_HANDLE shadowMapGpuHandle_{};
     DirectX::XMFLOAT4X4 shadowLightViewProjection_ = {

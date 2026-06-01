@@ -2,7 +2,6 @@
 
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
-#include "graphics/DxUtils.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
@@ -11,9 +10,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 using namespace DirectX;
-using namespace DxUtils;
 using Microsoft::WRL::ComPtr;
 
 namespace {
@@ -48,24 +47,38 @@ struct SceneConstBufferData {
     XMFLOAT4 customSceneParams1;
 };
 
+XMVECTOR LoadNormalizedQuaternionOrIdentity(const XMFLOAT4 &rotation) {
+    if (!std::isfinite(rotation.x) || !std::isfinite(rotation.y) ||
+        !std::isfinite(rotation.z) || !std::isfinite(rotation.w)) {
+        return XMQuaternionIdentity();
+    }
+    XMVECTOR q = XMLoadFloat4(&rotation);
+    const float lengthSq = XMVectorGetX(XMVector4LengthSq(q));
+    if (!std::isfinite(lengthSq) || lengthSq <= 0.000001f) {
+        return XMQuaternionIdentity();
+    }
+    return XMQuaternionNormalize(q);
+}
+
 XMMATRIX MakeWorldMatrix(const Transform &transform) {
-    XMVECTOR q = XMQuaternionNormalize(XMLoadFloat4(&transform.rotation));
-    return XMMatrixScaling(transform.scale.x, transform.scale.y,
-                           transform.scale.z) *
+    const Transform safeTransform = SanitizeTransformForDraw(transform);
+    XMVECTOR q = LoadNormalizedQuaternionOrIdentity(safeTransform.rotation);
+    return XMMatrixScaling(safeTransform.scale.x, safeTransform.scale.y,
+                           safeTransform.scale.z) *
            XMMatrixRotationQuaternion(q) *
-           XMMatrixTranslation(transform.position.x, transform.position.y,
-                               transform.position.z);
+           XMMatrixTranslation(safeTransform.position.x,
+                               safeTransform.position.y,
+                               safeTransform.position.z);
 }
 
 XMMATRIX MakeWorldInverseTranspose(const XMMATRIX &world) {
-    XMVECTOR determinant{};
-    XMMATRIX inverse = XMMatrixInverse(&determinant, world);
+    const XMVECTOR determinant = XMMatrixDeterminant(world);
     const float determinantValue = XMVectorGetX(determinant);
     if (!std::isfinite(determinantValue) ||
         std::abs(determinantValue) <= 0.000001f) {
         return XMMatrixIdentity();
     }
-    return XMMatrixTranspose(inverse);
+    return XMMatrixTranspose(XMMatrixInverse(nullptr, world));
 }
 
 bool IsTransparentMaterial(const Material &material) {
@@ -131,20 +144,23 @@ uint32_t ResolveNormalTextureId(TextureManager *textureManager,
 } // namespace
 
 void MeshRenderer::CreateRootSignature() {
-    CD3DX12_ROOT_PARAMETER params[6];
+    if (!dxCommon_ || !dxCommon_->GetDevice()) {
+        return;
+    }
+    CD3DX12_ROOT_PARAMETER params[6]{};
     params[0].InitAsConstantBufferView(0);
     params[1].InitAsConstantBufferView(1);
     params[2].InitAsConstantBufferView(2);
 
-    CD3DX12_DESCRIPTOR_RANGE textureRange;
+    CD3DX12_DESCRIPTOR_RANGE textureRange{};
     textureRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
     params[3].InitAsDescriptorTable(1, &textureRange);
 
-    CD3DX12_DESCRIPTOR_RANGE shadowRange;
+    CD3DX12_DESCRIPTOR_RANGE shadowRange{};
     shadowRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);
     params[4].InitAsDescriptorTable(1, &shadowRange);
 
-    CD3DX12_DESCRIPTOR_RANGE normalRange;
+    CD3DX12_DESCRIPTOR_RANGE normalRange{};
     normalRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4);
     params[5].InitAsDescriptorTable(1, &normalRange);
 
@@ -158,22 +174,28 @@ void MeshRenderer::CreateRootSignature() {
               D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
     ComPtr<ID3DBlob> blob, error;
-    ThrowIfFailed(D3D12SerializeRootSignature(
-                      &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error),
-                  "D3D12SerializeRootSignature(MeshRenderer) failed");
-    ThrowIfFailed(dxCommon_->GetDevice()->CreateRootSignature(
-                      0, blob->GetBufferPointer(), blob->GetBufferSize(),
-                      IID_PPV_ARGS(&rootSignature_)),
-                  "CreateRootSignature(MeshRenderer) failed");
+    if (FAILED(D3D12SerializeRootSignature(
+            &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error)) ||
+        !blob) {
+        return;
+    }
+    if (FAILED(dxCommon_->GetDevice()->CreateRootSignature(
+            0, blob->GetBufferPointer(), blob->GetBufferSize(),
+            IID_PPV_ARGS(&rootSignature_)))) {
+        rootSignature_.Reset();
+    }
 }
 
 void MeshRenderer::CreateShadowRootSignature() {
-    CD3DX12_ROOT_PARAMETER params[4];
+    if (!dxCommon_ || !dxCommon_->GetDevice()) {
+        return;
+    }
+    CD3DX12_ROOT_PARAMETER params[4]{};
     params[0].InitAsConstantBufferView(0);
     params[1].InitAsConstantBufferView(1);
     params[2].InitAsConstantBufferView(2);
 
-    CD3DX12_DESCRIPTOR_RANGE textureRange;
+    CD3DX12_DESCRIPTOR_RANGE textureRange{};
     textureRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
     params[3].InitAsDescriptorTable(1, &textureRange);
 
@@ -187,22 +209,31 @@ void MeshRenderer::CreateShadowRootSignature() {
               D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
     ComPtr<ID3DBlob> blob, error;
-    ThrowIfFailed(D3D12SerializeRootSignature(
-                      &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error),
-                  "D3D12SerializeRootSignature(MeshShadow) failed");
-    ThrowIfFailed(dxCommon_->GetDevice()->CreateRootSignature(
-                      0, blob->GetBufferPointer(), blob->GetBufferSize(),
-                      IID_PPV_ARGS(&shadowRootSignature_)),
-                  "CreateRootSignature(MeshShadow) failed");
+    if (FAILED(D3D12SerializeRootSignature(
+            &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error)) ||
+        !blob) {
+        return;
+    }
+    if (FAILED(dxCommon_->GetDevice()->CreateRootSignature(
+            0, blob->GetBufferPointer(), blob->GetBufferSize(),
+            IID_PPV_ARGS(&shadowRootSignature_)))) {
+        shadowRootSignature_.Reset();
+    }
 }
 
 void MeshRenderer::CreatePipelineStates() {
     auto *device = dxCommon_->GetDevice();
-    auto vs = ShaderCompiler::Compile(ShaderPaths::MeshVS, "main", "vs_5_0");
+    if (device == nullptr || !rootSignature_) {
+        return;
+    }
+    auto vs = ShaderCompiler::Compile(ShaderPaths::MeshVS, "main", "vs_6_6");
     auto instancedVs =
         ShaderCompiler::Compile(ShaderPaths::MeshInstancedVS, "main",
-                                "vs_5_0");
-    auto ps = ShaderCompiler::Compile(ShaderPaths::MeshPS, "main", "ps_5_0");
+                                "vs_6_6");
+    auto ps = ShaderCompiler::Compile(ShaderPaths::MeshPS, "main", "ps_6_6");
+    if (!vs || !instancedVs || !ps) {
+        return;
+    }
 
     D3D12_INPUT_ELEMENT_DESC baseLayout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
@@ -291,9 +322,10 @@ void MeshRenderer::CreatePipelineStates() {
         depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
         pso.DepthStencilState = depth;
 
-        ThrowIfFailed(device->CreateGraphicsPipelineState(
-                          &pso, IID_PPV_ARGS(&psoOut)),
-                      "CreateGraphicsPipelineState(MeshRenderer) failed");
+        if (FAILED(device->CreateGraphicsPipelineState(
+                &pso, IID_PPV_ARGS(&psoOut)))) {
+            psoOut.Reset();
+        }
     };
 
     for (bool transparent : {false, true}) {
@@ -317,6 +349,10 @@ void MeshRenderer::CreatePipelineStates() {
 }
 
 uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc &desc) {
+    if (!dxCommon_ || !dxCommon_->GetDevice() || !rootSignature_) {
+        return UINT32_MAX;
+    }
+
     D3D12_INPUT_ELEMENT_DESC baseLayout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
@@ -341,6 +377,13 @@ uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc &desc) {
         dxCommon_->GetDevice(), rootSignature_.Get(), desc,
         {baseLayout, _countof(baseLayout)}, DirectXCommon::kSceneColorFormat,
         DirectXCommon::kDepthStencilFormat);
+    if (!pipelineSet.pipelineStates[0]) {
+        return UINT32_MAX;
+    }
+    if (customPipelines_.size() >=
+        static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
+        return UINT32_MAX;
+    }
     const uint32_t pipelineId = static_cast<uint32_t>(customPipelines_.size());
     customPipelines_.push_back(std::move(pipelineSet));
     return pipelineId;
@@ -372,11 +415,19 @@ uint32_t MeshRenderer::CreateInstancedPipeline(
     const std::wstring &vertexShaderPath, const std::wstring &pixelShaderPath,
     const std::wstring &shadowVertexShaderPath,
     const std::wstring &shadowPixelShaderPath) {
+    if (!dxCommon_ || !dxCommon_->GetDevice() || !rootSignature_ ||
+        !shadowRootSignature_) {
+        return UINT32_MAX;
+    }
+
     auto *device = dxCommon_->GetDevice();
     InstancedPipelineSet pipelineSet{};
     auto instancedVs =
-        ShaderCompiler::Compile(vertexShaderPath, "main", "vs_5_0");
-    auto ps = ShaderCompiler::Compile(pixelShaderPath, "main", "ps_5_0");
+        ShaderCompiler::Compile(vertexShaderPath, "main", "vs_6_6");
+    auto ps = ShaderCompiler::Compile(pixelShaderPath, "main", "ps_6_6");
+    if (!instancedVs || !ps) {
+        return UINT32_MAX;
+    }
 
     D3D12_INPUT_ELEMENT_DESC instancedLayout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
@@ -456,9 +507,10 @@ uint32_t MeshRenderer::CreateInstancedPipeline(
         depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
         pso.DepthStencilState = depth;
 
-        ThrowIfFailed(device->CreateGraphicsPipelineState(
-                          &pso, IID_PPV_ARGS(&psoOut)),
-                      "CreateGraphicsPipelineState(CustomInstancedMesh) failed");
+        if (FAILED(device->CreateGraphicsPipelineState(
+                &pso, IID_PPV_ARGS(&psoOut)))) {
+            psoOut.Reset();
+        }
     };
 
     for (bool transparent : {false, true}) {
@@ -475,9 +527,12 @@ uint32_t MeshRenderer::CreateInstancedPipeline(
     }
 
     auto shadowInstancedVs =
-        ShaderCompiler::Compile(shadowVertexShaderPath, "main", "vs_5_0");
+        ShaderCompiler::Compile(shadowVertexShaderPath, "main", "vs_6_6");
     auto shadowPs =
-        ShaderCompiler::Compile(shadowPixelShaderPath, "main", "ps_5_0");
+        ShaderCompiler::Compile(shadowPixelShaderPath, "main", "ps_6_6");
+    if (!shadowInstancedVs || !shadowPs) {
+        return UINT32_MAX;
+    }
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC shadowPso{};
     shadowPso.pRootSignature = shadowRootSignature_.Get();
@@ -502,11 +557,16 @@ uint32_t MeshRenderer::CreateInstancedPipeline(
     shadowDepth.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
     shadowPso.DepthStencilState = shadowDepth;
 
-    ThrowIfFailed(device->CreateGraphicsPipelineState(
-                      &shadowPso,
-                      IID_PPV_ARGS(&pipelineSet.shadowPipelineState)),
-                  "CreateGraphicsPipelineState(CustomInstancedShadow) failed");
+    if (FAILED(device->CreateGraphicsPipelineState(
+            &shadowPso, IID_PPV_ARGS(&pipelineSet.shadowPipelineState))) ||
+        !pipelineSet.shadowPipelineState) {
+        return UINT32_MAX;
+    }
 
+    if (customInstancedPipelines_.size() >=
+        static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
+        return UINT32_MAX;
+    }
     const uint32_t pipelineId =
         static_cast<uint32_t>(customInstancedPipelines_.size());
     customInstancedPipelines_.push_back(std::move(pipelineSet));
@@ -515,12 +575,18 @@ uint32_t MeshRenderer::CreateInstancedPipeline(
 
 void MeshRenderer::CreateShadowPipelineStates() {
     auto *device = dxCommon_->GetDevice();
+    if (device == nullptr || !shadowRootSignature_) {
+        return;
+    }
     auto vs =
-        ShaderCompiler::Compile(ShaderPaths::MeshShadowVS, "main", "vs_5_0");
+        ShaderCompiler::Compile(ShaderPaths::MeshShadowVS, "main", "vs_6_6");
     auto instancedVs = ShaderCompiler::Compile(
-        ShaderPaths::MeshShadowInstancedVS, "main", "vs_5_0");
+        ShaderPaths::MeshShadowInstancedVS, "main", "vs_6_6");
     auto ps =
-        ShaderCompiler::Compile(ShaderPaths::MeshShadowPS, "main", "ps_5_0");
+        ShaderCompiler::Compile(ShaderPaths::MeshShadowPS, "main", "ps_6_6");
+    if (!vs || !instancedVs || !ps) {
+        return;
+    }
 
     D3D12_INPUT_ELEMENT_DESC baseLayout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
@@ -596,9 +662,10 @@ void MeshRenderer::CreateShadowPipelineStates() {
         depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
         pso.DepthStencilState = depth;
 
-        ThrowIfFailed(device->CreateGraphicsPipelineState(
-                          &pso, IID_PPV_ARGS(&psoOut)),
-                      "CreateGraphicsPipelineState(MeshShadow) failed");
+        if (FAILED(device->CreateGraphicsPipelineState(
+                &pso, IID_PPV_ARGS(&psoOut)))) {
+            psoOut.Reset();
+        }
     };
 
     makePso({vs->GetBufferPointer(), vs->GetBufferSize()},

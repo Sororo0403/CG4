@@ -31,6 +31,7 @@ cbuffer SceneParams : register(b1)
     float4 shadowFilterParams;
     float4 customSceneParams0;
     float4 customSceneParams1;
+    SpotLight spotLight;
 };
 
 cbuffer Material : register(b2)
@@ -159,11 +160,39 @@ float4 main(MeshVSOutput input) : SV_TARGET
                       pointLights[1].colorIntensity.w;
     }
 
+    float3 spotAccum = float3(0.0f, 0.0f, 0.0f);
+    if (spotLight.angleParams.w > 0.5f)
+    {
+        float3 spotVector = spotLight.positionRange.xyz - input.worldPos;
+        float spotDistance = length(spotVector);
+        if (spotDistance > 0.0001f)
+        {
+            float3 toLightDir = spotVector / spotDistance;
+            float3 fromLightDir = -toLightDir;
+            float coneCos = dot(fromLightDir, normalize(spotLight.direction.xyz));
+            float cone = saturate((coneCos - spotLight.angleParams.y) /
+                                  max(spotLight.angleParams.x - spotLight.angleParams.y, 0.0001f));
+            cone = pow(cone, max(spotLight.angleParams.z, 0.0001f));
+            float rangeAttenuation =
+                saturate(1.0f - spotDistance / max(spotLight.positionRange.w, 0.001f));
+            rangeAttenuation *= rangeAttenuation;
+            float spotDiffuse =
+                saturate((dot(normal, toLightDir) + 0.32f) / 1.32f);
+            float spotSpecular =
+                pow(saturate(dot(normal, normalize(toLightDir + viewDir))),
+                    specularPower) * specularStrength;
+            spotAccum += spotLight.colorIntensity.rgb *
+                         (spotDiffuse + spotSpecular * 0.72f) *
+                         cone * rangeAttenuation * spotLight.colorIntensity.w;
+        }
+    }
+
     float3 lighting =
         ambientColor.rgb +
         keyLightColor.rgb * keyDiffuse +
         fillLightColor.rgb * fillDiffuse +
         pointAccum +
+        spotAccum +
         keyLightColor.rgb * keySpecular +
         fillLightColor.rgb * rim * fillLightColor.a;
 

@@ -10,6 +10,9 @@ struct FrameTime {
 
 class FrameTimer {
   public:
+    /// <summary>
+    /// 状態をリセットする
+    /// </summary>
     void Reset();
     void Tick();
 

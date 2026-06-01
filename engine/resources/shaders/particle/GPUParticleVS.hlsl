@@ -12,6 +12,7 @@ cbuffer ParticleDrawParams : register(b0)
 };
 
 StructuredBuffer<Particle> gParticles : register(t0);
+StructuredBuffer<uint> gActiveIndices : register(t3);
 
 static const float2 kPositions[6] =
 {
@@ -36,7 +37,18 @@ static const float2 kUvs[6] =
 ParticleVSOutput main(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID)
 {
     uint quadVertexId = vertexId % 6u;
-    Particle particle = gParticles[instanceId];
+    Particle particle = gParticles[gActiveIndices[instanceId]];
+
+    if (particle.isActive == 0u || particle.color.a <= 0.0001f)
+    {
+        ParticleVSOutput inactiveOutput;
+        inactiveOutput.position = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        inactiveOutput.uv = float2(0.0f, 0.0f);
+        inactiveOutput.localUv = float2(0.0f, 0.0f);
+        inactiveOutput.color = float4(0.0f, 0.0f, 0.0f, 0.0f);
+        inactiveOutput.params = float2(1.0f, 0.0f);
+        return inactiveOutput;
+    }
 
     float ageRate = saturate(particle.currentTime / max(particle.lifeTime, 0.001f));
 
@@ -57,8 +69,8 @@ ParticleVSOutput main(uint vertexId : SV_VertexID, uint instanceId : SV_Instance
 
     ParticleVSOutput output;
     output.position = mul(float4(worldPosition, 1.0f), viewProjection);
-    uint atlasColumns = max(1u, (uint) round(atlasInfo.x));
-    uint atlasRows = max(1u, (uint) round(atlasInfo.y));
+    uint atlasColumns = max(1u, (uint) round(particle.params2.w));
+    uint atlasRows = max(1u, (uint) round(particle.params3.w));
     uint atlasFrameCount = atlasColumns * atlasRows;
     uint frameIndex =
         atlasFrameCount > 0u

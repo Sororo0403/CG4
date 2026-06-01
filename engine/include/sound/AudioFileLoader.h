@@ -21,10 +21,17 @@ struct SoundData {
     } info{};
 
     const WAVEFORMATEX *GetFormat() const {
+        if (waveFormat.size() < sizeof(WAVEFORMATEX)) {
+            return nullptr;
+        }
         return reinterpret_cast<const WAVEFORMATEX *>(waveFormat.data());
     }
 };
 
+/// <summary>
+/// Loadを実行する
+/// </summary>
 SoundData Load(const std::wstring &path);
+bool TryLoad(const std::wstring &path, SoundData &outData);
 
 } // namespace AudioFileLoader

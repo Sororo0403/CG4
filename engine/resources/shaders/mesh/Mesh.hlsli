@@ -45,6 +45,14 @@ struct PointLight
     float4 colorIntensity;
 };
 
+struct SpotLight
+{
+    float4 positionRange;
+    float4 direction;
+    float4 colorIntensity;
+    float4 angleParams;
+};
+
 float Dither01(float3 worldPos, float2 uv)
 {
     float value = dot(worldPos.xz + uv * 3.17f, float2(12.9898f, 78.233f)) +

@@ -2,7 +2,6 @@
 #ifdef _DEBUG
 #include "imgui_impl_win32.h"
 #endif
-#include <stdexcept>
 
 #ifdef _DEBUG
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd,
@@ -12,6 +11,8 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd,
 #endif
 
 bool WinApp::cursorVisible_ = true;
+bool WinApp::requestedCursorVisible_ = true;
+HWND WinApp::cursorWindow_ = nullptr;
 
 LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                                     LPARAM lParam) {
@@ -23,9 +24,39 @@ LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
 
     switch (msg) {
     case WM_SETCURSOR:
-        if (!cursorVisible_) {
+        if (!requestedCursorVisible_ && LOWORD(lParam) == HTCLIENT &&
+            ShouldHideCursor(hwnd)) {
             SetCursor(nullptr);
             return TRUE;
+        }
+        SetCursor(LoadCursor(nullptr, IDC_ARROW));
+        return TRUE;
+    case WM_ACTIVATEAPP:
+        if (wParam == FALSE) {
+            ApplyVisibleCursorState();
+        } else {
+            RestoreCursorForAppInteraction();
+        }
+        break;
+    case WM_SETFOCUS:
+        RestoreCursorForAppInteraction();
+        break;
+    case WM_KILLFOCUS:
+        ApplyVisibleCursorState();
+        break;
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN:
+        if (wParam == VK_LWIN || wParam == VK_RWIN || wParam == VK_MENU ||
+            wParam == VK_APPS) {
+            if (requestedCursorVisible_) {
+                ApplyVisibleCursorState();
+            }
+        }
+        break;
+    case WM_SYSCOMMAND:
+        if ((wParam & 0xFFF0) == SC_MINIMIZE ||
+            (wParam & 0xFFF0) == SC_TASKLIST) {
+            ApplyVisibleCursorState();
         }
         break;
     case WM_DESTROY:
@@ -39,6 +70,12 @@ LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
 void WinApp::Initialize(HINSTANCE hInstance, int nCmdShow, int width,
                         int height, const std::wstring &title,
                         bool fullscreen) {
+    hwnd_ = nullptr;
+    cursorWindow_ = nullptr;
+    width_ = 0;
+    height_ = 0;
+    fullscreen_ = false;
+
     WNDCLASS wc{};
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = hInstance;
@@ -47,7 +84,8 @@ void WinApp::Initialize(HINSTANCE hInstance, int nCmdShow, int width,
 
     ATOM atom = RegisterClass(&wc);
     if (!atom && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
-        throw std::runtime_error("RegisterClass failed");
+        OutputDebugStringA("WinApp: RegisterClass failed\n");
+        return;
     }
 
     DWORD style = WS_OVERLAPPEDWINDOW;
@@ -58,38 +96,84 @@ void WinApp::Initialize(HINSTANCE hInstance, int nCmdShow, int width,
     int windowHeight = height;
 
     if (fullscreen) {
+        RECT restoredRect{0, 0, width, height};
+        AdjustWindowRect(&restoredRect, WS_OVERLAPPEDWINDOW, FALSE);
+        const int restoredW = restoredRect.right - restoredRect.left;
+        const int restoredH = restoredRect.bottom - restoredRect.top;
         MONITORINFO monitorInfo{};
         monitorInfo.cbSize = sizeof(monitorInfo);
         const HMONITOR monitor =
             MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
         if (GetMonitorInfo(monitor, &monitorInfo)) {
             const RECT &monitorRect = monitorInfo.rcMonitor;
+            windowedRect_ = {
+                monitorRect.left + (monitorRect.right - monitorRect.left -
+                                    restoredW) /
+                                       2,
+                monitorRect.top + (monitorRect.bottom - monitorRect.top -
+                                   restoredH) /
+                                      2,
+                monitorRect.left + (monitorRect.right - monitorRect.left +
+                                    restoredW) /
+                                       2,
+                monitorRect.top + (monitorRect.bottom - monitorRect.top +
+                                   restoredH) /
+                                      2,
+            };
             windowX = monitorRect.left;
             windowY = monitorRect.top;
             windowWidth = monitorRect.right - monitorRect.left;
             windowHeight = monitorRect.bottom - monitorRect.top;
             style = WS_POPUP;
+            fullscreen_ = true;
         }
     } else {
         RECT windowRect{0, 0, width, height};
         AdjustWindowRect(&windowRect, style, FALSE);
         windowWidth = windowRect.right - windowRect.left;
         windowHeight = windowRect.bottom - windowRect.top;
+        MONITORINFO monitorInfo{};
+        monitorInfo.cbSize = sizeof(monitorInfo);
+        const HMONITOR monitor =
+            MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
+        if (GetMonitorInfo(monitor, &monitorInfo)) {
+            const RECT &workRect = monitorInfo.rcWork;
+            const int workWidth = workRect.right - workRect.left;
+            const int workHeight = workRect.bottom - workRect.top;
+            windowX = workRect.left + (workWidth - windowWidth) / 2;
+            windowY = workRect.top + (workHeight - windowHeight) / 2;
+            if (windowX < workRect.left || windowWidth > workWidth) {
+                windowX = workRect.left;
+            }
+            if (windowY < workRect.top || windowHeight > workHeight) {
+                windowY = workRect.top;
+            }
+        }
+        windowedRect_ = {windowX, windowY, windowX + windowWidth,
+                         windowY + windowHeight};
+        fullscreen_ = false;
     }
+    windowedStyle_ = WS_OVERLAPPEDWINDOW;
 
     hwnd_ = CreateWindowEx(exStyle, kClassName, title.c_str(), style, windowX,
                            windowY, windowWidth, windowHeight, nullptr,
                            nullptr, hInstance, nullptr);
 
     if (!hwnd_) {
-        throw std::runtime_error("CreateWindowEx failed");
+        OutputDebugStringA("WinApp: CreateWindowEx failed\n");
+        return;
     }
+    cursorWindow_ = hwnd_;
 
     ShowWindow(hwnd_, nCmdShow);
     UpdateClientSize();
 }
 
 bool WinApp::ProcessMessage() {
+    if (hwnd_ == nullptr) {
+        return false;
+    }
+
     MSG msg{};
     if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
         if (msg.message == WM_QUIT) {
@@ -99,6 +183,9 @@ bool WinApp::ProcessMessage() {
         DispatchMessage(&msg);
     }
     UpdateClientSize();
+    if (!requestedCursorVisible_) {
+        ApplyRequestedCursorState(hwnd_);
+    }
     return true;
 }
 
@@ -111,16 +198,137 @@ void WinApp::RequestClose() {
 }
 
 void WinApp::SetCursorVisible(bool visible) {
-    cursorVisible_ = visible;
-    if (!visible) {
-        SetCursor(nullptr);
-        while (ShowCursor(FALSE) >= 0) {
-        }
+    requestedCursorVisible_ = visible;
+    ApplyRequestedCursorState(hwnd_);
+}
+
+void WinApp::SetFullscreen(bool fullscreen) {
+    if (hwnd_ == nullptr || fullscreen_ == fullscreen) {
         return;
     }
 
+    if (fullscreen) {
+        RECT rect{};
+        if (GetWindowRect(hwnd_, &rect)) {
+            windowedRect_ = rect;
+        }
+        windowedStyle_ = static_cast<DWORD>(GetWindowLongPtr(hwnd_, GWL_STYLE));
+
+        MONITORINFO monitorInfo{};
+        monitorInfo.cbSize = sizeof(monitorInfo);
+        const HMONITOR monitor = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+        if (!GetMonitorInfo(monitor, &monitorInfo)) {
+            return;
+        }
+
+        const RECT &monitorRect = monitorInfo.rcMonitor;
+        SetWindowLongPtr(hwnd_, GWL_STYLE, WS_POPUP);
+        SetWindowPos(hwnd_, HWND_TOP, monitorRect.left, monitorRect.top,
+                     monitorRect.right - monitorRect.left,
+                     monitorRect.bottom - monitorRect.top,
+                     SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+        fullscreen_ = true;
+    } else {
+        SetWindowLongPtr(hwnd_, GWL_STYLE, windowedStyle_);
+        SetWindowPos(hwnd_, nullptr, windowedRect_.left, windowedRect_.top,
+                     windowedRect_.right - windowedRect_.left,
+                     windowedRect_.bottom - windowedRect_.top,
+                     SWP_FRAMECHANGED | SWP_NOZORDER | SWP_SHOWWINDOW);
+        fullscreen_ = false;
+    }
+
+    UpdateClientSize();
+}
+
+void WinApp::ApplyHiddenCursorState(HWND hwnd, bool lockToClient) {
+    CURSORINFO cursorInfo{};
+    cursorInfo.cbSize = sizeof(cursorInfo);
+    const bool osCursorVisible =
+        GetCursorInfo(&cursorInfo) &&
+        (cursorInfo.flags & CURSOR_SHOWING) == CURSOR_SHOWING;
+    const bool shouldUpdateShowCount = cursorVisible_ || osCursorVisible;
+
+    cursorVisible_ = false;
+    SetCursor(nullptr);
+    if (shouldUpdateShowCount) {
+        while (ShowCursor(FALSE) >= 0) {
+        }
+    }
+    if (lockToClient) {
+        LockCursorToClient(hwnd);
+    } else {
+        ReleaseCursorLock();
+    }
+}
+
+void WinApp::ApplyVisibleCursorState() {
+    cursorVisible_ = true;
+    ReleaseCursorLock();
     while (ShowCursor(TRUE) < 0) {
     }
+    SetCursor(LoadCursor(nullptr, IDC_ARROW));
+}
+
+void WinApp::ApplyRequestedCursorState(HWND hwnd) {
+    if (requestedCursorVisible_ || !ShouldHideCursor(hwnd)) {
+        ApplyVisibleCursorState();
+        return;
+    }
+
+    ApplyHiddenCursorState(hwnd, ShouldLockHiddenCursor(hwnd));
+}
+
+void WinApp::LockCursorToClient(HWND hwnd) {
+    if (hwnd == nullptr) {
+        return;
+    }
+
+    RECT clientRect{};
+    if (!GetClientRect(hwnd, &clientRect)) {
+        return;
+    }
+
+    POINT topLeft{clientRect.left, clientRect.top};
+    POINT bottomRight{clientRect.right, clientRect.bottom};
+    if (!ClientToScreen(hwnd, &topLeft) || !ClientToScreen(hwnd, &bottomRight)) {
+        return;
+    }
+
+    RECT screenRect{topLeft.x, topLeft.y, bottomRight.x, bottomRight.y};
+    ClipCursor(&screenRect);
+}
+
+void WinApp::ReleaseCursorLock() { ClipCursor(nullptr); }
+
+bool WinApp::ShouldLockHiddenCursor(HWND hwnd) {
+    return ShouldHideCursor(hwnd);
+}
+
+bool WinApp::ShouldHideCursor(HWND hwnd) {
+    return hwnd != nullptr && GetActiveWindow() == hwnd && !IsIconic(hwnd) &&
+           IsCursorOverClient(hwnd);
+}
+
+void WinApp::RestoreCursorForAppInteraction() {
+    ApplyRequestedCursorState(cursorWindow_);
+}
+
+bool WinApp::IsCursorOverClient(HWND hwnd) {
+    if (hwnd == nullptr) {
+        return false;
+    }
+
+    POINT cursorPos{};
+    if (!GetCursorPos(&cursorPos) || !ScreenToClient(hwnd, &cursorPos)) {
+        return false;
+    }
+
+    RECT clientRect{};
+    if (!GetClientRect(hwnd, &clientRect)) {
+        return false;
+    }
+
+    return PtInRect(&clientRect, cursorPos) != FALSE;
 }
 
 int WinApp::GetWidth() const {

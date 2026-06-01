@@ -42,6 +42,16 @@ class WinApp {
     void SetCursorVisible(bool visible);
 
     /// <summary>
+    /// ボーダーレス全画面と通常ウィンドウを切り替える。
+    /// </summary>
+    void SetFullscreen(bool fullscreen);
+
+    /// <summary>
+    /// 現在ボーダーレス全画面で表示している場合はtrue。
+    /// </summary>
+    bool IsFullscreen() const { return fullscreen_; }
+
+    /// <summary>
     /// クライアント領域の幅を取得する
     /// </summary>
     /// <returns>クライアント領域の幅</returns>
@@ -71,13 +81,30 @@ class WinApp {
     /// </summary>
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                                        LPARAM lParam);
+    static void ApplyHiddenCursorState(HWND hwnd, bool lockToClient);
+    static void ApplyVisibleCursorState();
+    static void ApplyRequestedCursorState(HWND hwnd);
+    static void LockCursorToClient(HWND hwnd);
+    static void ReleaseCursorLock();
+    static bool ShouldLockHiddenCursor(HWND hwnd);
+    static bool ShouldHideCursor(HWND hwnd);
+    static bool IsCursorOverClient(HWND hwnd);
+    /// <summary>
+    /// RestoreCursorForAppInteractionを実行する
+    /// </summary>
+    static void RestoreCursorForAppInteraction();
 
   private:
     static constexpr const wchar_t *kClassName = L"WindowClass";
     static bool cursorVisible_;
+    static bool requestedCursorVisible_;
+    static HWND cursorWindow_;
 
-    int width_;
-    int height_;
+    int width_ = 0;
+    int height_ = 0;
+    bool fullscreen_ = false;
+    RECT windowedRect_{100, 100, 1380, 820};
+    DWORD windowedStyle_ = WS_OVERLAPPEDWINDOW;
 
     HWND hwnd_ = nullptr;
 };

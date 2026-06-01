@@ -1,5 +1,6 @@
 #pragma once
 #include "core/FrameTimer.h"
+#include "graphics/PostEffectManager.h"
 
 class Input;
 class WinApp;
@@ -15,7 +16,6 @@ class TextureManager;
 class DirectXCommon;
 class SrvManager;
 class PipelineManager;
-class PostEffectRenderer;
 class RenderTexture;
 class SkyboxRenderer;
 class ShadowMapRenderer;
@@ -56,7 +56,7 @@ struct SceneRenderServices {
     SrvManager *srv = nullptr;
     PipelineManager *pipeline = nullptr;
     RenderTexture *renderTexture = nullptr;
-    PostEffectRenderer *postEffectRenderer = nullptr;
+    PostEffectManager *postEffectManager = nullptr;
     SkyboxRenderer *skyboxRenderer = nullptr;
     ShadowMapRenderer *shadowMapRenderer = nullptr;
     TransparentRenderQueue *transparentQueue = nullptr;

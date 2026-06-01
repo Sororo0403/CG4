@@ -30,6 +30,8 @@ ModelVSOutput main(ModelVSInput input)
     o.uv = input.uv;
     o.worldPos = worldPos.xyz;
     o.worldNormal = worldNormal;
+    o.localPos = input.pos;
+    o.bindPos = input.bindPos;
     float3 worldTangent = mul(input.tangent.xyz, (float3x3) matWorld);
     float tangentLen = length(worldTangent);
     o.worldTangent = float4(tangentLen > 0.0001f ? worldTangent / tangentLen : float3(1.0f, 0.0f, 0.0f), input.tangent.w);

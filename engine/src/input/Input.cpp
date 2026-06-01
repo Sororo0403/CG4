@@ -1,5 +1,4 @@
 #include "input/Input.h"
-#include "debug/DebugLog.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -48,45 +47,63 @@ std::wstring GetDefaultReplayDirectory() {
 
 } // namespace
 
-Input::~Input() { FinishRecording(); }
+Input::~Input() {
+    FinishRecording();
+}
 
 void Input::Initialize(HINSTANCE hInstance, HWND hwnd) {
-    HRESULT hr;
-
     if (replayDirectory_.empty()) {
         replayDirectory_ = GetDefaultReplayDirectory();
     }
 
-    hr = DirectInput8Create(
+    directInput_.Reset();
+    keyboard_.Reset();
+    mouse_.Reset();
+    keyNow_.fill(0);
+    keyPrev_.fill(0);
+    mouseState_ = {};
+    mousePrevState_ = {};
+
+    HRESULT hr = DirectInput8Create(
         hInstance, DIRECTINPUT_VERSION, IID_IDirectInput8,
         reinterpret_cast<void **>(directInput_.GetAddressOf()), nullptr);
-    assert(SUCCEEDED(hr));
+    if (FAILED(hr) || !directInput_) {
+        return;
+    }
 
     hr = directInput_->CreateDevice(GUID_SysKeyboard, keyboard_.GetAddressOf(),
                                     nullptr);
-    assert(SUCCEEDED(hr));
-
-    hr = keyboard_->SetDataFormat(&c_dfDIKeyboard);
-    assert(SUCCEEDED(hr));
-
-    hr = keyboard_->SetCooperativeLevel(hwnd,
-                                        DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
-    assert(SUCCEEDED(hr));
-
-    keyboard_->Acquire();
+    if (SUCCEEDED(hr) && keyboard_) {
+        hr = keyboard_->SetDataFormat(&c_dfDIKeyboard);
+        if (SUCCEEDED(hr)) {
+            hr = keyboard_->SetCooperativeLevel(
+                hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
+        }
+        if (SUCCEEDED(hr)) {
+            keyboard_->Acquire();
+        } else {
+            keyboard_.Reset();
+        }
+    } else {
+        keyboard_.Reset();
+    }
 
     hr = directInput_->CreateDevice(GUID_SysMouse, mouse_.GetAddressOf(),
                                     nullptr);
-    assert(SUCCEEDED(hr));
-
-    hr = mouse_->SetDataFormat(&c_dfDIMouse);
-    assert(SUCCEEDED(hr));
-
-    hr = mouse_->SetCooperativeLevel(hwnd,
-                                     DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
-    assert(SUCCEEDED(hr));
-
-    mouse_->Acquire();
+    if (SUCCEEDED(hr) && mouse_) {
+        hr = mouse_->SetDataFormat(&c_dfDIMouse);
+        if (SUCCEEDED(hr)) {
+            hr = mouse_->SetCooperativeLevel(
+                hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
+        }
+        if (SUCCEEDED(hr)) {
+            mouse_->Acquire();
+        } else {
+            mouse_.Reset();
+        }
+    } else {
+        mouse_.Reset();
+    }
 }
 
 void Input::Update(float deltaTime) {
@@ -99,17 +116,7 @@ void Input::Update(float deltaTime) {
             ApplyReplayFrame(replayFrames_[replayFrameIndex_]);
             ++replayFrameIndex_;
             replayFinished_ = replayFrameIndex_ >= replayFrames_.size();
-            if (replayFinished_) {
-                DebugLog::Get().Write(
-                    "Input", "ReplayPlayer", "finished", "ok",
-                    {{"frames", std::to_string(replayFrames_.size())}});
-            }
         } else {
-            if (!replayFinished_) {
-                DebugLog::Get().Write(
-                    "Input", "ReplayPlayer", "finished", "ok",
-                    {{"frames", std::to_string(replayFrames_.size())}});
-            }
             replayFinished_ = true;
         }
         return;
@@ -128,6 +135,10 @@ void Input::Update(float deltaTime) {
 
 void Input::UpdateKeyboard() {
     keyPrev_ = keyNow_;
+    if (!keyboard_) {
+        keyNow_.fill(0);
+        return;
+    }
 
     HRESULT hr = keyboard_->GetDeviceState(256, keyNow_.data());
 
@@ -135,13 +146,20 @@ void Input::UpdateKeyboard() {
         hr = keyboard_->Acquire();
 
         if (SUCCEEDED(hr)) {
-            keyboard_->GetDeviceState(256, keyNow_.data());
+            hr = keyboard_->GetDeviceState(256, keyNow_.data());
+        }
+        if (FAILED(hr)) {
+            keyNow_.fill(0);
         }
     }
 }
 
 void Input::UpdateMouse() {
     mousePrevState_ = mouseState_;
+    if (!mouse_) {
+        mouseState_ = {};
+        return;
+    }
 
     HRESULT hr = mouse_->GetDeviceState(sizeof(DIMOUSESTATE), &mouseState_);
 
@@ -149,7 +167,10 @@ void Input::UpdateMouse() {
         hr = mouse_->Acquire();
 
         if (SUCCEEDED(hr)) {
-            mouse_->GetDeviceState(sizeof(DIMOUSESTATE), &mouseState_);
+            hr = mouse_->GetDeviceState(sizeof(DIMOUSESTATE), &mouseState_);
+        }
+        if (FAILED(hr)) {
+            mouseState_ = {};
         }
     }
 }
@@ -185,27 +206,48 @@ void Input::UpdateGamepad() {
 }
 
 bool Input::IsKeyPress(int dik) const {
+    if (dik < 0 || dik >= static_cast<int>(keyNow_.size())) {
+        return false;
+    }
     return (keyNow_[dik] & kPressMask) != 0;
 }
 
 bool Input::IsKeyTrigger(int dik) const {
+    if (dik < 0 || dik >= static_cast<int>(keyNow_.size())) {
+        return false;
+    }
     return (keyNow_[dik] & kPressMask) && !(keyPrev_[dik] & kPressMask);
 }
 
 bool Input::IsKeyRelease(int dik) const {
+    if (dik < 0 || dik >= static_cast<int>(keyNow_.size())) {
+        return false;
+    }
     return !(keyNow_[dik] & kPressMask) && (keyPrev_[dik] & kPressMask);
 }
 
 bool Input::IsMousePress(int button) const {
+    if (button < 0 ||
+        button >= static_cast<int>(_countof(mouseState_.rgbButtons))) {
+        return false;
+    }
     return (mouseState_.rgbButtons[button] & 0x80) != 0;
 }
 
 bool Input::IsMouseTrigger(int button) const {
+    if (button < 0 ||
+        button >= static_cast<int>(_countof(mouseState_.rgbButtons))) {
+        return false;
+    }
     return (mouseState_.rgbButtons[button] & 0x80) &&
            !(mousePrevState_.rgbButtons[button] & 0x80);
 }
 
 bool Input::IsMouseRelease(int button) const {
+    if (button < 0 ||
+        button >= static_cast<int>(_countof(mouseState_.rgbButtons))) {
+        return false;
+    }
     return !(mouseState_.rgbButtons[button] & 0x80) &&
            (mousePrevState_.rgbButtons[button] & 0x80);
 }

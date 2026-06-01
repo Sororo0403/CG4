@@ -1,20 +1,29 @@
 #include "graphics/Culling.h"
 #include "camera/Camera.h"
 #include <algorithm>
+#include <cmath>
 
 using namespace DirectX;
 
 namespace {
 
+float FiniteOr(float value, float fallback) {
+    return std::isfinite(value) ? value : fallback;
+}
+
 XMFLOAT4 NormalizePlane(FXMVECTOR plane) {
     const XMVECTOR normal = XMVectorSetW(plane, 0.0f);
     const float length = XMVectorGetX(XMVector3Length(normal));
-    if (length <= 0.000001f) {
+    if (!std::isfinite(length) || length <= 0.000001f) {
         return {0.0f, 1.0f, 0.0f, 0.0f};
     }
 
     XMFLOAT4 result{};
     XMStoreFloat4(&result, plane / length);
+    if (!std::isfinite(result.x) || !std::isfinite(result.y) ||
+        !std::isfinite(result.z) || !std::isfinite(result.w)) {
+        return {0.0f, 1.0f, 0.0f, 0.0f};
+    }
     return result;
 }
 
@@ -46,16 +55,27 @@ void Frustum::Build(const XMMATRIX &viewProjection) {
 void Frustum::Build(const Camera &camera) { Build(camera.GetViewProjection()); }
 
 bool Frustum::IntersectsAABB(const XMFLOAT3 &min, const XMFLOAT3 &max) const {
+    const XMFLOAT3 safeMin = {
+        (std::min)(FiniteOr(min.x, 0.0f), FiniteOr(max.x, 0.0f)),
+        (std::min)(FiniteOr(min.y, 0.0f), FiniteOr(max.y, 0.0f)),
+        (std::min)(FiniteOr(min.z, 0.0f), FiniteOr(max.z, 0.0f)),
+    };
+    const XMFLOAT3 safeMax = {
+        (std::max)(FiniteOr(min.x, 0.0f), FiniteOr(max.x, 0.0f)),
+        (std::max)(FiniteOr(min.y, 0.0f), FiniteOr(max.y, 0.0f)),
+        (std::max)(FiniteOr(min.z, 0.0f), FiniteOr(max.z, 0.0f)),
+    };
+
     for (const XMFLOAT4 &plane : planes_) {
         const XMFLOAT3 positive = {
-            plane.x >= 0.0f ? max.x : min.x,
-            plane.y >= 0.0f ? max.y : min.y,
-            plane.z >= 0.0f ? max.z : min.z,
+            plane.x >= 0.0f ? safeMax.x : safeMin.x,
+            plane.y >= 0.0f ? safeMax.y : safeMin.y,
+            plane.z >= 0.0f ? safeMax.z : safeMin.z,
         };
 
         const float distance = plane.x * positive.x + plane.y * positive.y +
                                plane.z * positive.z + plane.w;
-        if (distance < 0.0f) {
+        if (std::isfinite(distance) && distance < 0.0f) {
             return false;
         }
     }
@@ -68,9 +88,13 @@ uint32_t LODSelector::Select(float distance, const LODRange *ranges,
     if (!ranges || rangeCount == 0) {
         return 0;
     }
+    if (!std::isfinite(distance)) {
+        return ranges[0].level;
+    }
 
     for (uint32_t index = 0; index < rangeCount; ++index) {
-        if (distance <= ranges[index].maxDistance) {
+        const float maxDistance = ranges[index].maxDistance;
+        if (std::isfinite(maxDistance) && distance <= maxDistance) {
             return ranges[index].level;
         }
     }

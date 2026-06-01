@@ -213,9 +213,15 @@ class Input {
         float gamepadRightTrigger = 0.0f;
     };
 
+    /// <summary>
+    /// CaptureFrameを実行する
+    /// </summary>
     InputFrame CaptureFrame() const;
     void ApplyReplayFrame(const InputFrame &frame);
     void UpdateReplayHotkeys(float fixedDeltaTime);
+    /// <summary>
+    /// MakeAutoReplayPathを実行する
+    /// </summary>
     std::wstring MakeAutoReplayPath() const;
     bool SaveRecording() const;
     bool LoadReplay(const std::wstring &path);

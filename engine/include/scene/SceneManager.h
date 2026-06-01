@@ -17,6 +17,11 @@ class SceneManager {
     void Initialize(const SceneContext &ctx);
 
     /// <summary>
+    /// 保持中のシーンを破棄する
+    /// </summary>
+    void Finalize();
+
+    /// <summary>
     /// シーン生成を委譲するファクトリを設定する
     /// </summary>
     void SetSceneFactory(AbstractSceneFactory *sceneFactory);
@@ -48,9 +53,24 @@ class SceneManager {
     void Draw();
 
     /// <summary>
+    /// 現在のシーンが前面3D描画を必要とするかを返す
+    /// </summary>
+    bool UsesForeground3DPass() const;
+
+    /// <summary>
+    /// 現在のシーンの前面3D描画を描画する
+    /// </summary>
+    void DrawForeground3D();
+
+    /// <summary>
     /// 現在のシーンの透明描画を描画する
     /// </summary>
     void DrawTransparent();
+
+    /// <summary>
+    /// 現在のシーンのポストエフェクト後UIを描画する
+    /// </summary>
+    void DrawPostProcessOverlay();
 
   private:
     /// <summary>

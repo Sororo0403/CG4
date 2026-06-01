@@ -1,7 +1,6 @@
 #include "model/ModelRenderer.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
-#include "graphics/DxUtils.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
@@ -16,12 +15,17 @@
 #include <vector>
 
 using namespace DirectX;
-using namespace DxUtils;
 using Microsoft::WRL::ComPtr;
 
 namespace {
 
 constexpr UINT kSkinningThreadCount = 1024u;
+
+enum class ModelBlendMode : size_t {
+    Opaque = 0,
+    Alpha = 1,
+    Additive = 2,
+};
 
 bool IsTransparentMaterial(const Material &material) {
     return material.blendMode == static_cast<int32_t>(BlendMode::Transparent) ||
@@ -40,15 +44,16 @@ D3D12_CULL_MODE ToD3D12CullMode(const MaterialCullMode mode) {
     }
 }
 
-size_t PipelineVariantIndex(bool transparent, MaterialCullMode cullMode,
+size_t PipelineVariantIndex(ModelBlendMode blendMode, MaterialCullMode cullMode,
                             bool depthWrite) {
-    const size_t blendIndex = transparent ? 1 : 0;
+    const size_t blendIndex = static_cast<size_t>(blendMode);
     const size_t cullIndex = static_cast<size_t>(cullMode);
     const size_t depthIndex = depthWrite ? 1 : 0;
     return blendIndex * 6 + cullIndex * 2 + depthIndex;
 }
 
-size_t PipelineVariantIndex(const Material &material) {
+size_t PipelineVariantIndex(const Material &material,
+                            const ModelDrawEffect &effect) {
     const Material drawMaterial = NormalizeMaterialForDraw(material);
     MaterialCullMode cullMode =
         static_cast<MaterialCullMode>(drawMaterial.cullMode);
@@ -56,8 +61,31 @@ size_t PipelineVariantIndex(const Material &material) {
         drawMaterial.cullMode > static_cast<int32_t>(MaterialCullMode::Back)) {
         cullMode = MaterialCullMode::Back;
     }
-    return PipelineVariantIndex(IsTransparentMaterial(drawMaterial), cullMode,
-                                drawMaterial.depthWrite != 0);
+    if (effect.enabled && effect.disableCulling) {
+        cullMode = MaterialCullMode::None;
+    }
+
+    ModelBlendMode blendMode = IsTransparentMaterial(drawMaterial)
+                                   ? ModelBlendMode::Alpha
+                                   : ModelBlendMode::Opaque;
+    if (effect.forceOpaqueMaterial ||
+        effect.blendOverride == ModelDrawEffectBlendOverride::Opaque) {
+        blendMode = ModelBlendMode::Opaque;
+    } else if (effect.enabled) {
+        if (effect.additiveBlend ||
+            effect.blendOverride == ModelDrawEffectBlendOverride::Additive) {
+            blendMode = ModelBlendMode::Additive;
+        } else if (effect.blendOverride ==
+                   ModelDrawEffectBlendOverride::Alpha) {
+            blendMode = ModelBlendMode::Alpha;
+        } else if (effect.alphaMultiplier < 0.999f) {
+            blendMode = ModelBlendMode::Alpha;
+        }
+    }
+
+    const bool depthWrite =
+        blendMode == ModelBlendMode::Opaque && drawMaterial.depthWrite != 0;
+    return PipelineVariantIndex(blendMode, cullMode, depthWrite);
 }
 
 uint32_t ResolveNormalTextureId(TextureManager *textureManager,
@@ -146,42 +174,84 @@ struct SceneConstBufferData {
     XMFLOAT4 shadowFilterParams;
 };
 
-void ModelRenderer::SetPipelineForMaterial(const Material &material) {
-    dxCommon_->GetCommandList()->SetPipelineState(
-        pipelineStates_[PipelineVariantIndex(material)].Get());
+bool ModelRenderer::SetPipelineForMaterial(const Material &material) {
+    auto *cmd = dxCommon_ ? dxCommon_->GetCommandList() : nullptr;
+    ID3D12RootSignature *rootSignature = rootSignature_.Get();
+    ID3D12PipelineState *pipelineState =
+        pipelineStates_[PipelineVariantIndex(material, currentEffect_)].Get();
+    if (cmd == nullptr || rootSignature == nullptr || pipelineState == nullptr) {
+        return false;
+    }
+    if (currentGraphicsRootSignature_ != rootSignature) {
+        cmd->SetGraphicsRootSignature(rootSignature);
+        currentGraphicsRootSignature_ = rootSignature;
+        currentGraphicsPipelineState_ = nullptr;
+    }
+
+    if (currentGraphicsPipelineState_ != pipelineState) {
+        cmd->SetPipelineState(pipelineState);
+        currentGraphicsPipelineState_ = pipelineState;
+    }
+    return true;
 }
 
-void ModelRenderer::SetInstancedPipelineForMaterial(const Material &material) {
-    dxCommon_->GetCommandList()->SetPipelineState(
-        instancedPipelineStates_[PipelineVariantIndex(material)].Get());
+bool ModelRenderer::SetInstancedPipelineForMaterial(const Material &material) {
+    auto *cmd = dxCommon_ ? dxCommon_->GetCommandList() : nullptr;
+    ID3D12RootSignature *rootSignature = rootSignature_.Get();
+    ID3D12PipelineState *pipelineState =
+        instancedPipelineStates_[PipelineVariantIndex(material, currentEffect_)]
+            .Get();
+    if (cmd == nullptr || rootSignature == nullptr || pipelineState == nullptr) {
+        return false;
+    }
+    if (currentGraphicsRootSignature_ != rootSignature) {
+        cmd->SetGraphicsRootSignature(rootSignature);
+        currentGraphicsRootSignature_ = rootSignature;
+        currentGraphicsPipelineState_ = nullptr;
+    }
+
+    if (currentGraphicsPipelineState_ != pipelineState) {
+        cmd->SetPipelineState(pipelineState);
+        currentGraphicsPipelineState_ = pipelineState;
+    }
+    return true;
 }
 
 void ModelRenderer::CreateRootSignature() {
-    CD3DX12_ROOT_PARAMETER params[8];
+    if (!dxCommon_ || !dxCommon_->GetDevice()) {
+        return;
+    }
+    CD3DX12_ROOT_PARAMETER params[10]{};
 
     params[0].InitAsConstantBufferView(0);
     params[1].InitAsConstantBufferView(1);
     params[2].InitAsConstantBufferView(2);
 
-    CD3DX12_DESCRIPTOR_RANGE textureRange;
+    CD3DX12_DESCRIPTOR_RANGE textureRange{};
     textureRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
     params[3].InitAsDescriptorTable(1, &textureRange);
 
-    CD3DX12_DESCRIPTOR_RANGE matrixPaletteRange;
+    CD3DX12_DESCRIPTOR_RANGE matrixPaletteRange{};
     matrixPaletteRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
     params[4].InitAsDescriptorTable(1, &matrixPaletteRange);
 
-    CD3DX12_DESCRIPTOR_RANGE environmentRange;
+    CD3DX12_DESCRIPTOR_RANGE environmentRange{};
     environmentRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
     params[5].InitAsDescriptorTable(1, &environmentRange);
 
-    CD3DX12_DESCRIPTOR_RANGE shadowRange;
+    CD3DX12_DESCRIPTOR_RANGE shadowRange{};
     shadowRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);
     params[6].InitAsDescriptorTable(1, &shadowRange);
 
-    CD3DX12_DESCRIPTOR_RANGE normalRange;
+    CD3DX12_DESCRIPTOR_RANGE normalRange{};
     normalRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4);
     params[7].InitAsDescriptorTable(1, &normalRange);
+
+    params[8].InitAsConstantBufferView(3);
+
+    CD3DX12_DESCRIPTOR_RANGE dissolveNoiseRange{};
+    dissolveNoiseRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 5);
+    params[9].InitAsDescriptorTable(1, &dissolveNoiseRange);
 
     CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
     sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
@@ -194,22 +264,28 @@ void ModelRenderer::CreateRootSignature() {
 
     ComPtr<ID3DBlob> blob, error;
 
-    ThrowIfFailed(D3D12SerializeRootSignature(
-                      &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error),
-                  "D3D12SerializeRootSignature failed");
+    if (FAILED(D3D12SerializeRootSignature(
+            &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error)) ||
+        !blob) {
+        return;
+    }
 
-    ThrowIfFailed(dxCommon_->GetDevice()->CreateRootSignature(
-                      0, blob->GetBufferPointer(), blob->GetBufferSize(),
-                      IID_PPV_ARGS(&rootSignature_)),
-                  "CreateRootSignature failed");
+    if (FAILED(dxCommon_->GetDevice()->CreateRootSignature(
+            0, blob->GetBufferPointer(), blob->GetBufferSize(),
+            IID_PPV_ARGS(&rootSignature_)))) {
+        rootSignature_.Reset();
+    }
 }
 
 void ModelRenderer::CreateShadowRootSignature() {
-    CD3DX12_ROOT_PARAMETER params[3];
+    if (!dxCommon_ || !dxCommon_->GetDevice()) {
+        return;
+    }
+    CD3DX12_ROOT_PARAMETER params[3]{};
     params[0].InitAsConstantBufferView(0);
     params[1].InitAsConstantBufferView(2);
 
-    CD3DX12_DESCRIPTOR_RANGE textureRange;
+    CD3DX12_DESCRIPTOR_RANGE textureRange{};
     textureRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
     params[2].InitAsDescriptorTable(1, &textureRange);
 
@@ -223,25 +299,34 @@ void ModelRenderer::CreateShadowRootSignature() {
               D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
     ComPtr<ID3DBlob> blob, error;
-    ThrowIfFailed(D3D12SerializeRootSignature(
-                      &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error),
-                  "D3D12SerializeRootSignature(ModelShadow) failed");
-    ThrowIfFailed(dxCommon_->GetDevice()->CreateRootSignature(
-                      0, blob->GetBufferPointer(), blob->GetBufferSize(),
-                      IID_PPV_ARGS(&shadowRootSignature_)),
-                  "CreateRootSignature(ModelShadow) failed");
+    if (FAILED(D3D12SerializeRootSignature(
+            &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error)) ||
+        !blob) {
+        return;
+    }
+    if (FAILED(dxCommon_->GetDevice()->CreateRootSignature(
+            0, blob->GetBufferPointer(), blob->GetBufferSize(),
+            IID_PPV_ARGS(&shadowRootSignature_)))) {
+        shadowRootSignature_.Reset();
+    }
 }
 void ModelRenderer::CreatePipelineState() {
     auto device = dxCommon_->GetDevice();
+    if (device == nullptr || !rootSignature_) {
+        return;
+    }
 
     auto vs =
-        ShaderCompiler::Compile(ShaderPaths::ModelVS, "main", "vs_5_0");
+        ShaderCompiler::Compile(ShaderPaths::ModelVS, "main", "vs_6_6");
     auto instancedVs =
         ShaderCompiler::Compile(ShaderPaths::ModelInstancedVS, "main",
-                                "vs_5_0");
+                                "vs_6_6");
 
     auto ps =
-        ShaderCompiler::Compile(ShaderPaths::ModelPS, "main", "ps_5_0");
+        ShaderCompiler::Compile(ShaderPaths::ModelPS, "main", "ps_6_6");
+    if (!vs || !instancedVs || !ps) {
+        return;
+    }
 
     D3D12_INPUT_ELEMENT_DESC baseLayout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
@@ -258,6 +343,12 @@ void ModelRenderer::CreatePipelineState() {
         {"TANGENT", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
          D3D12_APPEND_ALIGNED_ELEMENT,
          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"CUSTOM", 0, DXGI_FORMAT_R32_FLOAT, 0,
+         D3D12_APPEND_ALIGNED_ELEMENT,
+         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"BINDPOS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
+         D3D12_APPEND_ALIGNED_ELEMENT,
+         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     };
 
     D3D12_INPUT_ELEMENT_DESC instancedLayout[] = {
@@ -266,6 +357,8 @@ void ModelRenderer::CreatePipelineState() {
         baseLayout[2],
         baseLayout[3],
         baseLayout[4],
+        baseLayout[5],
+        baseLayout[6],
         {"WORLD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0,
          D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
         {"WORLD", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 1,
@@ -289,7 +382,8 @@ void ModelRenderer::CreatePipelineState() {
     };
 
     auto makePso = [&](D3D12_SHADER_BYTECODE vertexShader,
-                       D3D12_INPUT_LAYOUT_DESC inputLayout, bool transparent,
+                       D3D12_INPUT_LAYOUT_DESC inputLayout,
+                       ModelBlendMode blendMode,
                        MaterialCullMode cullMode, bool depthWrite,
                        ComPtr<ID3D12PipelineState> &psoOut) {
         D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
@@ -307,12 +401,17 @@ void ModelRenderer::CreatePipelineState() {
         pso.RasterizerState.CullMode = ToD3D12CullMode(cullMode);
 
         D3D12_BLEND_DESC blend = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-        blend.RenderTarget[0].BlendEnable = transparent ? TRUE : FALSE;
+        blend.RenderTarget[0].BlendEnable =
+            blendMode == ModelBlendMode::Opaque ? FALSE : TRUE;
         blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-        blend.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+        blend.RenderTarget[0].DestBlend =
+            blendMode == ModelBlendMode::Additive ? D3D12_BLEND_ONE
+                                                  : D3D12_BLEND_INV_SRC_ALPHA;
         blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
         blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+        blend.RenderTarget[0].DestBlendAlpha =
+            blendMode == ModelBlendMode::Additive ? D3D12_BLEND_ONE
+                                                  : D3D12_BLEND_ZERO;
         blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
         blend.RenderTarget[0].RenderTargetWriteMask =
             D3D12_COLOR_WRITE_ENABLE_ALL;
@@ -326,25 +425,28 @@ void ModelRenderer::CreatePipelineState() {
         depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
         pso.DepthStencilState = depth;
 
-        ThrowIfFailed(device->CreateGraphicsPipelineState(
-                          &pso, IID_PPV_ARGS(&psoOut)),
-                      "CreateGraphicsPipelineState(ModelRenderer) failed");
+        if (FAILED(device->CreateGraphicsPipelineState(
+                &pso, IID_PPV_ARGS(&psoOut)))) {
+            psoOut.Reset();
+        }
     };
 
-    for (bool transparent : {false, true}) {
+    for (ModelBlendMode blendMode :
+         {ModelBlendMode::Opaque, ModelBlendMode::Alpha,
+          ModelBlendMode::Additive}) {
         for (MaterialCullMode cullMode :
              {MaterialCullMode::None, MaterialCullMode::Front,
               MaterialCullMode::Back}) {
             for (bool depthWrite : {false, true}) {
                 const size_t index =
-                    PipelineVariantIndex(transparent, cullMode, depthWrite);
+                    PipelineVariantIndex(blendMode, cullMode, depthWrite);
                 makePso({vs->GetBufferPointer(), vs->GetBufferSize()},
-                        {baseLayout, _countof(baseLayout)}, transparent,
+                        {baseLayout, _countof(baseLayout)}, blendMode,
                         cullMode, depthWrite, pipelineStates_[index]);
                 makePso({instancedVs->GetBufferPointer(),
                          instancedVs->GetBufferSize()},
-                        {instancedLayout, _countof(instancedLayout)},
-                        transparent, cullMode, depthWrite,
+                        {instancedLayout, _countof(instancedLayout)}, blendMode,
+                        cullMode, depthWrite,
                         instancedPipelineStates_[index]);
             }
         }
@@ -353,12 +455,18 @@ void ModelRenderer::CreatePipelineState() {
 
 void ModelRenderer::CreateShadowPipelineState() {
     auto device = dxCommon_->GetDevice();
+    if (device == nullptr || !shadowRootSignature_) {
+        return;
+    }
     auto vs =
-        ShaderCompiler::Compile(ShaderPaths::ModelShadowVS, "main", "vs_5_0");
+        ShaderCompiler::Compile(ShaderPaths::ModelShadowVS, "main", "vs_6_6");
     auto instancedVs = ShaderCompiler::Compile(
-        ShaderPaths::ModelShadowInstancedVS, "main", "vs_5_0");
+        ShaderPaths::ModelShadowInstancedVS, "main", "vs_6_6");
     auto ps =
-        ShaderCompiler::Compile(ShaderPaths::ModelShadowPS, "main", "ps_5_0");
+        ShaderCompiler::Compile(ShaderPaths::ModelShadowPS, "main", "ps_6_6");
+    if (!vs || !instancedVs || !ps) {
+        return;
+    }
 
     D3D12_INPUT_ELEMENT_DESC baseLayout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
@@ -375,6 +483,12 @@ void ModelRenderer::CreateShadowPipelineState() {
         {"TANGENT", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
          D3D12_APPEND_ALIGNED_ELEMENT,
          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"CUSTOM", 0, DXGI_FORMAT_R32_FLOAT, 0,
+         D3D12_APPEND_ALIGNED_ELEMENT,
+         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"BINDPOS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
+         D3D12_APPEND_ALIGNED_ELEMENT,
+         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     };
 
     D3D12_INPUT_ELEMENT_DESC instancedLayout[] = {
@@ -383,6 +497,8 @@ void ModelRenderer::CreateShadowPipelineState() {
         baseLayout[2],
         baseLayout[3],
         baseLayout[4],
+        baseLayout[5],
+        baseLayout[6],
         {"WORLD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0,
          D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
         {"WORLD", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 1,
@@ -430,9 +546,10 @@ void ModelRenderer::CreateShadowPipelineState() {
         depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
         pso.DepthStencilState = depth;
 
-        ThrowIfFailed(device->CreateGraphicsPipelineState(
-                          &pso, IID_PPV_ARGS(&psoOut)),
-                      "CreateGraphicsPipelineState(ModelShadow) failed");
+        if (FAILED(device->CreateGraphicsPipelineState(
+                &pso, IID_PPV_ARGS(&psoOut)))) {
+            psoOut.Reset();
+        }
     };
 
     makePso({vs->GetBufferPointer(), vs->GetBufferSize()},

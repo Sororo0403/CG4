@@ -19,10 +19,17 @@ class Camera {
     void UpdateMatrices();
 
     void SetPosition(const DirectX::XMFLOAT3 &position);
+    /// <summary>
+    /// Rotationを設定する
+    /// </summary>
     void SetRotation(const DirectX::XMFLOAT3 &rotation);
     void SetAspect(float aspect);
     void SetPerspectiveFovDeg(float fovDeg);
+    /// <summary>
+    /// PerspectiveFovRadを設定する
+    /// </summary>
     void SetPerspectiveFovRad(float fovRad);
+    void SetOrthographicHeight(float height);
     void SetClipRange(float nearZ, float farZ);
 
     const DirectX::XMMATRIX &GetView() const { return view_; }
@@ -35,16 +42,27 @@ class Camera {
     const DirectX::XMFLOAT3 &GetRotation() const { return rotation_; }
     float GetAspect() const { return aspect_; }
     float GetFovY() const { return fovY_; }
+    float GetOrthographicHeight() const { return orthographicHeight_; }
     float GetNearZ() const { return nearZ_; }
     float GetFarZ() const { return farZ_; }
 
   private:
+    enum class ProjectionMode {
+        Perspective,
+        Orthographic,
+    };
+
+    /// <summary>
+    /// SanitizeProjectionを実行する
+    /// </summary>
     void SanitizeProjection();
 
     DirectX::XMFLOAT3 position_{0.0f, 0.0f, -5.0f};
     DirectX::XMFLOAT3 rotation_{0.0f, 0.0f, 0.0f};
 
+    ProjectionMode projectionMode_ = ProjectionMode::Perspective;
     float fovY_ = DirectX::XM_PIDIV4;
+    float orthographicHeight_ = 10.0f;
     float aspect_ = 16.0f / 9.0f;
     float nearZ_ = 0.1f;
     float farZ_ = 1000.0f;

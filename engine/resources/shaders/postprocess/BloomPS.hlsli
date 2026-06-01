@@ -1,5 +1,5 @@
-#ifndef BLOOM_EFFECT_HLSLI
-#define BLOOM_EFFECT_HLSLI
+#ifndef BLOOM_PS_HLSLI
+#define BLOOM_PS_HLSLI
 
 float3 ExtractBloom(float3 color)
 {
@@ -9,8 +9,8 @@ float3 ExtractBloom(float3 color)
     return color * amount;
 }
 
-float3 ApplyBloomEffect(Texture2D sourceTexture, SamplerState sourceSampler,
-                        float3 color, float2 uv)
+float3 ApplyBloom(Texture2D sourceTexture, SamplerState sourceSampler,
+                  float3 color, float2 uv)
 {
     if (bloomEnabled == 0)
     {
@@ -52,4 +52,4 @@ float3 ApplyBloomEffect(Texture2D sourceTexture, SamplerState sourceSampler,
     return color + bloom * bloomIntensity;
 }
 
-#endif // BLOOM_EFFECT_HLSLI
+#endif // BLOOM_PS_HLSLI

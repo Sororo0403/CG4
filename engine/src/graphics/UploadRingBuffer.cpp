@@ -1,33 +1,36 @@
 #include "graphics/UploadRingBuffer.h"
 
 #include "graphics/DxHelpers.h"
-#include "graphics/DxUtils.h"
-#include <stdexcept>
-
-using namespace DxUtils;
+#include <limits>
+#include <utility>
 
 UploadRingBuffer::~UploadRingBuffer() { Reset(); }
 
 void UploadRingBuffer::Initialize(ID3D12Device *device, size_t bytesPerFrame,
                                   uint32_t frameCount) {
     if (!device || bytesPerFrame == 0 || frameCount == 0) {
-        throw std::runtime_error("UploadRingBuffer::Initialize invalid argument");
+        Reset();
+        return;
     }
 
     Reset();
-    device_ = device;
-    bytesPerFrame_ = AlignUp(bytesPerFrame, 256);
-    frames_.resize(frameCount);
-    for (FrameResource &frame : frames_) {
-        CreateFrameResource(frame);
+    const size_t alignedBytesPerFrame = AlignUp(bytesPerFrame, 256);
+    std::vector<FrameResource> newFrames(frameCount);
+    for (FrameResource &frame : newFrames) {
+        if (!CreateFrameResource(frame, device, alignedBytesPerFrame)) {
+            Reset();
+            return;
+        }
     }
+    device_ = device;
+    bytesPerFrame_ = alignedBytesPerFrame;
+    frames_ = std::move(newFrames);
+    frameIndex_ = 0;
 }
 
 void UploadRingBuffer::Reset() {
     for (FrameResource &frame : frames_) {
-        UnmapFrameResource(frame);
-        frame.resource.Reset();
-        frame.offset = 0;
+        frame.Reset();
     }
     frames_.clear();
     device_ = nullptr;
@@ -53,14 +56,17 @@ void UploadRingBuffer::BeginFrame(uint32_t frameIndex) {
 
 UploadAllocation UploadRingBuffer::Allocate(size_t size, size_t alignment) {
     if (frames_.empty() || size == 0) {
-        throw std::runtime_error("UploadRingBuffer::Allocate before Initialize");
+        return {};
     }
 
     FrameResource &frame = frames_[frameIndex_];
     const size_t alignedOffset = AlignUp(frame.offset, alignment);
+    if (size > (std::numeric_limits<size_t>::max)() - alignedOffset) {
+        return {};
+    }
     const size_t endOffset = alignedOffset + size;
     if (endOffset > bytesPerFrame_) {
-        throw std::runtime_error("UploadRingBuffer frame capacity exceeded");
+        return {};
     }
 
     frame.offset = endOffset;
@@ -84,26 +90,33 @@ size_t UploadRingBuffer::AlignUp(size_t value, size_t alignment) {
     if (alignment <= 1) {
         return value;
     }
-    return ((value + alignment - 1) / alignment) * alignment;
-}
-
-void UploadRingBuffer::CreateFrameResource(FrameResource &frame) {
-    CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
-    auto desc = CD3DX12_RESOURCE_DESC::Buffer(bytesPerFrame_);
-    ThrowIfFailed(device_->CreateCommittedResource(
-                      &heap, D3D12_HEAP_FLAG_NONE, &desc,
-                      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                      IID_PPV_ARGS(&frame.resource)),
-                  "CreateCommittedResource(UploadRingBuffer) failed");
-    ThrowIfFailed(frame.resource->Map(
-                      0, nullptr, reinterpret_cast<void **>(&frame.mapped)),
-                  "Map(UploadRingBuffer) failed");
-    frame.offset = 0;
-}
-
-void UploadRingBuffer::UnmapFrameResource(FrameResource &frame) {
-    if (frame.resource && frame.mapped) {
-        frame.resource->Unmap(0, nullptr);
-        frame.mapped = nullptr;
+    const size_t addend = alignment - 1;
+    if (value > (std::numeric_limits<size_t>::max)() - addend) {
+        return (std::numeric_limits<size_t>::max)();
     }
+    return ((value + addend) / alignment) * alignment;
+}
+
+bool UploadRingBuffer::CreateFrameResource(FrameResource &frame,
+                                           ID3D12Device *device,
+                                           size_t bytesPerFrame) {
+    CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
+    auto desc = CD3DX12_RESOURCE_DESC::Buffer(bytesPerFrame);
+    const HRESULT resourceResult = device->CreateCommittedResource(
+        &heap, D3D12_HEAP_FLAG_NONE, &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+        IID_PPV_ARGS(&frame.resource));
+    if (FAILED(resourceResult) || !frame.resource) {
+        frame.Reset();
+        return false;
+    }
+    frame.resource->SetName(L"UploadRingBuffer.FrameResource");
+    const HRESULT mapResult =
+        frame.resource->Map(0, nullptr, reinterpret_cast<void **>(&frame.mapped));
+    if (FAILED(mapResult) || frame.mapped == nullptr) {
+        frame.Reset();
+        return false;
+    }
+    frame.offset = 0;
+    return true;
 }

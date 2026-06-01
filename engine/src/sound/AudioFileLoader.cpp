@@ -5,11 +5,11 @@
 #include <Objbase.h>
 #include <algorithm>
 #include <filesystem>
+#include <limits>
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
-#include <sstream>
-#include <stdexcept>
+#include <utility>
 #include <wrl.h>
 
 using Microsoft::WRL::ComPtr;
@@ -20,18 +20,6 @@ constexpr DWORD kAllStreams = static_cast<DWORD>(MF_SOURCE_READER_ALL_STREAMS);
 constexpr DWORD kFirstAudioStream =
     static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM);
 
-std::string MakeHResultMessage(HRESULT hr, const char *message) {
-    std::ostringstream oss;
-    oss << message << " HRESULT=0x" << std::hex << static_cast<unsigned long>(hr);
-    return oss.str();
-}
-
-void ThrowIfFailed(HRESULT hr, const char *message) {
-    if (FAILED(hr)) {
-        throw std::runtime_error(MakeHResultMessage(hr, message));
-    }
-}
-
 std::filesystem::path ResolveAudioPath(const std::wstring &path) {
     return AssetManager::ResolvePath(std::filesystem::path(path));
 }
@@ -39,8 +27,13 @@ std::filesystem::path ResolveAudioPath(const std::wstring &path) {
 class MediaBufferLock {
   public:
     explicit MediaBufferLock(IMFMediaBuffer *buffer) : buffer_(buffer) {
-        ThrowIfFailed(buffer_->Lock(&data_, &maxLength_, &currentLength_),
-                      "IMFMediaBuffer::Lock failed");
+        if (buffer_ != nullptr &&
+            FAILED(buffer_->Lock(&data_, &maxLength_, &currentLength_))) {
+            buffer_ = nullptr;
+            data_ = nullptr;
+            maxLength_ = 0;
+            currentLength_ = 0;
+        }
     }
 
     ~MediaBufferLock() {
@@ -51,6 +44,7 @@ class MediaBufferLock {
 
     const BYTE *Data() const { return data_; }
     DWORD Size() const { return currentLength_; }
+    bool IsValid() const { return buffer_ != nullptr && data_ != nullptr; }
 
   private:
     IMFMediaBuffer *buffer_ = nullptr;
@@ -74,110 +68,153 @@ AudioFileLoader::SoundData::Info MakeSoundInfo(const WAVEFORMATEX &format,
     return info;
 }
 
-ComPtr<IMFSourceReader> CreateSourceReader(const std::filesystem::path &path) {
-    ComPtr<IMFSourceReader> reader;
-    const std::string message =
-        "MFCreateSourceReaderFromURL failed: " + path.string();
-    ThrowIfFailed(MFCreateSourceReaderFromURL(path.c_str(), nullptr, &reader),
-                  message.c_str());
+bool CreateSourceReader(const std::filesystem::path &path,
+                        ComPtr<IMFSourceReader> &reader) {
+    reader.Reset();
+    if (FAILED(MFCreateSourceReaderFromURL(path.c_str(), nullptr, &reader))) {
+        return false;
+    }
 
-    ThrowIfFailed(reader->SetStreamSelection(kAllStreams, FALSE),
-                  "SetStreamSelection all streams failed");
-    ThrowIfFailed(reader->SetStreamSelection(kFirstAudioStream, TRUE),
-                  "SetStreamSelection first audio stream failed");
+    if (FAILED(reader->SetStreamSelection(kAllStreams, FALSE)) ||
+        FAILED(reader->SetStreamSelection(kFirstAudioStream, TRUE))) {
+        reader.Reset();
+        return false;
+    }
 
-    return reader;
+    return true;
 }
 
-ComPtr<IMFMediaType> SetPcmFormat(IMFSourceReader *reader) {
+bool SetPcmFormat(IMFSourceReader *reader, ComPtr<IMFMediaType> &currentType) {
+    if (reader == nullptr) {
+        return false;
+    }
+
     ComPtr<IMFMediaType> pcmType;
-    ThrowIfFailed(MFCreateMediaType(&pcmType), "MFCreateMediaType failed");
-    ThrowIfFailed(pcmType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio),
-                  "Set audio major type failed");
-    ThrowIfFailed(pcmType->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM),
-                  "Set PCM subtype failed");
-    ThrowIfFailed(pcmType->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16),
-                  "Set PCM bits per sample failed");
-
-    ThrowIfFailed(reader->SetCurrentMediaType(kFirstAudioStream, nullptr,
-                                              pcmType.Get()),
-                  "SetCurrentMediaType PCM failed");
-
-    ComPtr<IMFMediaType> currentType;
-    ThrowIfFailed(reader->GetCurrentMediaType(kFirstAudioStream, &currentType),
-                  "GetCurrentMediaType failed");
-    return currentType;
+    if (FAILED(MFCreateMediaType(&pcmType)) ||
+        FAILED(pcmType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio)) ||
+        FAILED(pcmType->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM)) ||
+        FAILED(pcmType->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16)) ||
+        FAILED(reader->SetCurrentMediaType(kFirstAudioStream, nullptr,
+                                           pcmType.Get())) ||
+        FAILED(reader->GetCurrentMediaType(kFirstAudioStream, &currentType))) {
+        currentType.Reset();
+        return false;
+    }
+    return true;
 }
 
-std::vector<BYTE> GetWaveFormat(IMFMediaType *mediaType) {
+bool GetWaveFormat(IMFMediaType *mediaType, std::vector<BYTE> &result) {
+    result.clear();
+    if (mediaType == nullptr) {
+        return false;
+    }
+
     WAVEFORMATEX *waveFormat = nullptr;
     UINT32 waveFormatSize = 0;
-    ThrowIfFailed(MFCreateWaveFormatExFromMFMediaType(
-                      mediaType, &waveFormat, &waveFormatSize),
-                  "MFCreateWaveFormatExFromMFMediaType failed");
+    if (FAILED(MFCreateWaveFormatExFromMFMediaType(
+            mediaType, &waveFormat, &waveFormatSize)) ||
+        waveFormat == nullptr || waveFormatSize == 0) {
+        if (waveFormat != nullptr) {
+            CoTaskMemFree(waveFormat);
+        }
+        return false;
+    }
 
-    std::vector<BYTE> result(waveFormatSize);
+    result.resize(waveFormatSize);
     std::copy_n(reinterpret_cast<const BYTE *>(waveFormat), waveFormatSize,
                 result.data());
     CoTaskMemFree(waveFormat);
-    return result;
+    return true;
 }
 
-std::vector<BYTE> ReadPcmData(IMFSourceReader *reader) {
-    std::vector<BYTE> decodedPcm;
+bool ReadPcmData(IMFSourceReader *reader, std::vector<BYTE> &decodedPcm) {
+    decodedPcm.clear();
+    if (reader == nullptr) {
+        return false;
+    }
 
     for (;;) {
         DWORD flags = 0;
         ComPtr<IMFSample> sample;
-        ThrowIfFailed(reader->ReadSample(kFirstAudioStream, 0, nullptr, &flags,
-                                         nullptr, &sample),
-                      "ReadSample failed");
+        if (FAILED(reader->ReadSample(kFirstAudioStream, 0, nullptr, &flags,
+                                      nullptr, &sample))) {
+            decodedPcm.clear();
+            return false;
+        }
 
         if ((flags & MF_SOURCE_READERF_ENDOFSTREAM) != 0) {
             break;
         }
         if ((flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) != 0) {
-            throw std::runtime_error(
-                "Audio media type changed while reading PCM data");
+            decodedPcm.clear();
+            return false;
         }
         if (!sample) {
             continue;
         }
 
         ComPtr<IMFMediaBuffer> mediaBuffer;
-        ThrowIfFailed(sample->ConvertToContiguousBuffer(&mediaBuffer),
-                      "ConvertToContiguousBuffer failed");
+        if (FAILED(sample->ConvertToContiguousBuffer(&mediaBuffer))) {
+            decodedPcm.clear();
+            return false;
+        }
 
         const MediaBufferLock locked(mediaBuffer.Get());
+        if (!locked.IsValid()) {
+            decodedPcm.clear();
+            return false;
+        }
         const size_t oldSize = decodedPcm.size();
+        if (locked.Size() >
+            (std::numeric_limits<size_t>::max)() - oldSize) {
+            decodedPcm.clear();
+            return false;
+        }
         decodedPcm.resize(oldSize + locked.Size());
         std::copy_n(locked.Data(), locked.Size(), decodedPcm.data() + oldSize);
     }
 
-    return decodedPcm;
+    return !decodedPcm.empty();
 }
 
 } // namespace
 
 AudioFileLoader::SoundData AudioFileLoader::Load(const std::wstring &path) {
+    SoundData data{};
+    if (TryLoad(path, data)) {
+        return data;
+    }
+    return {};
+}
+
+bool AudioFileLoader::TryLoad(const std::wstring &path, SoundData &outData) {
+    outData = {};
+
     const std::filesystem::path resolvedPath = ResolveAudioPath(path);
-    if (!std::filesystem::exists(resolvedPath)) {
-        throw std::runtime_error("Audio file not found. requested=" +
-                                 std::filesystem::path(path).string() +
-                                 " resolved=" + resolvedPath.string());
+    std::error_code ec;
+    if (!std::filesystem::exists(resolvedPath, ec)) {
+        return false;
     }
 
-    ComPtr<IMFSourceReader> reader = CreateSourceReader(resolvedPath);
-    ComPtr<IMFMediaType> currentMediaType = SetPcmFormat(reader.Get());
+    ComPtr<IMFSourceReader> reader;
+    if (!CreateSourceReader(resolvedPath, reader)) {
+        return false;
+    }
+
+    ComPtr<IMFMediaType> currentMediaType;
+    if (!SetPcmFormat(reader.Get(), currentMediaType)) {
+        return false;
+    }
 
     SoundData data{};
-    data.waveFormat = GetWaveFormat(currentMediaType.Get());
-    data.decodedPcm = ReadPcmData(reader.Get());
-
-    if (data.waveFormat.empty() || data.decodedPcm.empty()) {
-        throw std::runtime_error("Loaded audio data is empty");
+    if (!GetWaveFormat(currentMediaType.Get(), data.waveFormat) ||
+        !ReadPcmData(reader.Get(), data.decodedPcm) ||
+        data.waveFormat.empty() || data.decodedPcm.empty() ||
+        data.GetFormat() == nullptr) {
+        return false;
     }
 
     data.info = MakeSoundInfo(*data.GetFormat(), data.decodedPcm.size());
-    return data;
+    outData = std::move(data);
+    return true;
 }

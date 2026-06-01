@@ -7,10 +7,12 @@ inline constexpr const wchar_t *SpriteVS =
 inline constexpr const wchar_t *SpritePS =
     L"engine/resources/shaders/sprite/SpritePS.hlsl";
 
-inline constexpr const wchar_t *PostEffectVS =
-    L"engine/resources/shaders/posteffect/PostEffectVS.hlsl";
-inline constexpr const wchar_t *PostEffectPS =
-    L"engine/resources/shaders/posteffect/PostEffectPS.hlsl";
+inline constexpr const wchar_t *PostProcessVS =
+    L"engine/resources/shaders/postprocess/PostProcessVS.hlsl";
+inline constexpr const wchar_t *PostProcessPS =
+    L"engine/resources/shaders/postprocess/PostProcessPS.hlsl";
+inline constexpr const wchar_t *PostProcessCopyPS =
+    L"engine/resources/shaders/postprocess/CopyPS.hlsl";
 
 inline constexpr const wchar_t *SkyboxVS =
     L"engine/resources/shaders/skybox/SkyboxVS.hlsl";
@@ -47,6 +49,8 @@ inline constexpr const wchar_t *SkinningCS =
 
 inline constexpr const wchar_t *ParticleUpdateCS =
     L"engine/resources/shaders/particle/GPUParticleUpdateCS.hlsl";
+inline constexpr const wchar_t *ParticleArgsCS =
+    L"engine/resources/shaders/particle/GPUParticleArgsCS.hlsl";
 inline constexpr const wchar_t *ParticleVS =
     L"engine/resources/shaders/particle/GPUParticleVS.hlsl";
 inline constexpr const wchar_t *ParticlePS =

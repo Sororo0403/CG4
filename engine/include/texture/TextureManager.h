@@ -27,10 +27,17 @@ class TextureManager {
     };
 
   public:
+    ~TextureManager();
+
     /// <summary>
     /// TextureManagerの共有インスタンスを取得する
     /// </summary>
     static TextureManager &GetInstance();
+
+    /// <summary>
+    /// 実行中ランタイムのTextureManagerを共有インスタンスとして登録する
+    /// </summary>
+    static void SetActiveInstance(TextureManager *instance);
 
     /// <summary>
     /// テクスチャ管理に必要なDirectXとSRV管理への参照を設定する
@@ -38,6 +45,11 @@ class TextureManager {
     /// <param name="dxCommon">DirectXCommonインスタンス</param>
     /// <param name="srvManager">SrvManagerインスタンス</param>
     void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager);
+
+    /// <summary>
+    /// 管理中のテクスチャとSRV割り当てを解放する
+    /// </summary>
+    void Finalize();
 
     /// <summary>
     /// ファイルからテクスチャをロードしてidを返す
@@ -88,6 +100,9 @@ class TextureManager {
     /// <param name="data">画像データの先頭アドレス</param>
     /// <param name="size">画像データのバイトサイズ</param>
     /// <returns>生成されたテクスチャのID</returns>
+    /// <summary>
+    /// FromMemoryを読み込む
+    /// </summary>
     uint32_t LoadFromMemory(const uint8_t *data, size_t size);
 
     /// <summary>
@@ -122,7 +137,14 @@ class TextureManager {
     D3D12_GPU_DESCRIPTOR_HANDLE GetGpuHandle(uint32_t textureId) const;
 
     uint32_t GetWhiteTextureId() const { return whiteTextureId_; }
+    uint32_t GetWhiteCubeTextureId() const { return whiteCubeTextureId_; }
+    uint32_t GetBlackCubeTextureId() const { return blackCubeTextureId_; }
     uint32_t GetDefaultNormalTextureId() const { return defaultNormalTextureId_; }
+
+    /// <summary>
+    /// 指定IDが有効なテクスチャを指しているかを取得する
+    /// </summary>
+    bool IsValidTextureId(uint32_t textureId) const;
 
     /// <summary>
     /// テクスチャリソースを取得する
@@ -161,6 +183,7 @@ class TextureManager {
         std::wstring pathKey;
         DirectX::ScratchImage scratch;
         DirectX::TexMetadata metadata{};
+        bool succeeded = false;
     };
 
     struct AsyncTextureRequest {
@@ -172,6 +195,9 @@ class TextureManager {
     };
 
   private:
+    uint32_t AllocateAsyncRequestId();
+    void PruneCompletedAsyncRequests();
+
     DirectXCommon *dxCommon_ = nullptr;
     SrvManager *srvManager_ = nullptr;
 
@@ -183,5 +209,8 @@ class TextureManager {
     std::vector<AsyncTextureRequest> asyncRequests_;
     uint32_t nextAsyncRequestId_ = 1;
     uint32_t whiteTextureId_ = 0;
+    uint32_t whiteCubeTextureId_ = 0;
+    uint32_t blackCubeTextureId_ = 0;
     uint32_t defaultNormalTextureId_ = 0;
+    UINT lastDynamicUploadFrameIndex_ = UINT_MAX;
 };

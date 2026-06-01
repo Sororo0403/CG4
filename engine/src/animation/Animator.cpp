@@ -2,8 +2,29 @@
 #include "animation/AnimationSampler.h"
 #include "animation/SkeletonPoseBuilder.h"
 #include <DirectXMath.h>
+#include <algorithm>
+#include <cmath>
 
 using namespace DirectX;
+
+namespace {
+
+constexpr float kQuaternionEpsilon = 0.000001f;
+
+XMVECTOR LoadNormalizedQuaternionOrIdentity(const XMFLOAT4 &rotation) {
+    if (!std::isfinite(rotation.x) || !std::isfinite(rotation.y) ||
+        !std::isfinite(rotation.z) || !std::isfinite(rotation.w)) {
+        return XMQuaternionIdentity();
+    }
+    XMVECTOR q = XMLoadFloat4(&rotation);
+    const float lengthSq = XMVectorGetX(XMVector4LengthSq(q));
+    if (!std::isfinite(lengthSq) || lengthSq <= kQuaternionEpsilon) {
+        return XMQuaternionIdentity();
+    }
+    return XMQuaternionNormalize(q);
+}
+
+} // namespace
 
 void Animator::Play(Model &model, const std::string &animationName, bool loop) {
     auto it = model.animations.find(animationName);
@@ -59,7 +80,7 @@ void Animator::Update(Model &model, float deltaTime) {
     }
 
     const AnimationClip &clip = clipIt->second;
-    if (clip.duration <= 0.0f) {
+    if (!std::isfinite(clip.duration) || clip.duration <= 0.0f) {
         model.hasRootAnimation = false;
         XMStoreFloat4x4(&model.rootAnimationMatrix, XMMatrixIdentity());
         if (!model.bones.empty()) {
@@ -69,10 +90,19 @@ void Animator::Update(Model &model, float deltaTime) {
     }
 
     if (model.isPlaying) {
-        model.animationTime += deltaTime;
+        if (!std::isfinite(model.animationTime) || model.animationTime < 0.0f) {
+            model.animationTime = 0.0f;
+        }
+        const float safeDeltaTime =
+            std::isfinite(deltaTime) ? (std::max)(deltaTime, 0.0f) : 0.0f;
+        model.animationTime += safeDeltaTime;
+        if (!std::isfinite(model.animationTime)) {
+            model.animationTime = model.isLoop ? 0.0f : clip.duration;
+        }
         if (model.isLoop) {
-            while (model.animationTime >= clip.duration) {
-                model.animationTime -= clip.duration;
+            if (model.animationTime >= clip.duration) {
+                model.animationTime = std::fmod(model.animationTime,
+                                                clip.duration);
             }
         } else if (model.animationTime >= clip.duration) {
             model.animationTime = clip.duration;
@@ -107,7 +137,7 @@ void Animator::Update(Model &model, float deltaTime) {
 
             XMMATRIX local = XMMatrixScaling(scl.x, scl.y, scl.z) *
                              XMMatrixRotationQuaternion(
-                                 XMQuaternionNormalize(XMLoadFloat4(&rot))) *
+                                 LoadNormalizedQuaternionOrIdentity(rot)) *
                              XMMatrixTranslation(pos.x, pos.y, pos.z);
             XMStoreFloat4x4(&model.rootAnimationMatrix, local);
             model.hasRootAnimation = true;

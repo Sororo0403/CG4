@@ -1,5 +1,7 @@
 #pragma once
 #include <DirectXMath.h>
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 
 /// <summary>
@@ -51,7 +53,46 @@ struct Material {
     uint32_t metallicTextureId = UINT32_MAX;
 };
 
+namespace MaterialDetail {
+inline float FiniteOr(float value, float fallback) {
+    return std::isfinite(value) ? value : fallback;
+}
+
+inline float ClampFinite(float value, float minimum, float maximum,
+                         float fallback) {
+    return std::clamp(FiniteOr(value, fallback), minimum, maximum);
+}
+
+inline float ClampFiniteMin(float value, float minimum, float fallback) {
+    return (std::max)(FiniteOr(value, fallback), minimum);
+}
+
+inline DirectX::XMFLOAT4 FiniteFloat4(const DirectX::XMFLOAT4 &value,
+                                      const DirectX::XMFLOAT4 &fallback) {
+    return {
+        FiniteOr(value.x, fallback.x),
+        FiniteOr(value.y, fallback.y),
+        FiniteOr(value.z, fallback.z),
+        FiniteOr(value.w, fallback.w),
+    };
+}
+
+inline DirectX::XMFLOAT4X4
+FiniteMatrix(const DirectX::XMFLOAT4X4 &value,
+             const DirectX::XMFLOAT4X4 &fallback) {
+    DirectX::XMFLOAT4X4 result = value;
+    for (int row = 0; row < 4; ++row) {
+        for (int column = 0; column < 4; ++column) {
+            result.m[row][column] =
+                FiniteOr(result.m[row][column], fallback.m[row][column]);
+        }
+    }
+    return result;
+}
+} // namespace MaterialDetail
+
 inline Material NormalizeMaterialForDraw(Material material) {
+    const Material defaults{};
     const int32_t blendModeValue = material.blendMode;
     BlendMode blendMode = static_cast<BlendMode>(blendModeValue);
     if (blendModeValue < static_cast<int32_t>(BlendMode::Opaque) ||
@@ -64,16 +105,41 @@ inline Material NormalizeMaterialForDraw(Material material) {
     }
 
     material.blendMode = static_cast<int32_t>(blendMode);
+    material.color =
+        MaterialDetail::FiniteFloat4(material.color, defaults.color);
+    material.color.w =
+        MaterialDetail::ClampFinite(material.color.w, 0.0f, 1.0f, 1.0f);
+    material.uvTransform =
+        MaterialDetail::FiniteMatrix(material.uvTransform,
+                                     defaults.uvTransform);
+    material.reflectionStrength = MaterialDetail::ClampFiniteMin(
+        material.reflectionStrength, 0.0f, defaults.reflectionStrength);
+    material.reflectionFresnelStrength = MaterialDetail::ClampFiniteMin(
+        material.reflectionFresnelStrength, 0.0f,
+        defaults.reflectionFresnelStrength);
+    material.reflectionRoughness = MaterialDetail::ClampFinite(
+        material.reflectionRoughness, 0.0f, 1.0f,
+        defaults.reflectionRoughness);
+    material.roughness = MaterialDetail::ClampFinite(
+        material.roughness, 0.0f, 1.0f, defaults.roughness);
+    material.metallic = MaterialDetail::ClampFinite(
+        material.metallic, 0.0f, 1.0f, defaults.metallic);
+    material.customParams =
+        MaterialDetail::FiniteFloat4(material.customParams,
+                                     defaults.customParams);
+    material.customParams2 =
+        MaterialDetail::FiniteFloat4(material.customParams2,
+                                     defaults.customParams2);
+    material.customParams3 =
+        MaterialDetail::FiniteFloat4(material.customParams3,
+                                     defaults.customParams3);
 
     if (blendMode == BlendMode::Transparent) {
         material.depthWrite = 0;
     }
 
-    if (material.alphaCutoff < 0.0f) {
-        material.alphaCutoff = 0.0f;
-    } else if (material.alphaCutoff > 1.0f) {
-        material.alphaCutoff = 1.0f;
-    }
+    material.alphaCutoff = MaterialDetail::ClampFinite(
+        material.alphaCutoff, 0.0f, 1.0f, defaults.alphaCutoff);
 
     const int32_t cullModeValue = material.cullMode;
     if (cullModeValue < static_cast<int32_t>(MaterialCullMode::None) ||
@@ -81,9 +147,8 @@ inline Material NormalizeMaterialForDraw(Material material) {
         material.cullMode = static_cast<int32_t>(MaterialCullMode::Back);
     }
 
-    if (material.normalStrength < 0.0f) {
-        material.normalStrength = 0.0f;
-    }
+    material.normalStrength = MaterialDetail::ClampFiniteMin(
+        material.normalStrength, 0.0f, defaults.normalStrength);
 
     material.enableNormalMap =
         (material.enableNormalMap != 0 || material.normalTextureId != UINT32_MAX)

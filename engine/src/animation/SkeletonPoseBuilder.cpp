@@ -1,10 +1,41 @@
 #include "animation/SkeletonPoseBuilder.h"
 #include "animation/AnimationSampler.h"
 #include <DirectXMath.h>
+#include <cmath>
 
 using namespace DirectX;
 
 namespace {
+
+constexpr float kQuaternionEpsilon = 0.000001f;
+
+XMVECTOR LoadNormalizedQuaternionOrIdentity(const XMFLOAT4 &rotation) {
+    if (!std::isfinite(rotation.x) || !std::isfinite(rotation.y) ||
+        !std::isfinite(rotation.z) || !std::isfinite(rotation.w)) {
+        return XMQuaternionIdentity();
+    }
+    XMVECTOR q = XMLoadFloat4(&rotation);
+    const float lengthSq = XMVectorGetX(XMVector4LengthSq(q));
+    if (!std::isfinite(lengthSq) || lengthSq <= kQuaternionEpsilon) {
+        return XMQuaternionIdentity();
+    }
+    return XMQuaternionNormalize(q);
+}
+
+bool ResolveReadyParentIndex(int parentIndex, size_t childIndex,
+                             size_t boneCount, size_t &resolvedIndex) {
+    if (parentIndex < 0) {
+        return false;
+    }
+
+    const size_t parent = static_cast<size_t>(parentIndex);
+    if (parent >= boneCount || parent >= childIndex) {
+        return false;
+    }
+
+    resolvedIndex = parent;
+    return true;
+}
 
 XMMATRIX MakeAnimatedLocalMatrix(const BoneInfo &bone,
                                  const AnimationClip &clip, float time) {
@@ -27,7 +58,7 @@ XMMATRIX MakeAnimatedLocalMatrix(const BoneInfo &bone,
                        ? XMFLOAT4{0.0f, 0.0f, 0.0f, 1.0f}
                        : AnimationSampler::SampleQuat(anim.rotate, time);
 
-    XMVECTOR q = XMQuaternionNormalize(XMLoadFloat4(&rot));
+    XMVECTOR q = LoadNormalizedQuaternionOrIdentity(rot);
     XMMATRIX animatedLocal = XMMatrixScaling(scl.x, scl.y, scl.z) *
                              XMMatrixRotationQuaternion(q) *
                              XMMatrixTranslation(pos.x, pos.y, pos.z);
@@ -60,14 +91,23 @@ void SkeletonPoseBuilder::BuildAnimatedLocals(
 void SkeletonPoseBuilder::UpdateSkeleton(
     Model &model, const std::vector<XMMATRIX> &localMatrices) {
     const size_t boneCount = model.bones.size();
+    model.skeletonSpaceMatrices.resize(boneCount);
+    model.finalBoneMatrices.resize(boneCount);
+
     std::vector<XMMATRIX> globalMatrices(boneCount);
 
     for (size_t i = 0; i < boneCount; i++) {
-        int parent = model.bones[i].parentIndex;
-        if (parent < 0) {
-            globalMatrices[i] = localMatrices[i];
+        const XMMATRIX local =
+            i < localMatrices.size()
+                ? localMatrices[i]
+                : XMLoadFloat4x4(&model.bones[i].localBindMatrix);
+
+        size_t parent = 0;
+        if (ResolveReadyParentIndex(model.bones[i].parentIndex, i, boneCount,
+                                    parent)) {
+            globalMatrices[i] = local * globalMatrices[parent];
         } else {
-            globalMatrices[i] = localMatrices[i] * globalMatrices[parent];
+            globalMatrices[i] = local;
         }
 
         XMStoreFloat4x4(&model.skeletonSpaceMatrices[i], globalMatrices[i]);

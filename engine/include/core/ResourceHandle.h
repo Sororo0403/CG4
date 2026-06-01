@@ -7,6 +7,9 @@ template <typename Tag> class ResourceHandle {
     static constexpr uint32_t kInvalidIndex =
         (std::numeric_limits<uint32_t>::max)();
 
+    /// <summary>
+    /// ResourceHandleを実行する
+    /// </summary>
     constexpr ResourceHandle() = default;
     explicit constexpr ResourceHandle(uint32_t index) : index_(index) {}
 

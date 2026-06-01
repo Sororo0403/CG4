@@ -73,7 +73,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
-      <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;imgui.lib;dinput8.lib;dxguid.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;assimp-vc145-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;dxcompiler.lib;imgui.lib;dinput8.lib;dxguid.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;assimp-vc145-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(SolutionDir)engine\externals\assimp\lib\;$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\imgui\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
@@ -85,6 +85,14 @@ if exist "$(SolutionDir)engine\externals\JoyShockLibrary\lib\JoyShockLibrary.dll
 REM assimp
 if exist "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" (
     xcopy /Y /D "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" "$(TargetDir)"
+)
+
+REM DirectX Shader Compiler
+if exist "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" (
+    xcopy /Y /D "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" "$(TargetDir)"
+)
+if exist "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" (
+    xcopy /Y /D "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" "$(TargetDir)"
 )</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -107,7 +115,7 @@ if exist "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" (
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <TreatLinkerWarningAsErrors>false</TreatLinkerWarningAsErrors>
-      <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;imgui.lib;dinput8.lib;dxguid.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;assimp-vc145-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;dxcompiler.lib;imgui.lib;dinput8.lib;dxguid.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;assimp-vc145-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(SolutionDir)engine\externals\assimp\lib\;$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\imgui\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
@@ -119,6 +127,14 @@ if exist "$(SolutionDir)engine\externals\JoyShockLibrary\lib\JoyShockLibrary.dll
 REM assimp
 if exist "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" (
     xcopy /Y /D "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" "$(TargetDir)"
+)
+
+REM DirectX Shader Compiler
+if exist "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" (
+    xcopy /Y /D "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" "$(TargetDir)"
+)
+if exist "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" (
+    xcopy /Y /D "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" "$(TargetDir)"
 )</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>

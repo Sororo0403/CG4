@@ -2,8 +2,6 @@
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
-#include <sstream>
-#include <stdexcept>
 
 void AssimpLoader::Initialize(TextureManager *textureManager,
                               MeshManager *meshManager,
@@ -13,7 +11,7 @@ void AssimpLoader::Initialize(TextureManager *textureManager,
 
 Model AssimpLoader::Load(const std::string &path) {
     if (!meshLoader_.IsInitialized()) {
-        throw std::runtime_error("AssimpLoader is not initialized");
+        return {};
     }
 
     Assimp::Importer importer;
@@ -24,10 +22,7 @@ Model AssimpLoader::Load(const std::string &path) {
                   aiProcess_LimitBoneWeights | aiProcess_CalcTangentSpace);
 
     if (!scene || !scene->HasMeshes()) {
-        std::ostringstream oss;
-        oss << "[AssimpLoader] Load failed. path='" << path << "' error='"
-            << importer.GetErrorString() << "'";
-        throw std::runtime_error(oss.str());
+        return {};
     }
 
     Model model{};

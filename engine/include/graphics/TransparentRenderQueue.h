@@ -14,6 +14,9 @@ class TransparentRenderQueue {
   public:
     using DrawCallback = std::function<void()>;
 
+    /// <summary>
+    /// Clearを実行する
+    /// </summary>
     void Clear();
 
     /// <summary>

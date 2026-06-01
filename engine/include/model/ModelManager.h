@@ -6,6 +6,7 @@
 #include "model/Model.h"
 #include "model/ModelRenderer.h"
 #include <cstdint>
+#include <initializer_list>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -19,10 +20,17 @@ class TextureManager;
 /// </summary>
 class ModelManager {
   public:
+    ~ModelManager();
+
     /// <summary>
     /// ModelManagerの共有インスタンスを取得する
     /// </summary>
     static ModelManager &GetInstance();
+
+    /// <summary>
+    /// 実行中ランタイムのModelManagerを共有インスタンスとして登録する
+    /// </summary>
+    static void SetActiveInstance(ModelManager *instance);
 
     /// <summary>
     /// モデル読み込み、マテリアル、メッシュ、描画器を初期化する
@@ -51,7 +59,24 @@ class ModelManager {
     /// <param name="textureId">貼り付けるテクスチャID</param>
     /// <param name="material">使用するマテリアル</param>
     /// <returns>生成されたモデルID</returns>
+    /// <summary>
+    /// Planeを生成する
+    /// </summary>
     uint32_t CreatePlane(uint32_t textureId, const Material &material);
+
+    /// <summary>
+    /// Y軸方向に伸びる直方体Primitiveを生成する
+    /// </summary>
+    uint32_t CreateBox(uint32_t textureId, const Material &material,
+                       float width = 1.0f, float height = 1.0f,
+                       float depth = 1.0f);
+
+    /// <summary>
+    /// 球体Primitiveを生成する
+    /// </summary>
+    uint32_t CreateSphere(uint32_t textureId, const Material &material,
+                          uint32_t slice = 24, uint32_t stack = 12,
+                          float radius = 1.0f);
 
     /// <summary>
     /// XY平面のリング形状を生成する
@@ -79,6 +104,15 @@ class ModelManager {
     uint32_t CreateCylinder(uint32_t textureId, const Material &material,
                             uint32_t divide = 32, float topRadius = 1.0f,
                             float bottomRadius = 1.0f, float height = 3.0f);
+
+    /// <summary>
+    /// 三角面を強調した低ポリ地形Primitiveを生成する
+    /// </summary>
+    uint32_t CreateLowPolyTerrain(uint32_t textureId, const Material &material,
+                                  uint32_t grid = 36, float size = 72.0f,
+                                  float maxHeight = 6.0f,
+                                  float flatRadius = 13.0f,
+                                  uint32_t seed = 0x5A17u);
 
     /// <summary>
     /// 頂点配列とインデックス配列から汎用メッシュを作成する
@@ -186,6 +220,12 @@ class ModelManager {
                              const DirectX::XMFLOAT4X4 &lightViewProjection);
 
     /// <summary>
+    /// モデルIDから描画前のGPUスキニングだけを実行する
+    /// </summary>
+    void PrepareSkinning(uint32_t modelId);
+    void PrepareSkinning(std::initializer_list<uint32_t> modelIds);
+
+    /// <summary>
     /// 毎フレーム変わる描画用Upload領域をリセットする
     /// </summary>
     void BeginFrame() { modelRenderer_.BeginFrame(); }
@@ -213,6 +253,18 @@ class ModelManager {
     }
 
     /// <summary>
+    /// 現在フレームの描画エフェクトを設定する
+    /// </summary>
+    void SetDrawEffect(const ModelDrawEffect &effect) {
+        modelRenderer_.SetDrawEffect(effect);
+    }
+
+    /// <summary>
+    /// 描画エフェクトを初期状態へ戻す
+    /// </summary>
+    void ClearDrawEffect() { modelRenderer_.ClearDrawEffect(); }
+
+    /// <summary>
     /// シーンフォグを設定する
     /// </summary>
     void SetSceneFog(const SceneFog &fog) { modelRenderer_.SetSceneFog(fog); }
@@ -234,6 +286,7 @@ class ModelManager {
 
   private:
     DirectXCommon *dxCommon_ = nullptr;
+    SrvManager *srvManager_ = nullptr;
     TextureManager *textureManager_ = nullptr;
 
     MeshManager meshManager_;

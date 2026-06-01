@@ -94,7 +94,8 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\Culling.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\DynamicBuffer.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PipelineManager.cpp" />
-    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PostEffectRenderer.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PostEffectManager.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PostProcessSystem.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\RenderPassController.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\RenderTexture.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\ShadowMapRenderer.cpp" />
@@ -108,8 +109,6 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\AssimpMeshLoader.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\collision\CollisionManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\collision\CollisionUtil.cpp" />
-    <ClCompile Include="$(MSBuildThisFileDirectory)src\debug\DebugLog.cpp" />
-    <ClCompile Include="$(MSBuildThisFileDirectory)src\effect\EffectManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleSystem.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\SceneManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\input\Input.cpp" />
@@ -144,87 +143,14 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\texture\TextureManagerAsync.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\texture\TextureManagerDynamic.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\animation\SkeletonPoseBuilder.cpp" />
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\imgui\imgui.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\imgui\imgui_draw.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\imgui\imgui_impl_dx12.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\imgui\imgui_impl_win32.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\imgui\imgui_tables.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\imgui\imgui_widgets.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexDDS.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexImage.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexUtil.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexWIC.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\BC.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\BC4BC5.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\BC6HBC7.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexCompress.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexConvert.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexD3D11.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexD3D12.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexFlipRotate.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexHDR.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexMipmaps.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexMisc.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexNormalMaps.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexPMAlpha.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexResize.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTexTGA.cpp">
-      <TreatWarningAsError>false</TreatWarningAsError>
-    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTex_Desktop_2022.vcxproj">
+      <Project>{371b9fa9-4c90-4ac6-a123-aced756d6c77}</Project>
+    </ProjectReference>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)externals\imgui\imgui.vcxproj" Condition="'$(Configuration)'=='Debug'">
+      <Project>{f6ba9c36-46d4-4c55-9c90-d016c833a837}</Project>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)public\Engine.h" />
@@ -238,8 +164,6 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\collision\CollisionManager.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\collision\CollisionUtil.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\collision\OBB.h" />
-    <ClInclude Include="$(MSBuildThisFileDirectory)include\effect\EffectAsset.h" />
-    <ClInclude Include="$(MSBuildThisFileDirectory)include\effect\EffectManager.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\particle\GPUParticleSystem.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\particle\ParticleEmitterSettings.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\Transform.h" />
@@ -254,8 +178,9 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\DynamicBuffer.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\Lighting.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\PipelineManager.h" />
-    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\PostEffectRenderer.h" />
-    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\PostEffectSettings.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\PostEffectManager.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\PostProcessSystem.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\PostProcessSettings.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\RenderContext.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\RenderPass.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\RenderPassController.h" />
@@ -266,9 +191,9 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\AssetManager.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\EngineRuntime.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\FrameTimer.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\core\MathUtils.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\ResourceHandle.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\WinApp.h" />
-    <ClInclude Include="$(MSBuildThisFileDirectory)include\debug\DebugLog.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\Model.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MeshGeometry.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\Vertex.h" />
@@ -286,6 +211,7 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MeshPipelineFactory.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MeshRenderer.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\ModelRenderer.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\model\ModelDrawEffect.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MeshManager.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\ModelManager.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\sound\AudioFileLoader.h" />
@@ -378,13 +304,19 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
-    <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\posteffect\PostEffectPS.hlsl">
+    <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\PostProcessPS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
-    <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\posteffect\PostEffectVS.hlsl">
+    <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\CopyPS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\PostProcessVS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
@@ -426,7 +358,7 @@
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="$(MSBuildThisFileDirectory)resources\shaders\posteffect\BloomEffect.hlsli">
+    <None Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\BloomPS.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
@@ -442,27 +374,35 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
-    <None Include="$(MSBuildThisFileDirectory)resources\shaders\posteffect\ColorEffect.hlsli">
+    <None Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\BlurPS.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
-    <None Include="$(MSBuildThisFileDirectory)resources\shaders\posteffect\EdgeEffect.hlsli">
+    <None Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\ColorGradingPS.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
-    <None Include="$(MSBuildThisFileDirectory)resources\shaders\posteffect\FilterEffect.hlsli">
+    <None Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\EdgePS.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
-    <None Include="$(MSBuildThisFileDirectory)resources\shaders\posteffect\NoiseEffect.hlsli">
+    <None Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\LensFlarePS.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
-    <None Include="$(MSBuildThisFileDirectory)resources\shaders\posteffect\PostEffect.hlsli">
+    <None Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\NoisePS.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
-    <None Include="$(MSBuildThisFileDirectory)resources\shaders\posteffect\TonemapEffect.hlsli">
+    <None Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\PostProcessCommon.hlsli">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
+    <None Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\ToonPS.hlsli">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
+    <None Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\VignettePS.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>

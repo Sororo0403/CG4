@@ -1,19 +1,18 @@
 #include "graphics/PipelineManager.h"
 #include "graphics/DirectXCommon.h"
-#include "graphics/DxUtils.h"
 #include "graphics/ShaderCompiler.h"
-#include <stdexcept>
-
-using namespace DxUtils;
+#include <cstdint>
 
 void PipelineManager::Initialize(DirectXCommon *dxCommon) {
     if (!dxCommon) {
-        throw std::runtime_error("PipelineManager::Initialize null dxCommon");
+        dxCommon_ = nullptr;
+        Clear();
+        return;
     }
     dxCommon_ = dxCommon;
 }
 
-ID3DBlob *PipelineManager::CompileShader(const std::wstring &path,
+IDxcBlob *PipelineManager::CompileShader(const std::wstring &path,
                                          const std::string &entry,
                                          const std::string &target) {
     const std::string key = MakeShaderKey(path, entry, target);
@@ -23,21 +22,26 @@ ID3DBlob *PipelineManager::CompileShader(const std::wstring &path,
     }
 
     auto shader = ShaderCompiler::Compile(path, entry, target);
-    ID3DBlob *result = shader.Get();
+    if (!shader) {
+        return nullptr;
+    }
+    IDxcBlob *result = shader.Get();
     shaderCache_.emplace(key, std::move(shader));
     return result;
 }
 
 ID3D12PipelineState *PipelineManager::CreateGraphicsPipeline(
     const std::string &name, const D3D12_GRAPHICS_PIPELINE_STATE_DESC &desc) {
-    if (!dxCommon_) {
-        throw std::runtime_error("PipelineManager is not initialized");
+    if (!dxCommon_ || !dxCommon_->GetDevice()) {
+        return nullptr;
     }
 
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline;
-    ThrowIfFailed(dxCommon_->GetDevice()->CreateGraphicsPipelineState(
-                      &desc, IID_PPV_ARGS(&pipeline)),
-                  "Create managed graphics pipeline failed");
+    if (FAILED(dxCommon_->GetDevice()->CreateGraphicsPipelineState(
+            &desc, IID_PPV_ARGS(&pipeline))) ||
+        !pipeline) {
+        return nullptr;
+    }
 
     ID3D12PipelineState *result = pipeline.Get();
     graphicsPipelines_[name] = std::move(pipeline);
@@ -58,10 +62,11 @@ void PipelineManager::Clear() {
 std::string PipelineManager::MakeShaderKey(const std::wstring &path,
                                            const std::string &entry,
                                            const std::string &target) {
-    std::string narrowPath;
-    narrowPath.reserve(path.size());
+    std::string pathKey;
+    pathKey.reserve(path.size() * 6u);
     for (wchar_t ch : path) {
-        narrowPath.push_back(static_cast<char>(ch & 0xff));
+        pathKey += std::to_string(static_cast<uint32_t>(ch));
+        pathKey.push_back(',');
     }
-    return narrowPath + "|" + entry + "|" + target;
+    return pathKey + "|" + entry + "|" + target;
 }

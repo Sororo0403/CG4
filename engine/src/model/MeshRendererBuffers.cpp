@@ -2,7 +2,6 @@
 
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
-#include "graphics/DxUtils.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
@@ -11,9 +10,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
+#include <vector>
 
 using namespace DirectX;
-using namespace DxUtils;
 using Microsoft::WRL::ComPtr;
 
 namespace {
@@ -28,6 +28,12 @@ struct SceneConstBufferData {
     struct PointLightData {
         XMFLOAT4 positionRange;
         XMFLOAT4 colorIntensity;
+    };
+    struct SpotLightData {
+        XMFLOAT4 positionRange;
+        XMFLOAT4 direction;
+        XMFLOAT4 colorIntensity;
+        XMFLOAT4 angleParams;
     };
 
     XMFLOAT4 cameraPos;
@@ -46,26 +52,53 @@ struct SceneConstBufferData {
     XMFLOAT4 shadowFilterParams;
     XMFLOAT4 customSceneParams0;
     XMFLOAT4 customSceneParams1;
+    SpotLightData spotLight;
 };
 
+XMVECTOR LoadNormalizedQuaternionOrIdentity(const XMFLOAT4 &rotation) {
+    if (!std::isfinite(rotation.x) || !std::isfinite(rotation.y) ||
+        !std::isfinite(rotation.z) || !std::isfinite(rotation.w)) {
+        return XMQuaternionIdentity();
+    }
+    XMVECTOR q = XMLoadFloat4(&rotation);
+    const float lengthSq = XMVectorGetX(XMVector4LengthSq(q));
+    if (!std::isfinite(lengthSq) || lengthSq <= 0.000001f) {
+        return XMQuaternionIdentity();
+    }
+    return XMQuaternionNormalize(q);
+}
+
 XMMATRIX MakeWorldMatrix(const Transform &transform) {
-    XMVECTOR q = XMQuaternionNormalize(XMLoadFloat4(&transform.rotation));
-    return XMMatrixScaling(transform.scale.x, transform.scale.y,
-                           transform.scale.z) *
+    const Transform safeTransform = SanitizeTransformForDraw(transform);
+    XMVECTOR q = LoadNormalizedQuaternionOrIdentity(safeTransform.rotation);
+    return XMMatrixScaling(safeTransform.scale.x, safeTransform.scale.y,
+                           safeTransform.scale.z) *
            XMMatrixRotationQuaternion(q) *
-           XMMatrixTranslation(transform.position.x, transform.position.y,
-                               transform.position.z);
+           XMMatrixTranslation(safeTransform.position.x,
+                               safeTransform.position.y,
+                               safeTransform.position.z);
 }
 
 XMMATRIX MakeWorldInverseTranspose(const XMMATRIX &world) {
-    XMVECTOR determinant{};
-    XMMATRIX inverse = XMMatrixInverse(&determinant, world);
+    const XMVECTOR determinant = XMMatrixDeterminant(world);
     const float determinantValue = XMVectorGetX(determinant);
     if (!std::isfinite(determinantValue) ||
         std::abs(determinantValue) <= 0.000001f) {
         return XMMatrixIdentity();
     }
-    return XMMatrixTranspose(inverse);
+    return XMMatrixTranspose(XMMatrixInverse(nullptr, world));
+}
+
+bool CanStageInstanceData(size_t bytesPerFrame, uint32_t instanceCount) {
+    if (bytesPerFrame == 0 || instanceCount == 0) {
+        return false;
+    }
+    if (instanceCount >
+        (std::numeric_limits<size_t>::max)() / sizeof(InstanceData)) {
+        return false;
+    }
+    return sizeof(InstanceData) * static_cast<size_t>(instanceCount) <=
+           bytesPerFrame;
 }
 
 bool IsTransparentMaterial(const Material &material) {
@@ -131,6 +164,10 @@ uint32_t ResolveNormalTextureId(TextureManager *textureManager,
 } // namespace
 
 void MeshRenderer::CreateUploadBuffer() {
+    if (!dxCommon_ || !dxCommon_->GetDevice()) {
+        uploadBuffer_.Reset();
+        return;
+    }
     uploadBuffer_.Initialize(dxCommon_->GetDevice(), kUploadBytesPerFrame, 2);
 }
 
@@ -180,6 +217,10 @@ MeshRenderer::WriteSceneConstants(const Camera &camera) {
     sceneDst->shadowFilterParams = shadowFilterParams_;
     sceneDst->customSceneParams0 = customSceneParams0_;
     sceneDst->customSceneParams1 = customSceneParams1_;
+    sceneDst->spotLight.positionRange = currentLighting_.spotLight.positionRange;
+    sceneDst->spotLight.direction = currentLighting_.spotLight.direction;
+    sceneDst->spotLight.colorIntensity = currentLighting_.spotLight.colorIntensity;
+    sceneDst->spotLight.angleParams = currentLighting_.spotLight.angleParams;
     return uploadBuffer_.Write(data).gpu;
 }
 
@@ -202,8 +243,19 @@ MeshRenderer::WriteMaterialConstants(const Material &material) {
 D3D12_VERTEX_BUFFER_VIEW
 MeshRenderer::WriteInstances(const InstanceData *instances,
                              uint32_t instanceCount) {
+    if (!CanStageInstanceData(uploadBuffer_.GetBytesPerFrame(),
+                              instanceCount)) {
+        return {};
+    }
+
+    std::vector<InstanceData> safeInstances(instanceCount);
+    for (uint32_t index = 0; index < instanceCount; ++index) {
+        safeInstances[index] = SanitizeInstanceDataForDraw(instances[index]);
+    }
+
     const UploadAllocation allocation =
-        uploadBuffer_.WriteArray(instances, instanceCount, alignof(InstanceData));
+        uploadBuffer_.WriteArray(safeInstances.data(), safeInstances.size(),
+                                 alignof(InstanceData));
     D3D12_VERTEX_BUFFER_VIEW view{};
     view.BufferLocation = allocation.gpu;
     view.SizeInBytes = static_cast<UINT>(allocation.size);

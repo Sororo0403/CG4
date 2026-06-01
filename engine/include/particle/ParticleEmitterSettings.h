@@ -13,6 +13,7 @@ enum class ParticleSpawnShape : uint32_t {
     Box = 2,
     Ring = 3,
     Disk = 4,
+    Arc = 5,
 };
 
 struct ParticleEmitterSettings {
@@ -25,9 +26,13 @@ struct ParticleEmitterSettings {
     float emitRate = 0.0f;
     uint32_t burstCount = 32;
     DirectX::XMFLOAT3 spawnOffsetScale{0.1f, 0.1f, 0.1f};
+    DirectX::XMFLOAT4 spawnShapeParams{0.0f, 0.0f, 0.0f, 0.0f};
 
     DirectX::XMFLOAT4 tintColor{1.0f, 1.0f, 1.0f, 1.0f};
     DirectX::XMFLOAT3 direction{0.0f, 1.0f, 0.0f};
+    DirectX::XMFLOAT3 basisRight{1.0f, 0.0f, 0.0f};
+    DirectX::XMFLOAT3 basisUp{0.0f, 1.0f, 0.0f};
+    DirectX::XMFLOAT3 basisForward{0.0f, 0.0f, 1.0f};
     float radialVelocity = 1.0f;
     float directionalVelocity = 0.0f;
     DirectX::XMFLOAT3 velocityBias{0.0f, 0.0f, 0.0f};

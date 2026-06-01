@@ -1,10 +1,8 @@
 #include "model/MeshPipelineFactory.h"
 
 #include "graphics/DxHelpers.h"
-#include "graphics/DxUtils.h"
 #include "graphics/ShaderCompiler.h"
 
-using namespace DxUtils;
 using Microsoft::WRL::ComPtr;
 
 namespace {
@@ -89,8 +87,14 @@ MeshPipelineSet MeshPipelineFactory::CreatePipelineSet(
     const MeshPipelineDesc &desc, D3D12_INPUT_LAYOUT_DESC inputLayout,
     DXGI_FORMAT renderTargetFormat, DXGI_FORMAT depthStencilFormat) {
     MeshPipelineSet pipelineSet{};
-    auto vs = ShaderCompiler::Compile(desc.vertexShader, "main", "vs_5_0");
-    auto ps = ShaderCompiler::Compile(desc.pixelShader, "main", "ps_5_0");
+    if (device == nullptr || rootSignature == nullptr) {
+        return pipelineSet;
+    }
+    auto vs = ShaderCompiler::Compile(desc.vertexShader, "main", "vs_6_6");
+    auto ps = ShaderCompiler::Compile(desc.pixelShader, "main", "ps_6_6");
+    if (!vs || !ps) {
+        return pipelineSet;
+    }
 
     auto makePso = [&](MeshBlendMode blendMode, MeshDepthMode depthMode,
                        D3D12_CULL_MODE cullMode,
@@ -111,9 +115,10 @@ MeshPipelineSet MeshPipelineFactory::CreatePipelineSet(
         pso.BlendState = MakeMeshBlendState(blendMode);
         pso.DepthStencilState = MakeMeshDepthState(depthMode);
 
-        ThrowIfFailed(device->CreateGraphicsPipelineState(
-                          &pso, IID_PPV_ARGS(&psoOut)),
-                      "CreateGraphicsPipelineState(MeshPipelineFactory) failed");
+        if (FAILED(device->CreateGraphicsPipelineState(
+                &pso, IID_PPV_ARGS(&psoOut)))) {
+            psoOut.Reset();
+        }
     };
 
     if (desc.variantMode == MeshPipelineVariantMode::Fixed) {

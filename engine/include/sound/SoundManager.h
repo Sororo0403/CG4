@@ -37,6 +37,10 @@ class SoundManager {
     /// Media Foundation、COM、XAudio2エンジンとマスターボイスを初期化する
     /// </summary>
     void Initialize();
+    bool IsInitialized() const { return xAudio2_ != nullptr && masterVoice_ != nullptr; }
+    const std::string &GetLastInitializeError() const {
+        return lastInitializeError_;
+    }
 
     /// <summary>
     /// 音声ファイルを読み込み、再利用できる音声IDとして登録する
@@ -70,7 +74,16 @@ class SoundManager {
     /// <param name="volume">この再生だけに適用する音量</param>
     /// <param name="loop">末尾まで到達したら先頭へ戻すか</param>
     /// <returns>再生中のボイスを操作するためのハンドル</returns>
+    /// <summary>
+    /// Playを実行する
+    /// </summary>
     uint32_t Play(uint32_t soundId, float volume = 1.0f, bool loop = false);
+
+    /// <summary>
+    /// 登録済み音声IDのデコード済みデータを指定秒から再生する
+    /// </summary>
+    uint32_t PlayFrom(uint32_t soundId, float startSeconds,
+                      float volume = 1.0f, bool loop = false);
 
     /// <summary>
     /// 3D位置をもつ音声として再生する
@@ -91,6 +104,16 @@ class SoundManager {
     void Stop(uint32_t voiceHandle);
 
     /// <summary>
+    /// 指定した再生中ボイスを一時停止する
+    /// </summary>
+    void Pause(uint32_t voiceHandle);
+
+    /// <summary>
+    /// 一時停止したボイスを再開する
+    /// </summary>
+    void Resume(uint32_t voiceHandle);
+
+    /// <summary>
     /// 指定した再生中ボイスの音量を設定する
     /// </summary>
     void SetVoiceVolume(uint32_t voiceHandle, float volume);
@@ -104,6 +127,16 @@ class SoundManager {
     /// 指定した再生中ボイスの再生位置を秒単位で取得する
     /// </summary>
     float GetPlaybackPosition(uint32_t voiceHandle) const;
+
+    /// <summary>
+    /// 指定した再生中ボイスの周波数比率（ピッチ）を設定する
+    /// </summary>
+    void SetVoiceFrequencyRatio(uint32_t voiceHandle, float frequencyRatio);
+
+    /// <summary>
+    /// 指定した再生中ボイスの周波数比率（ピッチ）を取得する
+    /// </summary>
+    float GetVoiceFrequencyRatio(uint32_t voiceHandle) const;
 
     /// <summary>
     /// 3Dサウンドのリスナー位置と向きを設定する
@@ -150,6 +183,18 @@ class SoundManager {
     const SoundInfo *GetInfo(uint32_t soundId) const;
 
     /// <summary>
+    /// 指定秒付近のPCM振幅を0..1で取得する
+    /// </summary>
+    float GetAmplitudeAt(uint32_t soundId, float playbackSeconds,
+                         float windowSeconds = 0.045f) const;
+
+    /// <summary>
+    /// 指定秒付近のPCMから簡易スペクトラムを0..1で取得する
+    /// </summary>
+    void FillSpectrumBands(uint32_t soundId, float playbackSeconds,
+                           float *outBands, size_t bandCount) const;
+
+    /// <summary>
     /// マスター音量を設定する
     /// </summary>
     void SetMasterVolume(float volume);
@@ -166,6 +211,7 @@ class SoundManager {
         uint32_t handle = kInvalidVoiceHandle;
         uint32_t soundId = 0;
         float volume = 1.0f;
+        float frequencyRatio = XAUDIO2_DEFAULT_FREQ_RATIO;
         bool loop = false;
         bool is3D = false;
         bool isStreaming = false;
@@ -178,9 +224,13 @@ class SoundManager {
         float maxDistance = 30.0f;
     };
 
-    uint32_t CreateSourceVoice(uint32_t soundId, float volume, bool loop);
+    uint32_t CreateSourceVoice(uint32_t soundId, float volume, bool loop,
+                               float startSeconds = 0.0f);
     uint32_t CreateStreamingVoice(const std::wstring &path, float volume,
                                   bool loop);
+    /// <summary>
+    /// SubmitNextStreamBufferを実行する
+    /// </summary>
     bool SubmitNextStreamBuffer(PlayingVoice &playingVoice);
     void ReleaseFinishedStreamBuffers(PlayingVoice &playingVoice);
     void Apply3D(PlayingVoice &playingVoice);
@@ -189,6 +239,9 @@ class SoundManager {
                                uint16_t channels = 1,
                                uint16_t bitsPerSample = 16,
                                float durationSeconds = 0.05f);
+    /// <summary>
+    /// DestroyVoiceを実行する
+    /// </summary>
     void DestroyVoice(PlayingVoice &playingVoice);
     bool IsVoiceActive(const PlayingVoice &playingVoice) const;
 
@@ -198,6 +251,7 @@ class SoundManager {
     float masterVolume_ = 1.0f;
     bool comInitialized_ = false;
     bool mediaFoundationStarted_ = false;
+    std::string lastInitializeError_;
 
     /// <summary>
     /// 読み込み済み音声1件分のデータ
@@ -205,6 +259,9 @@ class SoundManager {
     struct SoundResource {
         AudioFileLoader::SoundData data;
     };
+
+    uint32_t AppendSoundResource(SoundResource resource);
+    uint32_t AllocateVoiceHandle();
 
     std::vector<SoundResource> sounds_;
     std::vector<PlayingVoice> playingVoices_;

@@ -38,6 +38,9 @@ class EngineRuntime {
 
     void Initialize(HINSTANCE instance, int showCommand,
                     const EngineRuntimeConfig &config);
+    /// <summary>
+    /// 状態を更新する
+    /// </summary>
     void UpdateFrameContext();
     void ResizeIfNeeded();
     void RenderFrame();

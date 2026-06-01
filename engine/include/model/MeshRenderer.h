@@ -29,6 +29,9 @@ class MeshRenderer {
     void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
                     TextureManager *textureManager);
 
+    /// <summary>
+    /// Frameを開始する
+    /// </summary>
     void BeginFrame();
     void PreDraw();
     void PostDraw();
@@ -37,6 +40,9 @@ class MeshRenderer {
                   const Transform &transform, const Camera &camera,
                   uint32_t textureId = 0,
                   uint32_t normalTextureId = UINT32_MAX);
+    /// <summary>
+    /// Pipelineを生成する
+    /// </summary>
     uint32_t CreatePipeline(const MeshPipelineDesc &desc);
     uint32_t CreatePipeline(const std::wstring &vertexShaderPath,
                             const std::wstring &pixelShaderPath);
@@ -70,6 +76,9 @@ class MeshRenderer {
         const Camera &camera, uint32_t textureId = 0,
         uint32_t normalTextureId = UINT32_MAX);
 
+    /// <summary>
+    /// PreDrawShadowを実行する
+    /// </summary>
     void PreDrawShadow();
 
     void DrawMeshShadow(const Mesh &mesh, const Transform &transform,
@@ -106,27 +115,45 @@ class MeshRenderer {
     static constexpr size_t kUploadBytesPerFrame = 16 * 1024 * 1024;
     static constexpr size_t kPipelineVariantCount = kMeshPipelineVariantCount;
 
+    /// <summary>
+    /// RootSignatureを生成する
+    /// </summary>
     void CreateRootSignature();
     void CreatePipelineStates();
     void CreateShadowRootSignature();
+    /// <summary>
+    /// ShadowPipelineStatesを生成する
+    /// </summary>
     void CreateShadowPipelineStates();
     void CreateUploadBuffer();
     D3D12_GPU_VIRTUAL_ADDRESS WriteObjectConstants(
         const DirectX::XMMATRIX &wvp, const DirectX::XMMATRIX &world,
         const DirectX::XMMATRIX &worldInverseTranspose);
+    /// <summary>
+    /// データを書き込む
+    /// </summary>
     D3D12_GPU_VIRTUAL_ADDRESS WriteSceneConstants(const Camera &camera);
     D3D12_GPU_VIRTUAL_ADDRESS WriteShadowSceneConstants(
         const DirectX::XMFLOAT4X4 &lightViewProjection);
+    /// <summary>
+    /// データを書き込む
+    /// </summary>
     D3D12_GPU_VIRTUAL_ADDRESS WriteMaterialConstants(const Material &material);
     D3D12_VERTEX_BUFFER_VIEW WriteInstances(const InstanceData *instances,
                                             uint32_t instanceCount);
-    void SetPipelineForMaterial(const Material &material);
-    void SetPipelineForMaterial(
+    /// <summary>
+    /// PipelineForMaterialを設定する
+    /// </summary>
+    bool SetPipelineForMaterial(const Material &material);
+    bool SetPipelineForMaterial(
         const std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
                          kPipelineVariantCount> &pipelineStates,
         const Material &material);
-    void SetInstancedPipelineForMaterial(const Material &material);
-    void SetInstancedPipelineForMaterial(
+    /// <summary>
+    /// InstancedPipelineForMaterialを設定する
+    /// </summary>
+    bool SetInstancedPipelineForMaterial(const Material &material);
+    bool SetInstancedPipelineForMaterial(
         const std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
                          kPipelineVariantCount> &pipelineStates,
         const Material &material);

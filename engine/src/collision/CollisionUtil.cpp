@@ -20,10 +20,22 @@ float Dot(DirectX::FXMVECTOR a, DirectX::FXMVECTOR b) {
     return DirectX::XMVectorGetX(DirectX::XMVector3Dot(a, b));
 }
 
+float FiniteOr(float value, float fallback) {
+    return std::isfinite(value) ? value : fallback;
+}
+
+float FiniteHalfExtent(float value) {
+    return std::isfinite(value) ? std::fabs(value) * 0.5f : 0.0f;
+}
+
 DirectX::XMVECTOR NormalizeQuaternion(const DirectX::XMFLOAT4 &rotation) {
+    if (!std::isfinite(rotation.x) || !std::isfinite(rotation.y) ||
+        !std::isfinite(rotation.z) || !std::isfinite(rotation.w)) {
+        return DirectX::XMQuaternionIdentity();
+    }
     DirectX::XMVECTOR q = DirectX::XMLoadFloat4(&rotation);
     const float lengthSq = DirectX::XMVectorGetX(DirectX::XMVector4LengthSq(q));
-    if (lengthSq <= kEpsilon) {
+    if (!std::isfinite(lengthSq) || lengthSq <= kEpsilon) {
         return DirectX::XMQuaternionIdentity();
     }
 
@@ -40,9 +52,9 @@ OBBBasis BuildBasis(const OBB &box) {
         DirectX::XMVector3Rotate(DirectX::XMVectorSet(0, 1, 0, 0), rotation);
     basis.axes[2] =
         DirectX::XMVector3Rotate(DirectX::XMVectorSet(0, 0, 1, 0), rotation);
-    basis.extent[0] = std::max(0.0f, box.size.x * 0.5f);
-    basis.extent[1] = std::max(0.0f, box.size.y * 0.5f);
-    basis.extent[2] = std::max(0.0f, box.size.z * 0.5f);
+    basis.extent[0] = FiniteHalfExtent(box.size.x);
+    basis.extent[1] = FiniteHalfExtent(box.size.y);
+    basis.extent[2] = FiniteHalfExtent(box.size.z);
     return basis;
 }
 
@@ -59,7 +71,7 @@ bool TestAxis(const OBBBasis &aBasis, const OBBBasis &bBasis,
               float &minPenetration, DirectX::XMVECTOR &bestNormal) {
     const float axisLengthSq =
         DirectX::XMVectorGetX(DirectX::XMVector3LengthSq(axis));
-    if (axisLengthSq <= kEpsilon) {
+    if (!std::isfinite(axisLengthSq) || axisLengthSq <= kEpsilon) {
         return true;
     }
 
@@ -89,8 +101,12 @@ CollisionUtil::CollisionResult CollisionUtil::TestOBB(const OBB &a,
                                                       const OBB &b) {
     const OBBBasis aBasis = BuildBasis(a);
     const OBBBasis bBasis = BuildBasis(b);
-    const DirectX::XMVECTOR aCenter = DirectX::XMLoadFloat3(&a.center);
-    const DirectX::XMVECTOR bCenter = DirectX::XMLoadFloat3(&b.center);
+    const DirectX::XMVECTOR aCenter = DirectX::XMVectorSet(
+        FiniteOr(a.center.x, 0.0f), FiniteOr(a.center.y, 0.0f),
+        FiniteOr(a.center.z, 0.0f), 0.0f);
+    const DirectX::XMVECTOR bCenter = DirectX::XMVectorSet(
+        FiniteOr(b.center.x, 0.0f), FiniteOr(b.center.y, 0.0f),
+        FiniteOr(b.center.z, 0.0f), 0.0f);
     const DirectX::XMVECTOR centerDelta =
         DirectX::XMVectorSubtract(bCenter, aCenter);
     DirectX::XMVECTOR bestNormal = aBasis.axes[0];

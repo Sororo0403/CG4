@@ -2,6 +2,7 @@
 #include "model/Material.h"
 #include <cstdint>
 #include <d3d12.h>
+#include <utility>
 #include <vector>
 #include <wrl.h>
 
@@ -12,11 +13,18 @@ class DirectXCommon;
 /// </summary>
 class MaterialManager {
   public:
+    ~MaterialManager();
+
     /// <summary>
     /// マテリアル用GPUリソースを生成できるようDirectX参照を設定する
     /// </summary>
     /// <param name="dxCommon">DirectXCommonインスタンス</param>
     void Initialize(DirectXCommon *dxCommon);
+
+    /// <summary>
+    /// マテリアル定数バッファを明示的に解放する
+    /// </summary>
+    void Finalize();
 
     /// <summary>
     /// マテリアルを作成してIDを返す
@@ -46,11 +54,44 @@ class MaterialManager {
     /// <returns>マテリアル情報</returns>
     const Material &GetMaterial(uint32_t materialId) const;
 
+    /// <summary>
+    /// 指定IDが有効なマテリアルを指しているかを取得する
+    /// </summary>
+    bool IsValidMaterialId(uint32_t materialId) const;
+
   private:
     /// <summary>
     /// マテリアル1件分のGPUリソースを保持する
     /// </summary>
     struct MaterialResource {
+        MaterialResource() = default;
+        ~MaterialResource() { Reset(); }
+        MaterialResource(const MaterialResource &) = delete;
+        MaterialResource &operator=(const MaterialResource &) = delete;
+        MaterialResource(MaterialResource &&other) noexcept
+            : material(other.material), resource(std::move(other.resource)),
+              mappedData(other.mappedData) {
+            other.mappedData = nullptr;
+        }
+        MaterialResource &operator=(MaterialResource &&other) noexcept {
+            if (this != &other) {
+                Reset();
+                material = other.material;
+                resource = std::move(other.resource);
+                mappedData = other.mappedData;
+                other.mappedData = nullptr;
+            }
+            return *this;
+        }
+
+        void Reset() {
+            if (resource && mappedData != nullptr) {
+                resource->Unmap(0, nullptr);
+                mappedData = nullptr;
+            }
+            resource.Reset();
+        }
+
         Material material{};
         Microsoft::WRL::ComPtr<ID3D12Resource> resource;
         uint8_t *mappedData = nullptr;

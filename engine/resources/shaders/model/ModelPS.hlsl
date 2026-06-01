@@ -5,6 +5,7 @@ Texture2D tex0 : register(t0);
 TextureCube<float4> gEnvironmentTexture : register(t2);
 Texture2D<float> gShadowMap : register(t3);
 Texture2D normalMap : register(t4);
+Texture2D<float4> gDissolveNoiseTexture : register(t5);
 SamplerState samp0 : register(s0);
 
 cbuffer ObjectTransform : register(b0)
@@ -31,6 +32,7 @@ cbuffer SceneParams : register(b1)
     float4x4 lightViewProjection;
     float4 shadowParams;
     float4 shadowFilterParams;
+    SpotLight spotLight;
 };
 
 cbuffer Material : register(b2)
@@ -49,6 +51,17 @@ cbuffer Material : register(b2)
     float metallic;
     float normalStrength;
     int enableNormalMap;
+    float4 customParams;
+    float4 customParams2;
+    float4 customParams3;
+};
+
+cbuffer DrawEffect : register(b3)
+{
+    float4 drawEffectColor;
+    float4 drawEffectParams0;
+    float4 drawEffectParams1;
+    float4 drawEffectParams2;
 };
 
 float3 ApplyNormalMap(float3 vertexNormal, float4 vertexTangent, float2 uv)
@@ -82,13 +95,50 @@ float4 main(ModelVSOutput input) : SV_TARGET
     float4 texColor = float4(1, 1, 1, 1);
     if (enableTexture != 0)
     {
-        texColor = tex0.Sample(samp0, uv);
+        if (customParams2.x > 0.5f)
+        {
+            float rustScale = max(customParams2.y, 0.001f);
+            float3 p = input.bindPos * rustScale;
+            float3 n = abs(normalize(input.worldNormal));
+            n = pow(n, 4.0f);
+            n /= max(n.x + n.y + n.z, 0.0001f);
+
+            float4 sampleX = tex0.Sample(samp0, p.zy);
+            float4 sampleY = tex0.Sample(samp0, p.xz);
+            float4 sampleZ = tex0.Sample(samp0, p.xy);
+            texColor = sampleX * n.x + sampleY * n.y + sampleZ * n.z;
+        }
+        else
+        {
+            texColor = tex0.Sample(samp0, uv);
+        }
     }
 
     float4 finalColor = texColor * color * input.color;
     if (blendMode == 1 && finalColor.a < alphaCutoff)
     {
         discard;
+    }
+    if (drawEffectParams1.w > 0.5f)
+    {
+        finalColor.a = 1.0f;
+    }
+    float alphaMultiplier = saturate(drawEffectParams2.y);
+
+    float dissolveEdgeRate = 0.0f;
+    if (customParams.x > 0.5f)
+    {
+        float dissolveNoise = gDissolveNoiseTexture.Sample(samp0, uv).r;
+        float dripNoise =
+            gDissolveNoiseTexture.Sample(samp0, uv * float2(0.65f, 3.2f)).r;
+        float verticalMelt =
+            saturate(1.0f - uv.y + (dripNoise - 0.5f) * 0.42f);
+        dissolveNoise = saturate(dissolveNoise * 0.72f + verticalMelt * 0.28f);
+        float dissolveAmount = dissolveNoise - saturate(customParams.y);
+        clip(dissolveAmount);
+
+        float edgeWidth = max(customParams.z, 0.0001f);
+        dissolveEdgeRate = 1.0f - smoothstep(0.0f, edgeWidth, dissolveAmount);
     }
 
     float3 normal = ApplyNormalMap(input.worldNormal, input.worldTangent, uv);
@@ -139,11 +189,39 @@ float4 main(ModelVSOutput input) : SV_TARGET
                       point1Attenuation * pointLights[1].colorIntensity.w;
     }
 
+    float3 spotAccum = float3(0.0f, 0.0f, 0.0f);
+    if (spotLight.angleParams.w > 0.5f)
+    {
+        float3 spotVector = spotLight.positionRange.xyz - input.worldPos;
+        float spotDistance = length(spotVector);
+        if (spotDistance > 0.0001f)
+        {
+            float3 toLightDir = spotVector / spotDistance;
+            float3 fromLightDir = -toLightDir;
+            float coneCos = dot(fromLightDir, normalize(spotLight.direction.xyz));
+            float cone = saturate((coneCos - spotLight.angleParams.y) /
+                                  max(spotLight.angleParams.x - spotLight.angleParams.y, 0.0001f));
+            cone = pow(cone, max(spotLight.angleParams.z, 0.0001f));
+            float rangeAttenuation =
+                saturate(1.0f - spotDistance / max(spotLight.positionRange.w, 0.001f));
+            rangeAttenuation *= rangeAttenuation;
+            float spotDiffuse =
+                saturate((dot(normal, toLightDir) + 0.32f) / 1.32f);
+            float spotSpecular =
+                pow(saturate(dot(normal, normalize(toLightDir + viewDir))),
+                    specularPower) * specularStrength;
+            spotAccum += spotLight.colorIntensity.rgb *
+                         (spotDiffuse + spotSpecular * 0.72f) *
+                         cone * rangeAttenuation * spotLight.colorIntensity.w;
+        }
+    }
+
     float3 lighting =
         ambientColor.rgb +
         keyLightColor.rgb * keyDiffuse +
         fillLightColor.rgb * fillDiffuse +
         pointAccum +
+        spotAccum +
         keyLightColor.rgb * keySpecular +
         fillLightColor.rgb * rim * fillLightColor.a;
 
@@ -189,6 +267,54 @@ float4 main(ModelVSOutput input) : SV_TARGET
             gEnvironmentTexture.SampleLevel(samp0, reflectedVector, mipLevel).rgb;
         finalColor.rgb += environmentColor * environmentStrength;
     }
+
+    finalColor.rgb =
+        lerp(finalColor.rgb, customParams3.rgb,
+             dissolveEdgeRate * customParams3.a);
+
+    float effectEnabled = drawEffectParams0.x;
+    float effectIntensity = drawEffectParams0.y;
+    if (effectEnabled > 0.5f && effectIntensity > 0.0001f)
+    {
+        float fresnelPower = max(drawEffectParams0.z, 0.5f);
+        float noiseAmount = saturate(drawEffectParams0.w);
+        float time = drawEffectParams1.x;
+        float baseDim = saturate(drawEffectParams1.y);
+        float alphaBoost = max(drawEffectParams1.z, 0.0f);
+        float surfaceTint = saturate(drawEffectParams2.x);
+
+        float effectRim = pow(saturate(1.0f - abs(dot(normal, viewDir))),
+                              fresnelPower);
+
+        float noise =
+            sin(input.worldPos.x * 10.0f + time * 15.0f) *
+            sin(input.worldPos.y * 12.0f - time * 11.0f) *
+            sin(input.worldPos.z * 9.0f + time * 17.0f);
+        noise = lerp(1.0f, 0.65f + 0.35f * noise, noiseAmount);
+
+        float pulse = 0.8f + 0.2f * sin(time * 20.0f + input.worldPos.y * 8.0f);
+        float glow = effectRim * noise * pulse * effectIntensity;
+
+        finalColor.rgb *= lerp(1.0f, 0.24f, baseDim);
+        float3 effectShadowTint = lerp(float3(0.46f, 0.40f, 0.34f),
+                                       saturate(drawEffectColor.rgb), 0.28f);
+        finalColor.rgb = lerp(finalColor.rgb, finalColor.rgb * effectShadowTint,
+                              baseDim * 0.55f);
+
+        if (surfaceTint > 0.0001f)
+        {
+            float surfaceMix = saturate(surfaceTint * drawEffectColor.a);
+            finalColor.rgb = lerp(finalColor.rgb, drawEffectColor.rgb, surfaceMix);
+            finalColor.a = saturate(max(finalColor.a * (1.0f - surfaceTint * 0.45f),
+                                        drawEffectColor.a * surfaceTint));
+        }
+
+        finalColor.rgb += drawEffectColor.rgb * glow;
+        finalColor.a =
+            saturate(finalColor.a + drawEffectColor.a * glow * alphaBoost);
+    }
+
+    finalColor.a *= alphaMultiplier;
 
     if (fogParams.x > 0.5f)
     {

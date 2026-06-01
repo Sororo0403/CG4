@@ -9,4 +9,5 @@ struct Texture {
     Microsoft::WRL::ComPtr<ID3D12Resource> resource;
     int width = 0;
     int height = 0;
+    D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 };

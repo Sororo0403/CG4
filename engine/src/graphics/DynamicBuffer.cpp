@@ -1,24 +1,25 @@
 #include "graphics/DynamicBuffer.h"
 
 #include "graphics/DxHelpers.h"
-#include "graphics/DxUtils.h"
 
-#include <stdexcept>
-
-using namespace DxUtils;
+#include <limits>
+#include <utility>
 
 DynamicBuffer::~DynamicBuffer() { Reset(); }
 
 void DynamicBuffer::Initialize(ID3D12Device *device, size_t capacity,
                                size_t defaultAlignment) {
     if (!device || capacity == 0) {
-        throw std::runtime_error("DynamicBuffer::Initialize invalid argument");
+        Reset();
+        return;
     }
 
     Reset();
     device_ = device;
     defaultAlignment_ = defaultAlignment == 0 ? 1 : defaultAlignment;
-    CreateResource(capacity);
+    if (!CreateResource(capacity)) {
+        Reset();
+    }
 }
 
 void DynamicBuffer::Reset() {
@@ -34,31 +35,31 @@ void DynamicBuffer::BeginWrite() { offset_ = 0; }
 
 void DynamicBuffer::Reserve(size_t capacity) {
     if (!device_) {
-        throw std::runtime_error("DynamicBuffer::Reserve before Initialize");
+        return;
     }
     if (capacity <= capacity_) {
         return;
     }
     if (offset_ != 0) {
-        throw std::runtime_error(
-            "DynamicBuffer::Reserve cannot grow after allocations");
+        return;
     }
-    UnmapResource();
-    resource_.Reset();
     CreateResource(capacity);
 }
 
 UploadAllocation DynamicBuffer::Allocate(size_t size, size_t alignment) {
     if (!resource_ || size == 0) {
-        throw std::runtime_error("DynamicBuffer::Allocate before Initialize");
+        return {};
     }
 
     const size_t effectiveAlignment =
         alignment == 0 ? defaultAlignment_ : alignment;
     const size_t alignedOffset = AlignUp(offset_, effectiveAlignment);
+    if (size > (std::numeric_limits<size_t>::max)() - alignedOffset) {
+        return {};
+    }
     const size_t endOffset = alignedOffset + size;
     if (endOffset > capacity_) {
-        throw std::runtime_error("DynamicBuffer capacity exceeded");
+        return {};
     }
 
     offset_ = endOffset;
@@ -82,21 +83,41 @@ size_t DynamicBuffer::AlignUp(size_t value, size_t alignment) {
     if (alignment <= 1) {
         return value;
     }
-    return ((value + alignment - 1) / alignment) * alignment;
+    const size_t addend = alignment - 1;
+    if (value > (std::numeric_limits<size_t>::max)() - addend) {
+        return (std::numeric_limits<size_t>::max)();
+    }
+    return ((value + addend) / alignment) * alignment;
 }
 
-void DynamicBuffer::CreateResource(size_t capacity) {
-    capacity_ = AlignUp(capacity, defaultAlignment_);
+bool DynamicBuffer::CreateResource(size_t capacity) {
+    const size_t alignedCapacity = AlignUp(capacity, defaultAlignment_);
+    if (alignedCapacity == 0 ||
+        alignedCapacity == (std::numeric_limits<size_t>::max)()) {
+        return false;
+    }
     CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
-    auto desc = CD3DX12_RESOURCE_DESC::Buffer(capacity_);
-    ThrowIfFailed(device_->CreateCommittedResource(
-                      &heap, D3D12_HEAP_FLAG_NONE, &desc,
-                      D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                      IID_PPV_ARGS(&resource_)),
-                  "CreateCommittedResource(DynamicBuffer) failed");
-    ThrowIfFailed(resource_->Map(0, nullptr, reinterpret_cast<void **>(&mapped_)),
-                  "Map(DynamicBuffer) failed");
+    auto desc = CD3DX12_RESOURCE_DESC::Buffer(alignedCapacity);
+    Microsoft::WRL::ComPtr<ID3D12Resource> newResource;
+    uint8_t *newMapped = nullptr;
+    const HRESULT resourceResult = device_->CreateCommittedResource(
+        &heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr, IID_PPV_ARGS(&newResource));
+    if (FAILED(resourceResult) || !newResource) {
+        return false;
+    }
+    const HRESULT mapResult =
+        newResource->Map(0, nullptr, reinterpret_cast<void **>(&newMapped));
+    if (FAILED(mapResult) || newMapped == nullptr) {
+        return false;
+    }
+    UnmapResource();
+    resource_.Reset();
+    resource_ = std::move(newResource);
+    mapped_ = newMapped;
+    capacity_ = alignedCapacity;
     offset_ = 0;
+    return true;
 }
 
 void DynamicBuffer::UnmapResource() {

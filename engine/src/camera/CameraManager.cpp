@@ -1,8 +1,16 @@
 #include "camera/CameraManager.h"
 
+namespace {
+CameraManager *gActiveCameraManager = nullptr;
+}
+
 CameraManager &CameraManager::GetInstance() {
     static CameraManager instance;
-    return instance;
+    return gActiveCameraManager != nullptr ? *gActiveCameraManager : instance;
+}
+
+void CameraManager::SetActiveInstance(CameraManager *instance) {
+    gActiveCameraManager = instance;
 }
 
 Camera &CameraManager::CreateCamera(const std::string &name, float aspect) {

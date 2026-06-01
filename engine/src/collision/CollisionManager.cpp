@@ -1,6 +1,8 @@
 #include "collision/CollisionManager.h"
 #include <algorithm>
 #include <cfloat>
+#include <cmath>
+#include <limits>
 
 using namespace DirectX;
 
@@ -8,14 +10,36 @@ namespace {
 
 constexpr float kDefaultObbRotationW = 1.0f;
 
+float FiniteOr(float value, float fallback) {
+    return std::isfinite(value) ? value : fallback;
+}
+
+float FinitePairValue(float primary, float secondary) {
+    if (std::isfinite(primary)) {
+        return primary;
+    }
+    return std::isfinite(secondary) ? secondary : 0.0f;
+}
+
+float FiniteHalfExtent(float value) {
+    return std::isfinite(value) ? std::fabs(value) * 0.5f : 0.0f;
+}
+
 AABB NormalizeAABB(const AABB &box) {
+    const float minX = FinitePairValue(box.min.x, box.max.x);
+    const float maxX = FinitePairValue(box.max.x, minX);
+    const float minY = FinitePairValue(box.min.y, box.max.y);
+    const float maxY = FinitePairValue(box.max.y, minY);
+    const float minZ = FinitePairValue(box.min.z, box.max.z);
+    const float maxZ = FinitePairValue(box.max.z, minZ);
+
     AABB normalized{};
-    normalized.min.x = (std::min)(box.min.x, box.max.x);
-    normalized.min.y = (std::min)(box.min.y, box.max.y);
-    normalized.min.z = (std::min)(box.min.z, box.max.z);
-    normalized.max.x = (std::max)(box.min.x, box.max.x);
-    normalized.max.y = (std::max)(box.min.y, box.max.y);
-    normalized.max.z = (std::max)(box.min.z, box.max.z);
+    normalized.min.x = (std::min)(minX, maxX);
+    normalized.min.y = (std::min)(minY, maxY);
+    normalized.min.z = (std::min)(minZ, maxZ);
+    normalized.max.x = (std::max)(minX, maxX);
+    normalized.max.y = (std::max)(minY, maxY);
+    normalized.max.z = (std::max)(minZ, maxZ);
     return normalized;
 }
 
@@ -44,9 +68,13 @@ OBB ToOBB(const CollisionManager::Shape &shape) {
 }
 
 XMVECTOR NormalizeQuaternion(const XMFLOAT4 &rotation) {
+    if (!std::isfinite(rotation.x) || !std::isfinite(rotation.y) ||
+        !std::isfinite(rotation.z) || !std::isfinite(rotation.w)) {
+        return XMQuaternionIdentity();
+    }
     XMVECTOR q = XMLoadFloat4(&rotation);
     const float lengthSq = XMVectorGetX(XMVector4LengthSq(q));
-    if (lengthSq <= 0.00001f) {
+    if (!std::isfinite(lengthSq) || lengthSq <= 0.00001f) {
         return XMQuaternionIdentity();
     }
     return XMQuaternionNormalize(q);
@@ -76,9 +104,9 @@ void CollisionManager::Clear() {
 CollisionManager::BodyId
 CollisionManager::AddBody(const CollisionManager::BodyDesc &desc) {
     Body body = CreateBody(desc);
-    body.id = nextBodyId_++;
-    if (nextBodyId_ == kInvalidBodyId) {
-        nextBodyId_ = 1;
+    body.id = AllocateBodyId();
+    if (body.id == kInvalidBodyId) {
+        return kInvalidBodyId;
     }
     bodies_.push_back(body);
     return body.id;
@@ -246,14 +274,20 @@ AABB CollisionManager::ComputeBounds(const Shape &shape) const {
     }
 
     const OBB &box = shape.obb;
-    const XMVECTOR center = XMLoadFloat3(&box.center);
+    const XMVECTOR center =
+        XMVectorSet(FiniteOr(box.center.x, 0.0f),
+                    FiniteOr(box.center.y, 0.0f),
+                    FiniteOr(box.center.z, 0.0f), 0.0f);
     const XMVECTOR rotation = NormalizeQuaternion(box.rotation);
     const XMVECTOR axes[3] = {
-        XMVector3Rotate(XMVectorSet(box.size.x * 0.5f, 0.0f, 0.0f, 0.0f),
+        XMVector3Rotate(XMVectorSet(FiniteHalfExtent(box.size.x), 0.0f, 0.0f,
+                                    0.0f),
                         rotation),
-        XMVector3Rotate(XMVectorSet(0.0f, box.size.y * 0.5f, 0.0f, 0.0f),
+        XMVector3Rotate(XMVectorSet(0.0f, FiniteHalfExtent(box.size.y), 0.0f,
+                                    0.0f),
                         rotation),
-        XMVector3Rotate(XMVectorSet(0.0f, 0.0f, box.size.z * 0.5f, 0.0f),
+        XMVector3Rotate(XMVectorSet(0.0f, 0.0f, FiniteHalfExtent(box.size.z),
+                                    0.0f),
                         rotation),
     };
 
@@ -269,6 +303,10 @@ AABB CollisionManager::ComputeBounds(const Shape &shape) const {
                                   axes[2] * static_cast<float>(z);
                 XMFLOAT3 point{};
                 XMStoreFloat3(&point, corner);
+                if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+                    !std::isfinite(point.z)) {
+                    continue;
+                }
                 bounds.min.x = (std::min)(bounds.min.x, point.x);
                 bounds.min.y = (std::min)(bounds.min.y, point.y);
                 bounds.min.z = (std::min)(bounds.min.z, point.z);
@@ -277,6 +315,11 @@ AABB CollisionManager::ComputeBounds(const Shape &shape) const {
                 bounds.max.z = (std::max)(bounds.max.z, point.z);
             }
         }
+    }
+
+    if (bounds.min.x == FLT_MAX) {
+        bounds.min = {0.0f, 0.0f, 0.0f};
+        bounds.max = {0.0f, 0.0f, 0.0f};
     }
 
     return bounds;
@@ -293,4 +336,21 @@ CollisionManager::CreateBody(const CollisionManager::BodyDesc &desc) {
     body.desc = desc;
     body.bounds = ComputeBounds(desc.shape);
     return body;
+}
+
+CollisionManager::BodyId CollisionManager::AllocateBodyId() {
+    if (bodies_.size() >=
+        static_cast<size_t>((std::numeric_limits<BodyId>::max)()) - 1u) {
+        return kInvalidBodyId;
+    }
+
+    for (;;) {
+        if (nextBodyId_ == kInvalidBodyId) {
+            nextBodyId_ = 1;
+        }
+        const BodyId candidate = nextBodyId_++;
+        if (FindBody(candidate) == nullptr) {
+            return candidate;
+        }
+    }
 }

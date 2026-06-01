@@ -13,6 +13,8 @@ struct Particle
     uint isActive;
     float4 params0;
     float4 params1;
+    float4 params2;
+    float4 params3;
 };
 
 struct ParticleVSOutput

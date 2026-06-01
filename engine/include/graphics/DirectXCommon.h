@@ -1,7 +1,11 @@
 #pragma once
 #include <Windows.h>
+#include <DirectXMath.h>
+#include <array>
+#include <cstdint>
 #include <d3d12.h>
 #include <dxgi1_6.h>
+#include <string>
 #include <wrl.h>
 
 class SrvManager;
@@ -36,6 +40,9 @@ class DirectXCommon {
     /// <param name="hwnd">ウィンドウハンドル</param>
     /// <param name="width">クライアント領域の幅</param>
     /// <param name="height">クライアント領域の高さ</param>
+    /// <summary>
+    /// 必要なリソースを初期化する
+    /// </summary>
     void Initialize(HWND hwnd, int width, int height);
 
     /// <summary>
@@ -49,6 +56,11 @@ class DirectXCommon {
     void EndFrame();
 
     /// <summary>
+    /// 例外などでフレームを完了できない場合に記録状態を破棄する
+    /// </summary>
+    void AbortFrame() noexcept;
+
+    /// <summary>
     /// シーンカラー用レンダーターゲットへの描画状態に切り替える
     /// </summary>
     void BeginScenePass();
@@ -59,7 +71,15 @@ class DirectXCommon {
     /// <param name="clearDepth">
     /// trueの場合、意図的に深度を破棄する。透明エフェクト前の復元ではfalseにする。
     /// </param>
+    /// <summary>
+    /// RestoreSceneRenderStateを実行する
+    /// </summary>
     void RestoreSceneRenderState(bool clearDepth = false);
+
+    /// <summary>
+    /// 現在の描画先を維持したまま深度だけをクリアする
+    /// </summary>
+    void ClearDepth();
 
     /// <summary>
     /// シーンカラー用レンダーターゲットをシェーダー読み取り可能な状態へ戻す
@@ -86,6 +106,26 @@ class DirectXCommon {
     /// シーンカラーをシェーダーから読めるSRVとして登録する
     /// </summary>
     void RegisterSceneColorSRV(SrvManager *srvManager);
+
+    /// <summary>
+    /// DirectXCommonがSrvManagerから確保したSRVを解放する
+    /// </summary>
+    void ReleaseRegisteredSrvs();
+
+    /// <summary>
+    /// フレーム開始時のクリア色を設定する
+    /// </summary>
+    void SetClearColor(const DirectX::XMFLOAT4 &color);
+
+    /// <summary>
+    /// フレーム開始時のクリア色を設定する
+    /// </summary>
+    void SetClearColor(float r, float g, float b, float a);
+
+    /// <summary>
+    /// フレーム開始時のクリア色を初期値に戻す
+    /// </summary>
+    void ResetClearColor();
 
     /// <summary>
     /// 深度バッファをシェーダー読み取り状態へ遷移する
@@ -118,6 +158,14 @@ class DirectXCommon {
     /// コマンドキューへFenceを送信し、GPU処理の完了を待機する
     /// </summary>
     void WaitForGpu();
+    bool WaitForGpuIfPossible();
+
+    /// <summary>
+    /// GPU同期に必要なD3D12オブジェクトが初期化済みかを取得する
+    /// </summary>
+    bool IsInitialized() const {
+        return commandQueue_ && fence_ && fenceEvent_ != nullptr;
+    }
 
     /// <summary>
     /// D3D12デバイスを取得する
@@ -132,11 +180,11 @@ class DirectXCommon {
     ID3D12CommandQueue *GetCommandQueue() const { return commandQueue_.Get(); }
 
     /// <summary>
-    /// グラフィックスコマンドリストを取得する
+    /// 記録中のグラフィックスコマンドリストを取得する
     /// </summary>
-    /// <returns>コマンドリスト</returns>
+    /// <returns>記録中でない場合はnullptr</returns>
     ID3D12GraphicsCommandList *GetCommandList() const {
-        return commandList_.Get();
+        return isCommandListRecording_ ? commandList_.Get() : nullptr;
     }
 
     /// <summary>
@@ -158,16 +206,12 @@ class DirectXCommon {
     /// <summary>
     /// 深度ステンシルビューのCPUハンドルを取得する
     /// </summary>
-    D3D12_CPU_DESCRIPTOR_HANDLE GetDepthStencilView() const {
-        return dsvHeap_->GetCPUDescriptorHandleForHeapStart();
-    }
+    D3D12_CPU_DESCRIPTOR_HANDLE GetDepthStencilView() const;
 
     /// <summary>
     /// 深度SRVのGPUハンドルを取得する
     /// </summary>
-    D3D12_GPU_DESCRIPTOR_HANDLE GetDepthStencilGpuHandle() const {
-        return depthSrvGpuHandle_;
-    }
+    D3D12_GPU_DESCRIPTOR_HANDLE GetDepthStencilGpuHandle() const;
 
     /// <summary>
     /// シーンカラー用リソースを取得する
@@ -186,6 +230,28 @@ class DirectXCommon {
     /// </summary>
     D3D12_GPU_DESCRIPTOR_HANDLE
     GetSceneSrvGpuHandle(const SrvManager *srvManager) const;
+
+    /// <summary>
+    /// 現在のD3D12デバイスがすでに取り外し状態かを取得する
+    /// </summary>
+    bool IsDeviceRemoved() const;
+
+    /// <summary>
+    /// 選択されたGPUアダプタのベンダIDを取得する
+    /// </summary>
+    UINT GetAdapterVendorId() const { return adapterDesc_.VendorId; }
+
+    /// <summary>
+    /// Intel GPU上で動作しているかを取得する
+    /// </summary>
+    bool IsIntelAdapter() const { return adapterDesc_.VendorId == 0x8086; }
+
+    /// <summary>
+    /// 選択されたGPUアダプタ名を取得する
+    /// </summary>
+    std::wstring GetAdapterDescription() const {
+        return adapterDesc_.Description;
+    }
 
   private:
     /// <summary>
@@ -264,6 +330,9 @@ class DirectXCommon {
     /// <remarks>
     /// sceneColorBuffer_のResourceBarrierは必ずこの関数を通す。
     /// </remarks>
+    /// <summary>
+    /// TransitionSceneColorを実行する
+    /// </summary>
     void TransitionSceneColor(D3D12_RESOURCE_STATES afterState);
 
     /// <summary>
@@ -291,19 +360,27 @@ class DirectXCommon {
     /// </summary>
     void WaitForFrame(UINT frameIndex);
 
+    void TrackGpuPhase(const char *phase);
+
   private:
     static constexpr UINT kSwapChainBufferCount = 2;
+    static constexpr uint32_t kRecentGpuPhaseCount = 64;
     static constexpr UINT kSceneRtvIndex = kSwapChainBufferCount;
     static constexpr float kClearColor[4] = {0.030f, 0.026f, 0.055f, 1.0f};
+    float clearColor_[4] = {kClearColor[0], kClearColor[1], kClearColor[2],
+                            kClearColor[3]};
 
     Microsoft::WRL::ComPtr<IDXGIFactory7> factory_;
     Microsoft::WRL::ComPtr<IDXGISwapChain4> swapChain_;
     Microsoft::WRL::ComPtr<ID3D12Device> device_;
+    DXGI_ADAPTER_DESC1 adapterDesc_{};
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue_;
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator>
         commandAllocators_[kSwapChainBufferCount];
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList_;
     bool isCommandListRecording_ = false;
+    bool uploadPassActive_ = false;
+    UINT uploadPassDepth_ = 0;
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap_;
     Microsoft::WRL::ComPtr<ID3D12Resource> backBuffers_[kSwapChainBufferCount];
@@ -319,6 +396,10 @@ class DirectXCommon {
     UINT64 fenceValue_ = 0;
     UINT64 frameFenceValues_[kSwapChainBufferCount]{};
     HANDLE fenceEvent_ = nullptr;
+    uint64_t diagnosticFrameId_ = 0;
+    std::array<const char *, kRecentGpuPhaseCount> recentGpuPhases_{};
+    uint32_t recentGpuPhaseCursor_ = 0;
+    uint32_t recentGpuPhaseSize_ = 0;
 
     D3D12_VIEWPORT sceneViewport_{};
     D3D12_RECT sceneScissorRect_{};
