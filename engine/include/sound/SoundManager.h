@@ -37,6 +37,7 @@ class SoundManager {
     /// Media Foundation、COM、XAudio2エンジンとマスターボイスを初期化する
     /// </summary>
     void Initialize();
+    void Finalize();
     bool IsInitialized() const { return xAudio2_ != nullptr && masterVoice_ != nullptr; }
     const std::string &GetLastInitializeError() const {
         return lastInitializeError_;
@@ -210,6 +211,7 @@ class SoundManager {
         std::unique_ptr<SoundVoiceCallback> callback;
         uint32_t handle = kInvalidVoiceHandle;
         uint32_t soundId = 0;
+        uint32_t startFrame = 0;
         float volume = 1.0f;
         float frequencyRatio = XAUDIO2_DEFAULT_FREQ_RATIO;
         bool loop = false;

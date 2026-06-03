@@ -1,11 +1,16 @@
 #include "model/ModelRenderer.h"
+#include "core/Numeric.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
+#include "graphics/GpuResourceHelpers.h"
+#include "graphics/GpuResourceLifetime.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
 #include "model/MaterialManager.h"
 #include "model/MeshManager.h"
+#include "RendererMaterialUtils.h"
+#include "model/RendererMath.h"
 #include "model/Vertex.h"
 #include "texture/TextureManager.h"
 #include <algorithm>
@@ -18,87 +23,38 @@ using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
 namespace {
+using GpuResourceHelpers::CreateCommittedResourceChecked;
+using GpuResourceHelpers::MapResourceChecked;
+using Numeric::AtLeastFinite;
+using Numeric::ClampFinite;
+using Numeric::FiniteOr;
+using RendererMaterialUtils::PipelineVariantIndex;
+using RendererMaterialUtils::ResolveBaseColorTextureId;
+using RendererMaterialUtils::ResolveNormalTextureId;
 
 constexpr UINT kSkinningThreadCount = 1024u;
 
-bool IsTransparentMaterial(const Material &material) {
-    return material.blendMode == static_cast<int32_t>(BlendMode::Transparent) ||
-           material.color.w < 1.0f;
-}
-
-D3D12_CULL_MODE ToD3D12CullMode(const MaterialCullMode mode) {
-    switch (mode) {
-    case MaterialCullMode::None:
-        return D3D12_CULL_MODE_NONE;
-    case MaterialCullMode::Front:
-        return D3D12_CULL_MODE_FRONT;
-    case MaterialCullMode::Back:
-    default:
-        return D3D12_CULL_MODE_BACK;
-    }
-}
-
-size_t PipelineVariantIndex(bool transparent, MaterialCullMode cullMode,
-                            bool depthWrite) {
-    const size_t blendIndex = transparent ? 1 : 0;
-    const size_t cullIndex = static_cast<size_t>(cullMode);
-    const size_t depthIndex = depthWrite ? 1 : 0;
-    return blendIndex * 6 + cullIndex * 2 + depthIndex;
-}
-
-size_t PipelineVariantIndex(const Material &material) {
-    const Material drawMaterial = NormalizeMaterialForDraw(material);
-    MaterialCullMode cullMode =
-        static_cast<MaterialCullMode>(drawMaterial.cullMode);
-    if (drawMaterial.cullMode < static_cast<int32_t>(MaterialCullMode::None) ||
-        drawMaterial.cullMode > static_cast<int32_t>(MaterialCullMode::Back)) {
-        cullMode = MaterialCullMode::Back;
-    }
-    return PipelineVariantIndex(IsTransparentMaterial(drawMaterial), cullMode,
-                                drawMaterial.depthWrite != 0);
-}
-
-uint32_t ResolveTextureId(TextureManager *textureManager, uint32_t textureId,
-                          uint32_t fallbackTextureId) {
+uint32_t ResolveEnvironmentTextureId(TextureManager *textureManager,
+                                     uint32_t requestedTextureId,
+                                     uint32_t configuredTextureId,
+                                     bool hasConfiguredTexture) {
     if (textureManager == nullptr) {
         return UINT32_MAX;
     }
-    if (textureId != UINT32_MAX &&
-        textureManager->IsValidTextureId(textureId)) {
-        return textureId;
+
+    const uint32_t selectedTextureId =
+        requestedTextureId != UINT32_MAX
+            ? requestedTextureId
+            : (hasConfiguredTexture ? configuredTextureId : UINT32_MAX);
+    if (selectedTextureId != UINT32_MAX &&
+        textureManager->IsCubeTextureId(selectedTextureId)) {
+        return selectedTextureId;
     }
-    if (fallbackTextureId != UINT32_MAX &&
-        textureManager->IsValidTextureId(fallbackTextureId)) {
-        return fallbackTextureId;
-    }
-    return textureManager->GetWhiteTextureId();
-}
 
-uint32_t ResolveNormalTextureId(TextureManager *textureManager,
-                                uint32_t normalTextureId) {
-    const uint32_t fallbackTextureId =
-        textureManager != nullptr ? textureManager->GetDefaultNormalTextureId()
-                                  : UINT32_MAX;
-    return ResolveTextureId(textureManager, normalTextureId,
-                            fallbackTextureId);
-}
-
-uint32_t ResolveBaseColorTextureId(TextureManager *textureManager,
-                                   const Material &material,
-                                   uint32_t fallbackTextureId) {
-    const uint32_t textureId = material.baseColorTextureId == UINT32_MAX
-                                   ? fallbackTextureId
-                                   : material.baseColorTextureId;
-    return ResolveTextureId(textureManager, textureId, fallbackTextureId);
-}
-
-uint32_t ResolveNormalTextureId(TextureManager *textureManager,
-                                const Material &material,
-                                uint32_t fallbackTextureId) {
-    const uint32_t textureId = material.normalTextureId == UINT32_MAX
-                                   ? fallbackTextureId
-                                   : material.normalTextureId;
-    return ResolveNormalTextureId(textureManager, textureId);
+    const uint32_t fallbackTextureId = textureManager->GetBlackCubeTextureId();
+    return textureManager->IsCubeTextureId(fallbackTextureId)
+               ? fallbackTextureId
+               : UINT32_MAX;
 }
 
 bool IsDrawableSubMesh(const ModelSubMesh &subMesh, MeshManager *meshManager,
@@ -111,8 +67,23 @@ bool IsDrawableSubMesh(const ModelSubMesh &subMesh, MeshManager *meshManager,
 bool HasCompleteSkinningDescriptors(const SkinCluster &skinCluster) {
     return skinCluster.inputVertexSrvGpuHandle.ptr != 0 &&
            skinCluster.influenceSrvGpuHandle.ptr != 0 &&
-           skinCluster.paletteSrvGpuHandle.ptr != 0 &&
            skinCluster.skinnedVertexUavGpuHandle.ptr != 0;
+}
+
+D3D12_GPU_VIRTUAL_ADDRESS GetCurrentPaletteAddress(
+    const SkinCluster &skinCluster, DirectXCommon *dxCommon) {
+    if (skinCluster.paletteFrames.empty()) {
+        return 0;
+    }
+    const size_t frameIndex =
+        dxCommon != nullptr
+            ? dxCommon->GetBackBufferIndex() % skinCluster.paletteFrames.size()
+            : 0;
+    if (frameIndex >= skinCluster.paletteFrames.size()) {
+        return 0;
+    }
+    const SkinPaletteFrame &frame = skinCluster.paletteFrames[frameIndex];
+    return frame.resource ? frame.resource->GetGPUVirtualAddress() : 0;
 }
 
 bool HasRenderableVertexSource(const ModelSubMesh &subMesh) {
@@ -135,81 +106,67 @@ bool IsDrawableSubMeshWithValidVertexSource(
            HasRenderableVertexSource(subMesh);
 }
 
-bool HasPaletteDescriptor(const ModelSubMesh &subMesh) {
+bool HasPaletteBuffer(const ModelSubMesh &subMesh, DirectXCommon *dxCommon,
+                      D3D12_GPU_VIRTUAL_ADDRESS identityPaletteAddress) {
     const SkinCluster &skinCluster = subMesh.skinCluster;
-    return skinCluster.paletteResource != nullptr &&
-           skinCluster.paletteCount > 0 &&
-           skinCluster.paletteSrvGpuHandle.ptr != 0;
+    if (skinCluster.paletteCount > 0) {
+        return GetCurrentPaletteAddress(skinCluster, dxCommon) != 0;
+    }
+    return identityPaletteAddress != 0;
+}
+
+D3D12_GPU_VIRTUAL_ADDRESS GetPaletteAddressForDraw(
+    const SkinCluster &skinCluster, DirectXCommon *dxCommon,
+    D3D12_GPU_VIRTUAL_ADDRESS identityPaletteAddress) {
+    if (skinCluster.paletteCount > 0) {
+        return GetCurrentPaletteAddress(skinCluster, dxCommon);
+    }
+    return identityPaletteAddress;
 }
 
 bool IsForwardDrawableSubMesh(const ModelSubMesh &subMesh,
                               MeshManager *meshManager,
-                              MaterialManager *materialManager) {
+                              MaterialManager *materialManager,
+                              DirectXCommon *dxCommon,
+                              D3D12_GPU_VIRTUAL_ADDRESS identityPaletteAddress) {
     return IsDrawableSubMesh(subMesh, meshManager, materialManager) &&
-           HasPaletteDescriptor(subMesh) &&
+           HasPaletteBuffer(subMesh, dxCommon, identityPaletteAddress) &&
            HasRenderableVertexSource(subMesh);
 }
 
 }
 
-static XMFLOAT4X4 StoreMatrix(const XMMATRIX &matrix) {
-    XMFLOAT4X4 result{};
-    XMStoreFloat4x4(&result, matrix);
-    return result;
+static XMFLOAT4 ClampFiniteColor(const XMFLOAT4 &value,
+                                 const XMFLOAT4 &fallback) {
+    return {ClampFinite(value.x, 0.0f, 1.0f, fallback.x),
+            ClampFinite(value.y, 0.0f, 1.0f, fallback.y),
+            ClampFinite(value.z, 0.0f, 1.0f, fallback.z),
+            ClampFinite(value.w, 0.0f, 1.0f, fallback.w)};
 }
 
-static XMVECTOR LoadNormalizedQuaternionOrIdentity(const XMFLOAT4 &rotation) {
-    if (!std::isfinite(rotation.x) || !std::isfinite(rotation.y) ||
-        !std::isfinite(rotation.z) || !std::isfinite(rotation.w)) {
-        return XMQuaternionIdentity();
-    }
-    XMVECTOR q = XMLoadFloat4(&rotation);
-    const float lengthSq = XMVectorGetX(XMVector4LengthSq(q));
-    if (!std::isfinite(lengthSq) || lengthSq <= 0.000001f) {
-        return XMQuaternionIdentity();
-    }
-    return XMQuaternionNormalize(q);
-}
+static ModelDrawEffect SanitizeDrawEffect(ModelDrawEffect effect) {
+    const ModelDrawEffect defaults{};
+    effect.color = ClampFiniteColor(effect.color, defaults.color);
+    effect.intensity = AtLeastFinite(effect.intensity, 0.0f, 0.0f);
+    effect.fresnelPower =
+        AtLeastFinite(effect.fresnelPower, 0.5f, defaults.fresnelPower);
+    effect.noiseAmount =
+        ClampFinite(effect.noiseAmount, 0.0f, 1.0f, defaults.noiseAmount);
+    effect.time = FiniteOr(effect.time, defaults.time);
+    effect.baseDim = ClampFinite(effect.baseDim, 0.0f, 1.0f, defaults.baseDim);
+    effect.alphaBoost =
+        AtLeastFinite(effect.alphaBoost, 0.0f, defaults.alphaBoost);
+    effect.surfaceTint =
+        ClampFinite(effect.surfaceTint, 0.0f, 1.0f, defaults.surfaceTint);
+    effect.alphaMultiplier = ClampFinite(effect.alphaMultiplier, 0.0f, 1.0f,
+                                         defaults.alphaMultiplier);
 
-static float ClampFinite(float value, float minimum, float maximum,
-                         float fallback) {
-    if (!std::isfinite(value)) {
-        return fallback;
+    const uint32_t blendOverride = static_cast<uint32_t>(effect.blendOverride);
+    if (blendOverride >
+        static_cast<uint32_t>(ModelDrawEffectBlendOverride::Opaque)) {
+        effect.blendOverride = ModelDrawEffectBlendOverride::KeepMaterial;
     }
-    return std::clamp(value, minimum, maximum);
-}
-
-static float ClampFiniteMin(float value, float minimum) {
-    if (!std::isfinite(value)) {
-        return minimum;
-    }
-    return (std::max)(value, minimum);
-}
-
-static XMMATRIX MakeSafeInverseTranspose(const XMMATRIX &matrix) {
-    const XMVECTOR determinant = XMMatrixDeterminant(matrix);
-    const float determinantValue = XMVectorGetX(determinant);
-    if (!std::isfinite(determinantValue) ||
-        std::abs(determinantValue) <= 0.000001f) {
-        return XMMatrixIdentity();
-    }
-
-    return XMMatrixTranspose(XMMatrixInverse(nullptr, matrix));
-}
-
-static void NormalizeInfluence(VertexInfluence &influence) {
-    float totalWeight = 0.0f;
-    for (float weight : influence.weights) {
-        totalWeight += weight;
-    }
-
-    if (totalWeight <= 0.00001f) {
-        return;
-    }
-
-    for (float &weight : influence.weights) {
-        weight /= totalWeight;
-    }
+    return effect;
 }
 
 static std::vector<uint8_t> CreateDissolveNoisePixels(uint32_t width,
@@ -237,28 +194,9 @@ struct PerObjectConstBufferData {
     XMFLOAT4X4 matWorldInverseTranspose;
 };
 
-struct SceneConstBufferData {
-    struct PointLightData {
-        XMFLOAT4 positionRange;
-        XMFLOAT4 colorIntensity;
-    };
-
-    XMFLOAT4 cameraPos;
-    XMFLOAT4 keyLightDirection;
-    XMFLOAT4 keyLightColor;
-    XMFLOAT4 fillLightDirection;
-    XMFLOAT4 fillLightColor;
-    XMFLOAT4 ambientColor;
-    PointLightData pointLights[2];
-    XMFLOAT4 lightingParams;
-    XMFLOAT4 lightingModeParams;
-    XMFLOAT4 fogColor;
-    XMFLOAT4 fogParams;
-    XMFLOAT4X4 viewProjection;
-    XMFLOAT4X4 lightViewProjection;
-    XMFLOAT4 shadowParams;
-    XMFLOAT4 shadowFilterParams;
-};
+ModelRenderer::~ModelRenderer() {
+    Finalize(true);
+}
 
 void ModelRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
                                MeshManager *meshManager,
@@ -266,32 +204,13 @@ void ModelRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
                                MaterialManager *materialManager) {
     if (!dxCommon || !dxCommon->GetDevice() || !srvManager || !meshManager ||
         !textureManager || !materialManager) {
-        dxCommon_ = nullptr;
-        srvManager_ = nullptr;
-        meshManager_ = nullptr;
-        textureManager_ = nullptr;
-        materialManager_ = nullptr;
-        rootSignature_.Reset();
-        shadowRootSignature_.Reset();
-        skinningRootSignature_.Reset();
-        for (auto &pipeline : pipelineStates_) {
-            pipeline.Reset();
-        }
-        for (auto &pipeline : instancedPipelineStates_) {
-            pipeline.Reset();
-        }
-        shadowPSO_.Reset();
-        instancedShadowPSO_.Reset();
-        skinningPSO_.Reset();
-        uploadBuffer_.Reset();
-        drawIndex_ = 0;
-        currentGraphicsRootSignature_ = nullptr;
-        currentGraphicsPipelineState_ = nullptr;
-        hasEnvironmentTexture_ = false;
-        shadowMapGpuHandle_ = {};
+        Finalize();
         return;
     }
 
+    if (!Finalize()) {
+        return;
+    }
     dxCommon_ = dxCommon;
     srvManager_ = srvManager;
     meshManager_ = meshManager;
@@ -314,34 +233,166 @@ void ModelRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
     CreateShadowPipelineState();
     CreateSkinningPipelineState();
     CreateUploadBuffer();
+    CreateIdentityPalette();
     if (!rootSignature_ || !shadowRootSignature_ || !skinningRootSignature_ ||
         !pipelineStates_[0] || !instancedPipelineStates_[0] || !shadowPSO_ ||
         !instancedShadowPSO_ || !skinningPSO_ ||
-        uploadBuffer_.GetBytesPerFrame() == 0) {
-        dxCommon_ = nullptr;
-        srvManager_ = nullptr;
-        meshManager_ = nullptr;
-        textureManager_ = nullptr;
-        materialManager_ = nullptr;
-        rootSignature_.Reset();
-        shadowRootSignature_.Reset();
-        skinningRootSignature_.Reset();
-        for (auto &pipeline : pipelineStates_) {
-            pipeline.Reset();
-        }
-        for (auto &pipeline : instancedPipelineStates_) {
-            pipeline.Reset();
-        }
-        shadowPSO_.Reset();
-        instancedShadowPSO_.Reset();
-        skinningPSO_.Reset();
-        uploadBuffer_.Reset();
-        drawIndex_ = 0;
-        currentGraphicsRootSignature_ = nullptr;
-        currentGraphicsPipelineState_ = nullptr;
-        hasEnvironmentTexture_ = false;
-        shadowMapGpuHandle_ = {};
+        uploadBuffer_.GetBytesPerFrame() == 0 ||
+        GetIdentityPaletteAddress() == 0) {
+        Finalize();
     }
+}
+
+bool ModelRenderer::Finalize() { return Finalize(false); }
+
+bool ModelRenderer::Finalize(bool allowFrameAbort) {
+    const bool hasGpuResources =
+        rootSignature_ || shadowRootSignature_ || skinningRootSignature_ ||
+        pipelineStates_[0] || instancedPipelineStates_[0] || shadowPSO_ ||
+        instancedShadowPSO_ || skinningPSO_ ||
+        HasIdentityPaletteResources() ||
+        uploadBuffer_.GetBytesPerFrame() != 0;
+    if (!CanReleaseGpuResources(dxCommon_, hasGpuResources,
+                                allowFrameAbort)) {
+        return false;
+    }
+    if (dxCommon_ != nullptr) {
+        dxCommon_->UnregisterFrameRollbacks(this);
+    }
+
+    ResetResources();
+    return true;
+}
+
+bool ModelRenderer::CreateIdentityPalette() {
+    ResetIdentityPalette();
+    if (dxCommon_ == nullptr || dxCommon_->GetDevice() == nullptr) {
+        return false;
+    }
+
+    const UINT frameCount =
+        (std::max)(1u, dxCommon_->GetSwapChainBufferCount());
+    try {
+        identityPaletteFrames_.resize(frameCount);
+    } catch (...) {
+        return false;
+    }
+
+    WellForGPU identity{};
+    identity.skeletonSpaceMatrix =
+        RendererMath::StoreMatrix(XMMatrixTranspose(XMMatrixIdentity()));
+    identity.skeletonSpaceInverseTransposeMatrix =
+        RendererMath::StoreMatrix(XMMatrixTranspose(XMMatrixIdentity()));
+
+    CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
+    auto paletteDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(WellForGPU));
+    for (SkinPaletteFrame &frame : identityPaletteFrames_) {
+        if (!CreateCommittedResourceChecked(
+                dxCommon_->GetDevice(), &uploadHeap, D3D12_HEAP_FLAG_NONE,
+                &paletteDesc, D3D12_RESOURCE_STATE_GENERIC_READ,
+                frame.resource.GetAddressOf())) {
+            ResetIdentityPalette();
+            return false;
+        }
+
+        void *mapped = nullptr;
+        if (!MapResourceChecked(frame.resource.Get(), &mapped)) {
+            ResetIdentityPalette();
+            return false;
+        }
+        std::memcpy(mapped, &identity, sizeof(identity));
+        frame.resource->Unmap(0, nullptr);
+        frame.mappedPalette = nullptr;
+    }
+
+    return GetIdentityPaletteAddress() != 0;
+}
+
+void ModelRenderer::ResetIdentityPalette() noexcept {
+    for (SkinPaletteFrame &frame : identityPaletteFrames_) {
+        if (frame.resource && frame.mappedPalette != nullptr) {
+            frame.resource->Unmap(0, nullptr);
+        }
+        frame.mappedPalette = nullptr;
+        frame.resource.Reset();
+    }
+    identityPaletteFrames_.clear();
+}
+
+bool ModelRenderer::HasIdentityPaletteResources() const noexcept {
+    for (const SkinPaletteFrame &frame : identityPaletteFrames_) {
+        if (frame.resource) {
+            return true;
+        }
+    }
+    return false;
+}
+
+D3D12_GPU_VIRTUAL_ADDRESS ModelRenderer::GetIdentityPaletteAddress() const {
+    if (identityPaletteFrames_.empty()) {
+        return 0;
+    }
+    const size_t frameIndex =
+        dxCommon_ != nullptr
+            ? dxCommon_->GetBackBufferIndex() % identityPaletteFrames_.size()
+            : 0;
+    if (frameIndex >= identityPaletteFrames_.size()) {
+        return 0;
+    }
+    const SkinPaletteFrame &frame = identityPaletteFrames_[frameIndex];
+    return frame.resource ? frame.resource->GetGPUVirtualAddress() : 0;
+}
+
+void ModelRenderer::ResetResources() {
+    ResetIdentityPalette();
+    dxCommon_ = nullptr;
+    srvManager_ = nullptr;
+    meshManager_ = nullptr;
+    textureManager_ = nullptr;
+    materialManager_ = nullptr;
+    rootSignature_.Reset();
+    shadowRootSignature_.Reset();
+    skinningRootSignature_.Reset();
+    for (auto &pipeline : pipelineStates_) {
+        pipeline.Reset();
+    }
+    for (auto &pipeline : instancedPipelineStates_) {
+        pipeline.Reset();
+    }
+    shadowPSO_.Reset();
+    instancedShadowPSO_.Reset();
+    skinningPSO_.Reset();
+    uploadBuffer_.Reset();
+    drawIndex_ = 0;
+    currentGraphicsRootSignature_ = nullptr;
+    currentGraphicsPipelineState_ = nullptr;
+    hasEnvironmentTexture_ = false;
+    shadowMapGpuHandle_ = {};
+}
+
+bool ModelRenderer::IsReady() const {
+    const auto hasAllPipelineStates = [](const auto &pipelines) {
+        for (const auto &pipeline : pipelines) {
+            if (!pipeline) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    return dxCommon_ != nullptr && srvManager_ != nullptr &&
+           meshManager_ != nullptr && textureManager_ != nullptr &&
+            materialManager_ != nullptr && rootSignature_ &&
+            shadowRootSignature_ && skinningRootSignature_ &&
+            hasAllPipelineStates(pipelineStates_) &&
+            hasAllPipelineStates(instancedPipelineStates_) && shadowPSO_ &&
+            instancedShadowPSO_ && skinningPSO_ &&
+            GetIdentityPaletteAddress() != 0 &&
+            uploadBuffer_.GetBytesPerFrame() != 0;
+}
+
+void ModelRenderer::SetDrawEffect(const ModelDrawEffect &effect) {
+    currentEffect_ = SanitizeDrawEffect(effect);
 }
 
 void ModelRenderer::BeginFrame() {
@@ -395,22 +446,14 @@ void ModelRenderer::Draw(const Model &model, const Transform &transform,
         return;
     }
 
-    const Transform safeTransform = SanitizeTransformForDraw(transform);
-    XMVECTOR q = LoadNormalizedQuaternionOrIdentity(safeTransform.rotation);
-
-    XMMATRIX world =
-        XMMatrixScaling(safeTransform.scale.x, safeTransform.scale.y,
-                        safeTransform.scale.z) *
-        XMMatrixRotationQuaternion(q) *
-        XMMatrixTranslation(safeTransform.position.x,
-                            safeTransform.position.y,
-                            safeTransform.position.z);
+    XMMATRIX world = RendererMath::MakeWorldMatrix(transform);
 
     if (model.hasRootAnimation) {
         world = XMLoadFloat4x4(&model.rootAnimationMatrix) * world;
     }
 
-    XMMATRIX worldInverseTranspose = MakeSafeInverseTranspose(world);
+    XMMATRIX worldInverseTranspose =
+        RendererMath::MakeSafeInverseTranspose(world);
 
     XMMATRIX wvp = world * camera.GetView() * camera.GetProj();
     const D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr =
@@ -424,12 +467,15 @@ void ModelRenderer::Draw(const Model &model, const Transform &transform,
 
     DispatchSkinningBatch(model);
 
+    const D3D12_GPU_VIRTUAL_ADDRESS identityPaletteAddress =
+        GetIdentityPaletteAddress();
     auto drawSubMesh = [&](const ModelSubMesh &subMesh) {
         if (drawIndex_ >= kMaxDraws) {
             return;
         }
         if (!IsForwardDrawableSubMesh(subMesh, meshManager_,
-                                      materialManager_)) {
+                                      materialManager_, dxCommon_,
+                                      identityPaletteAddress)) {
             return;
         }
 
@@ -445,6 +491,12 @@ void ModelRenderer::Draw(const Model &model, const Transform &transform,
             subMesh.skinCluster.skinnedVertexResource
                 ? subMesh.skinCluster.skinnedVertexBufferView
                 : mesh.vbView;
+        const D3D12_GPU_VIRTUAL_ADDRESS paletteAddress =
+            GetPaletteAddressForDraw(subMesh.skinCluster, dxCommon_,
+                                     identityPaletteAddress);
+        if (paletteAddress == 0) {
+            return;
+        }
 
         cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
         cmd->SetGraphicsRootConstantBufferView(1, sceneCbAddr);
@@ -454,19 +506,14 @@ void ModelRenderer::Draw(const Model &model, const Transform &transform,
             3, textureManager_->GetGpuHandle(
                    ResolveBaseColorTextureId(textureManager_, material,
                                              subMesh.textureId)));
-        cmd->SetGraphicsRootDescriptorTable(
-            4, subMesh.skinCluster.paletteSrvGpuHandle);
-        const bool hasPerDrawEnvironmentTexture =
-            (environmentTextureId != UINT32_MAX);
-        const uint32_t boundEnvironmentTextureId = hasPerDrawEnvironmentTexture
-                                                       ? environmentTextureId
-                                                       : hasEnvironmentTexture_
-                                                             ? environmentTextureId_
-                                                             : textureManager_->GetBlackCubeTextureId();
+        cmd->SetGraphicsRootShaderResourceView(4, paletteAddress);
         const uint32_t safeEnvironmentTextureId =
-            textureManager_->IsValidTextureId(boundEnvironmentTextureId)
-                ? boundEnvironmentTextureId
-                : textureManager_->GetBlackCubeTextureId();
+            ResolveEnvironmentTextureId(textureManager_, environmentTextureId,
+                                        environmentTextureId_,
+                                        hasEnvironmentTexture_);
+        if (safeEnvironmentTextureId == UINT32_MAX) {
+            return;
+        }
         cmd->SetGraphicsRootDescriptorTable(
             5, textureManager_->GetGpuHandle(safeEnvironmentTextureId));
         cmd->SetGraphicsRootDescriptorTable(6, shadowMapGpuHandle_);
@@ -526,12 +573,15 @@ void ModelRenderer::DrawInstanced(const Model &model,
 
     DispatchSkinningBatch(model);
 
+    const D3D12_GPU_VIRTUAL_ADDRESS identityPaletteAddress =
+        GetIdentityPaletteAddress();
     auto drawSubMesh = [&](const ModelSubMesh &subMesh) {
         if (drawIndex_ >= kMaxDraws) {
             return;
         }
         if (!IsForwardDrawableSubMesh(subMesh, meshManager_,
-                                      materialManager_)) {
+                                      materialManager_, dxCommon_,
+                                      identityPaletteAddress)) {
             return;
         }
 
@@ -546,6 +596,12 @@ void ModelRenderer::DrawInstanced(const Model &model,
             subMesh.skinCluster.skinnedVertexResource
                 ? subMesh.skinCluster.skinnedVertexBufferView
                 : mesh.vbView;
+        const D3D12_GPU_VIRTUAL_ADDRESS paletteAddress =
+            GetPaletteAddressForDraw(subMesh.skinCluster, dxCommon_,
+                                     identityPaletteAddress);
+        if (paletteAddress == 0) {
+            return;
+        }
         D3D12_VERTEX_BUFFER_VIEW views[] = {vertexBufferView, instanceView};
 
         cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
@@ -556,20 +612,15 @@ void ModelRenderer::DrawInstanced(const Model &model,
             3, textureManager_->GetGpuHandle(
                    ResolveBaseColorTextureId(textureManager_, material,
                                              subMesh.textureId)));
-        cmd->SetGraphicsRootDescriptorTable(
-            4, subMesh.skinCluster.paletteSrvGpuHandle);
+        cmd->SetGraphicsRootShaderResourceView(4, paletteAddress);
 
-        const bool hasPerDrawEnvironmentTexture =
-            (environmentTextureId != UINT32_MAX);
-        const uint32_t boundEnvironmentTextureId = hasPerDrawEnvironmentTexture
-                                                       ? environmentTextureId
-                                                       : hasEnvironmentTexture_
-                                                             ? environmentTextureId_
-                                                             : textureManager_->GetBlackCubeTextureId();
         const uint32_t safeEnvironmentTextureId =
-            textureManager_->IsValidTextureId(boundEnvironmentTextureId)
-                ? boundEnvironmentTextureId
-                : textureManager_->GetBlackCubeTextureId();
+            ResolveEnvironmentTextureId(textureManager_, environmentTextureId,
+                                        environmentTextureId_,
+                                        hasEnvironmentTexture_);
+        if (safeEnvironmentTextureId == UINT32_MAX) {
+            return;
+        }
         cmd->SetGraphicsRootDescriptorTable(
             5, textureManager_->GetGpuHandle(safeEnvironmentTextureId));
         cmd->SetGraphicsRootDescriptorTable(6, shadowMapGpuHandle_);
@@ -627,12 +678,15 @@ void ModelRenderer::DrawInstanced(const Model &model,
 
     DispatchSkinningBatch(model);
 
+    const D3D12_GPU_VIRTUAL_ADDRESS identityPaletteAddress =
+        GetIdentityPaletteAddress();
     auto drawSubMesh = [&](const ModelSubMesh &subMesh) {
         if (drawIndex_ >= kMaxDraws) {
             return;
         }
         if (!IsForwardDrawableSubMesh(subMesh, meshManager_,
-                                      materialManager_)) {
+                                      materialManager_, dxCommon_,
+                                      identityPaletteAddress)) {
             return;
         }
 
@@ -647,6 +701,12 @@ void ModelRenderer::DrawInstanced(const Model &model,
             subMesh.skinCluster.skinnedVertexResource
                 ? subMesh.skinCluster.skinnedVertexBufferView
                 : mesh.vbView;
+        const D3D12_GPU_VIRTUAL_ADDRESS paletteAddress =
+            GetPaletteAddressForDraw(subMesh.skinCluster, dxCommon_,
+                                     identityPaletteAddress);
+        if (paletteAddress == 0) {
+            return;
+        }
         D3D12_VERTEX_BUFFER_VIEW views[] = {vertexBufferView, instanceView};
 
         cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
@@ -657,20 +717,15 @@ void ModelRenderer::DrawInstanced(const Model &model,
             3, textureManager_->GetGpuHandle(
                    ResolveBaseColorTextureId(textureManager_, material,
                                              subMesh.textureId)));
-        cmd->SetGraphicsRootDescriptorTable(
-            4, subMesh.skinCluster.paletteSrvGpuHandle);
+        cmd->SetGraphicsRootShaderResourceView(4, paletteAddress);
 
-        const bool hasPerDrawEnvironmentTexture =
-            (environmentTextureId != UINT32_MAX);
-        const uint32_t boundEnvironmentTextureId = hasPerDrawEnvironmentTexture
-                                                       ? environmentTextureId
-                                                       : hasEnvironmentTexture_
-                                                             ? environmentTextureId_
-                                                             : textureManager_->GetBlackCubeTextureId();
         const uint32_t safeEnvironmentTextureId =
-            textureManager_->IsValidTextureId(boundEnvironmentTextureId)
-                ? boundEnvironmentTextureId
-                : textureManager_->GetBlackCubeTextureId();
+            ResolveEnvironmentTextureId(textureManager_, environmentTextureId,
+                                        environmentTextureId_,
+                                        hasEnvironmentTexture_);
+        if (safeEnvironmentTextureId == UINT32_MAX) {
+            return;
+        }
         cmd->SetGraphicsRootDescriptorTable(
             5, textureManager_->GetGpuHandle(safeEnvironmentTextureId));
         cmd->SetGraphicsRootDescriptorTable(6, shadowMapGpuHandle_);
@@ -721,9 +776,10 @@ void ModelRenderer::SetShadowMap(
         std::isfinite(settings.bias) ? settings.bias : 0.0f,
         ClampFinite(settings.strength, 0.0f, 1.0f, 0.0f),
         std::isfinite(settings.normalBias) ? settings.normalBias : 0.0f};
-    shadowFilterParams_ = {ClampFiniteMin(settings.filterRadius, 0.0f),
-                           ClampFiniteMin(settings.depthSoftness, 0.0001f),
-                           ClampFiniteMin(settings.edgeFade, 0.0f), 0.0f};
+    shadowFilterParams_ = {
+        AtLeastFinite(settings.filterRadius, 0.0f, 0.0f),
+        AtLeastFinite(settings.depthSoftness, 0.0001f, 0.0001f),
+        AtLeastFinite(settings.edgeFade, 0.0f, 0.0f), 0.0f};
 }
 
 void ModelRenderer::PreDrawShadow() {
@@ -760,15 +816,7 @@ void ModelRenderer::DrawShadow(
     if (cmd == nullptr) {
         return;
     }
-    const Transform safeTransform = SanitizeTransformForDraw(transform);
-    XMVECTOR q = LoadNormalizedQuaternionOrIdentity(safeTransform.rotation);
-    XMMATRIX world =
-        XMMatrixScaling(safeTransform.scale.x, safeTransform.scale.y,
-                        safeTransform.scale.z) *
-        XMMatrixRotationQuaternion(q) *
-        XMMatrixTranslation(safeTransform.position.x,
-                            safeTransform.position.y,
-                            safeTransform.position.z);
+    XMMATRIX world = RendererMath::MakeWorldMatrix(transform);
 
     if (model.hasRootAnimation) {
         world = XMLoadFloat4x4(&model.rootAnimationMatrix) * world;

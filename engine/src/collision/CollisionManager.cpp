@@ -1,4 +1,5 @@
 #include "collision/CollisionManager.h"
+#include "core/Numeric.h"
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
@@ -7,12 +8,9 @@
 using namespace DirectX;
 
 namespace {
+using Numeric::FiniteOr;
 
 constexpr float kDefaultObbRotationW = 1.0f;
-
-float FiniteOr(float value, float fallback) {
-    return std::isfinite(value) ? value : fallback;
-}
 
 float FinitePairValue(float primary, float secondary) {
     if (std::isfinite(primary)) {

@@ -1,6 +1,7 @@
 #include "texture/TextureManager.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
+#include "graphics/GpuResourceHelpers.h"
 #include "graphics/SrvManager.h"
 #include "texture/Texture.h"
 #include <limits>
@@ -25,15 +26,21 @@ class UploadPassScope {
         }
     }
 
-    void Finish() {
+    bool Finish() {
         if (!active_) {
-            return;
+            return true;
         }
-        dxCommon_->EndUpload();
-        if (textureManager_ != nullptr) {
+        const DirectXCommon::UploadPassResult result =
+            dxCommon_->EndUploadPass();
+        if (result == DirectXCommon::UploadPassResult::Failed) {
+            return false;
+        }
+        if (result == DirectXCommon::UploadPassResult::Completed &&
+            textureManager_ != nullptr) {
             textureManager_->ReleaseUploadBuffers();
         }
         active_ = false;
+        return true;
     }
 
   private:
@@ -163,8 +170,8 @@ void TextureManager::UpdateTexture2D(uint32_t textureId, const uint8_t *pixels,
     subresource.SlicePitch = static_cast<LONG_PTR>(slicePitch);
 
     const bool ownsUploadPass = !dxCommon_->IsCommandListRecording();
-    if (ownsUploadPass) {
-        dxCommon_->BeginUpload();
+    if (ownsUploadPass && !dxCommon_->BeginUpload()) {
+        return;
     }
     UploadPassScope uploadPass(dxCommon_, this, ownsUploadPass);
     if (!dxCommon_->IsCommandListRecording()) {
@@ -180,16 +187,17 @@ void TextureManager::UpdateTexture2D(uint32_t textureId, const uint8_t *pixels,
 
     const UINT64 uploadSize =
         GetRequiredIntermediateSize(texture.resource.Get(), 0, 1);
+    if (uploadSize == 0) {
+        return;
+    }
 
     ComPtr<ID3D12Resource> uploadBuffer;
     CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
     auto uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadSize);
-    const HRESULT uploadResult =
-        dxCommon_->GetDevice()->CreateCommittedResource(
-            &uploadHeap, D3D12_HEAP_FLAG_NONE, &uploadDesc,
-            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            IID_PPV_ARGS(&uploadBuffer));
-    if (FAILED(uploadResult) || !uploadBuffer) {
+    if (!GpuResourceHelpers::CreateCommittedResourceChecked(
+            dxCommon_->GetDevice(), &uploadHeap, D3D12_HEAP_FLAG_NONE,
+            &uploadDesc, D3D12_RESOURCE_STATE_GENERIC_READ,
+            uploadBuffer.GetAddressOf())) {
         return;
     }
 
@@ -198,13 +206,38 @@ void TextureManager::UpdateTexture2D(uint32_t textureId, const uint8_t *pixels,
         return;
     }
 
-    if (frameIndex < frameUploadBuffers_.size()) {
-        frameUploadBuffers_[frameIndex].push_back(uploadBuffer);
-    } else {
-        uploadBuffers_.push_back(uploadBuffer);
+    try {
+        if (frameIndex < frameUploadBuffers_.size()) {
+            frameUploadBuffers_[frameIndex].push_back(uploadBuffer);
+        } else {
+            uploadBuffers_.push_back(uploadBuffer);
+        }
+    } catch (...) {
+        return;
     }
 
+    const D3D12_RESOURCE_STATES previousState = texture.state;
+    bool rollbackRegistered = false;
+    auto registerStateRollback = [&]() -> bool {
+        if (rollbackRegistered || !dxCommon_->IsCommandListRecording()) {
+            return true;
+        }
+        if (!dxCommon_->RegisterFrameRollback(
+            this,
+            [this, textureId, previousState]() {
+                if (textureId < textures_.size()) {
+                    textures_[textureId].texture.state = previousState;
+                }
+            })) {
+            return false;
+        }
+        rollbackRegistered = true;
+        return true;
+    };
     if (texture.state != D3D12_RESOURCE_STATE_COPY_DEST) {
+        if (!registerStateRollback()) {
+            return;
+        }
         auto toCopyDest = CD3DX12_RESOURCE_BARRIER::Transition(
             texture.resource.Get(), texture.state,
             D3D12_RESOURCE_STATE_COPY_DEST);
@@ -212,14 +245,32 @@ void TextureManager::UpdateTexture2D(uint32_t textureId, const uint8_t *pixels,
         texture.state = D3D12_RESOURCE_STATE_COPY_DEST;
     }
 
-    UpdateSubresources(cmdList, texture.resource.Get(), uploadBuffer.Get(), 0,
-                       0, 1, &subresource);
+    const UINT64 copiedBytes =
+        UpdateSubresources(cmdList, texture.resource.Get(), uploadBuffer.Get(),
+                           0, 0, 1, &subresource);
+    if (copiedBytes == 0) {
+        if (texture.state != previousState) {
+            auto restoreState = CD3DX12_RESOURCE_BARRIER::Transition(
+                texture.resource.Get(), texture.state, previousState);
+            cmdList->ResourceBarrier(1, &restoreState);
+            texture.state = previousState;
+        }
+        if (!uploadPass.Finish()) {
+            texture.state = previousState;
+        }
+        return;
+    }
 
     auto toShaderResource = CD3DX12_RESOURCE_BARRIER::Transition(
         texture.resource.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    if (!registerStateRollback()) {
+        return;
+    }
     cmdList->ResourceBarrier(1, &toShaderResource);
     texture.state = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
-    uploadPass.Finish();
+    if (!uploadPass.Finish()) {
+        texture.state = previousState;
+    }
 }

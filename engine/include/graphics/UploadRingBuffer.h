@@ -76,6 +76,9 @@ class UploadRingBuffer {
 
     uint32_t GetFrameIndex() const { return frameIndex_; }
     size_t GetBytesPerFrame() const { return bytesPerFrame_; }
+    size_t GetTotalBytes() const { return bytesPerFrame_ * frames_.size(); }
+    size_t GetFrameCount() const { return frames_.size(); }
+    bool HasResources() const noexcept;
     /// <summary>
     /// FrameOffsetを取得する
     /// </summary>

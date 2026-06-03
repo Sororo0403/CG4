@@ -1,4 +1,5 @@
 #include "input/Input.h"
+#include "input/InputReplayLimits.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -51,6 +52,26 @@ Input::~Input() {
     FinishRecording();
 }
 
+void Input::ClearInputState(bool clearPrevious) {
+    keyNow_.fill(0);
+    mouseState_ = {};
+    gamepadState_ = {};
+    gamepadConnected_ = false;
+    gamepadLeftStickX_ = 0.0f;
+    gamepadLeftStickY_ = 0.0f;
+    gamepadRightStickX_ = 0.0f;
+    gamepadRightStickY_ = 0.0f;
+    gamepadLeftTrigger_ = 0.0f;
+    gamepadRightTrigger_ = 0.0f;
+
+    if (clearPrevious) {
+        keyPrev_.fill(0);
+        mousePrevState_ = {};
+        gamepadPrevState_ = {};
+        gamepadPrevConnected_ = false;
+    }
+}
+
 void Input::Initialize(HINSTANCE hInstance, HWND hwnd) {
     if (replayDirectory_.empty()) {
         replayDirectory_ = GetDefaultReplayDirectory();
@@ -59,10 +80,7 @@ void Input::Initialize(HINSTANCE hInstance, HWND hwnd) {
     directInput_.Reset();
     keyboard_.Reset();
     mouse_.Reset();
-    keyNow_.fill(0);
-    keyPrev_.fill(0);
-    mouseState_ = {};
-    mousePrevState_ = {};
+    ClearInputState(true);
 
     HRESULT hr = DirectInput8Create(
         hInstance, DIRECTINPUT_VERSION, IID_IDirectInput8,
@@ -110,6 +128,7 @@ void Input::Update(float deltaTime) {
     if (replayMode_ == ReplayMode::Replay) {
         keyPrev_ = keyNow_;
         mousePrevState_ = mouseState_;
+        gamepadPrevConnected_ = gamepadConnected_;
         gamepadPrevState_ = gamepadState_;
 
         if (replayFrameIndex_ < replayFrames_.size()) {
@@ -118,6 +137,7 @@ void Input::Update(float deltaTime) {
             replayFinished_ = replayFrameIndex_ >= replayFrames_.size();
         } else {
             replayFinished_ = true;
+            ClearInputState(false);
         }
         return;
     }
@@ -127,9 +147,14 @@ void Input::Update(float deltaTime) {
     UpdateGamepad();
     UpdateReplayHotkeys(deltaTime);
 
-    if (replayMode_ == ReplayMode::Record) {
-        recordedFrames_.push_back(CaptureFrame());
-        recordingDirty_ = true;
+    if (replayMode_ == ReplayMode::Record &&
+        recordedFrames_.size() < InputReplayLimits::kMaxFrames) {
+        try {
+            recordedFrames_.push_back(CaptureFrame());
+            recordingDirty_ = true;
+        } catch (...) {
+            replayMode_ = ReplayMode::Live;
+        }
     }
 }
 
@@ -177,6 +202,7 @@ void Input::UpdateMouse() {
 
 void Input::UpdateGamepad() {
     gamepadPrevState_ = gamepadState_;
+    gamepadPrevConnected_ = gamepadConnected_;
     ZeroMemory(&gamepadState_, sizeof(XINPUT_STATE));
 
     const DWORD result = XInputGetState(0, &gamepadState_);
@@ -263,7 +289,7 @@ bool Input::IsGamepadButtonTrigger(WORD button) const {
 }
 
 bool Input::IsGamepadButtonRelease(WORD button) const {
-    return gamepadConnected_ &&
+    return gamepadPrevConnected_ &&
            (gamepadState_.Gamepad.wButtons & button) == 0 &&
            (gamepadPrevState_.Gamepad.wButtons & button) != 0;
 }

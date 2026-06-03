@@ -1,9 +1,11 @@
 #include "collision/CollisionUtil.h"
+#include "core/Numeric.h"
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
 
 namespace {
+using Numeric::FiniteOr;
 
 constexpr float kEpsilon = 1.0e-5f;
 
@@ -20,8 +22,28 @@ float Dot(DirectX::FXMVECTOR a, DirectX::FXMVECTOR b) {
     return DirectX::XMVectorGetX(DirectX::XMVector3Dot(a, b));
 }
 
-float FiniteOr(float value, float fallback) {
-    return std::isfinite(value) ? value : fallback;
+bool IsFinite(const DirectX::XMFLOAT3 &value) {
+    return std::isfinite(value.x) && std::isfinite(value.y) &&
+           std::isfinite(value.z);
+}
+
+bool NormalizeAABB(const AABB &source, AABB &normalized) {
+    if (!IsFinite(source.min) || !IsFinite(source.max)) {
+        normalized = {};
+        return false;
+    }
+
+    normalized.min = {
+        (std::min)(source.min.x, source.max.x),
+        (std::min)(source.min.y, source.max.y),
+        (std::min)(source.min.z, source.max.z),
+    };
+    normalized.max = {
+        (std::max)(source.min.x, source.max.x),
+        (std::max)(source.min.y, source.max.y),
+        (std::max)(source.min.z, source.max.z),
+    };
+    return true;
 }
 
 float FiniteHalfExtent(float value) {
@@ -146,11 +168,17 @@ bool CollisionUtil::CheckOBB(const OBB &a, const OBB &b) {
 }
 
 bool CollisionUtil::CheckAABB(const AABB &a, const AABB &b) {
-    if (a.max.x < b.min.x || a.min.x > b.max.x)
+    AABB safeA{};
+    AABB safeB{};
+    if (!NormalizeAABB(a, safeA) || !NormalizeAABB(b, safeB)) {
         return false;
-    if (a.max.y < b.min.y || a.min.y > b.max.y)
+    }
+
+    if (safeA.max.x < safeB.min.x || safeA.min.x > safeB.max.x)
         return false;
-    if (a.max.z < b.min.z || a.min.z > b.max.z)
+    if (safeA.max.y < safeB.min.y || safeA.min.y > safeB.max.y)
+        return false;
+    if (safeA.max.z < safeB.min.z || safeA.min.z > safeB.max.z)
         return false;
 
     return true;

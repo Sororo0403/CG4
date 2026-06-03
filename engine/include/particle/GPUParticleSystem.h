@@ -144,6 +144,26 @@ class GPUParticleSystem {
         DirectX::XMFLOAT4 materialParams1{};
     };
 
+    struct ConstantFrame {
+        Microsoft::WRL::ComPtr<ID3D12Resource> updateConstantBuffer;
+        Microsoft::WRL::ComPtr<ID3D12Resource> drawConstantBuffer;
+        UpdateConstantBufferData *mappedUpdateCB = nullptr;
+        DrawConstantBufferData *mappedDrawCB = nullptr;
+
+        void Reset() {
+            if (updateConstantBuffer && mappedUpdateCB != nullptr) {
+                updateConstantBuffer->Unmap(0, nullptr);
+                mappedUpdateCB = nullptr;
+            }
+            if (drawConstantBuffer && mappedDrawCB != nullptr) {
+                drawConstantBuffer->Unmap(0, nullptr);
+                mappedDrawCB = nullptr;
+            }
+            updateConstantBuffer.Reset();
+            drawConstantBuffer.Reset();
+        }
+    };
+
     /// <summary>
     /// 更新用と描画用のルートシグネチャを生成する
     /// </summary>
@@ -178,11 +198,15 @@ class GPUParticleSystem {
 
     EmitterForGPU BuildEmitterForGPU(const ParticleEmitterSettings &settings,
                                      uint32_t emit) const;
+    ConstantFrame *GetCurrentConstantFrame();
+    const ConstantFrame *GetCurrentConstantFrame() const;
+    bool HasConstantBuffers() const;
 
     /// <summary>
     /// 保持しているGPUリソースを解放する
     /// </summary>
-    void ReleaseResources();
+    bool ReleaseResources();
+    bool ReleaseResources(bool allowFrameAbort);
 
     DirectXCommon *dxCommon_ = nullptr;
     SrvManager *srvManager_ = nullptr;
@@ -246,8 +270,6 @@ class GPUParticleSystem {
     D3D12_RESOURCE_STATES drawArgsState_ =
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> updateConstantBuffer_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> drawConstantBuffer_;
-    UpdateConstantBufferData *mappedUpdateCB_ = nullptr;
-    DrawConstantBufferData *mappedDrawCB_ = nullptr;
+    std::vector<ConstantFrame> constantFrames_;
+    UpdateConstantBufferData updateConstants_{};
 };

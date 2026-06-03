@@ -1,10 +1,21 @@
 #include "graphics/UploadRingBuffer.h"
 
 #include "graphics/DxHelpers.h"
+#include "graphics/GpuResourceHelpers.h"
+#include <cassert>
+#include <exception>
 #include <limits>
 #include <utility>
 
-UploadRingBuffer::~UploadRingBuffer() { Reset(); }
+UploadRingBuffer::~UploadRingBuffer() {
+    if (HasResources()) {
+        assert(false &&
+               "UploadRingBuffer::Reset must be called after GPU idle before "
+               "destruction");
+        std::terminate();
+    }
+    Reset();
+}
 
 void UploadRingBuffer::Initialize(ID3D12Device *device, size_t bytesPerFrame,
                                   uint32_t frameCount) {
@@ -15,6 +26,12 @@ void UploadRingBuffer::Initialize(ID3D12Device *device, size_t bytesPerFrame,
 
     Reset();
     const size_t alignedBytesPerFrame = AlignUp(bytesPerFrame, 256);
+    if (alignedBytesPerFrame == 0 ||
+        alignedBytesPerFrame == (std::numeric_limits<size_t>::max)()) {
+        Reset();
+        return;
+    }
+
     std::vector<FrameResource> newFrames(frameCount);
     for (FrameResource &frame : newFrames) {
         if (!CreateFrameResource(frame, device, alignedBytesPerFrame)) {
@@ -60,6 +77,10 @@ UploadAllocation UploadRingBuffer::Allocate(size_t size, size_t alignment) {
     }
 
     FrameResource &frame = frames_[frameIndex_];
+    if (!frame.resource || frame.mapped == nullptr) {
+        return {};
+    }
+
     const size_t alignedOffset = AlignUp(frame.offset, alignment);
     if (size > (std::numeric_limits<size_t>::max)() - alignedOffset) {
         return {};
@@ -102,21 +123,27 @@ bool UploadRingBuffer::CreateFrameResource(FrameResource &frame,
                                            size_t bytesPerFrame) {
     CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
     auto desc = CD3DX12_RESOURCE_DESC::Buffer(bytesPerFrame);
-    const HRESULT resourceResult = device->CreateCommittedResource(
-        &heap, D3D12_HEAP_FLAG_NONE, &desc,
-        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-        IID_PPV_ARGS(&frame.resource));
-    if (FAILED(resourceResult) || !frame.resource) {
+    if (!GpuResourceHelpers::CreateCommittedResourceChecked(
+            device, &heap, D3D12_HEAP_FLAG_NONE, &desc,
+            D3D12_RESOURCE_STATE_GENERIC_READ, frame.resource.GetAddressOf())) {
         frame.Reset();
         return false;
     }
     frame.resource->SetName(L"UploadRingBuffer.FrameResource");
-    const HRESULT mapResult =
-        frame.resource->Map(0, nullptr, reinterpret_cast<void **>(&frame.mapped));
-    if (FAILED(mapResult) || frame.mapped == nullptr) {
+    if (!GpuResourceHelpers::MapResourceChecked(frame.resource.Get(),
+                                                &frame.mapped)) {
         frame.Reset();
         return false;
     }
     frame.offset = 0;
     return true;
+}
+
+bool UploadRingBuffer::HasResources() const noexcept {
+    for (const FrameResource &frame : frames_) {
+        if (frame.resource) {
+            return true;
+        }
+    }
+    return false;
 }

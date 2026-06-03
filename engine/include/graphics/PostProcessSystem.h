@@ -1,6 +1,7 @@
 #pragma once
 #include "graphics/PostProcessSettings.h"
 #include <d3d12.h>
+#include <vector>
 #include <wrl.h>
 
 class DirectXCommon;
@@ -15,7 +16,8 @@ class PostProcessSystem {
     /// <summary>
     /// Finalizeを実行する
     /// </summary>
-    void Finalize();
+    bool Finalize();
+    bool Finalize(bool allowFrameAbort);
 
     void Resize(int width, int height);
 
@@ -32,8 +34,26 @@ class PostProcessSystem {
     /// RequiresPostProcessを実行する
     /// </summary>
     bool RequiresPostProcess() const;
+    bool IsReady() const {
+        return dxCommon_ != nullptr && srvManager_ != nullptr &&
+               rootSignature_ && pipelineState_ && copyPipelineState_ &&
+               HasConstantBuffers();
+    }
 
   private:
+    struct ConstantFrame {
+        Microsoft::WRL::ComPtr<ID3D12Resource> resource;
+        PostProcessConstants *mapped = nullptr;
+
+        void Reset() {
+            if (resource && mapped != nullptr) {
+                resource->Unmap(0, nullptr);
+                mapped = nullptr;
+            }
+            resource.Reset();
+        }
+    };
+
     /// <summary>
     /// RootSignatureを生成する
     /// </summary>
@@ -47,6 +67,9 @@ class PostProcessSystem {
     void CreateConstantBuffer();
 
     void UpdateConstantBuffer();
+    ConstantFrame *GetCurrentConstantFrame();
+    const ConstantFrame *GetCurrentConstantFrame() const;
+    bool HasConstantBuffers() const;
 
     DirectXCommon *dxCommon_ = nullptr;
     SrvManager *srvManager_ = nullptr;
@@ -54,8 +77,8 @@ class PostProcessSystem {
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> copyPipelineState_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> constBuffer_;
-    PostProcessConstants *mappedConstBuffer_ = nullptr;
+    std::vector<ConstantFrame> constantFrames_;
+    PostProcessConstants constants_{};
     D3D12_VIEWPORT viewport_{};
     D3D12_RECT scissorRect_{};
     PostProcessProfile profile_{};

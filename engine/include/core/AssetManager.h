@@ -7,9 +7,14 @@ class AssetManager {
     /// AssetRootを設定する
     /// </summary>
     static void SetAssetRoot(std::filesystem::path assetRoot);
-    static const std::filesystem::path &GetAssetRoot();
+    static std::filesystem::path GetAssetRoot();
+    // ビルド出力ディレクトリから起動した場合でも、親ディレクトリを
+    // たどってエンジン・アプリの固定リソースを探す。
     static std::filesystem::path
     ResolvePath(const std::filesystem::path &relativePath);
+    // ユーザー指定のアセットパス用。解決後のパスをAssetRoot内に制限する。
+    static std::filesystem::path
+    ResolvePathStrict(const std::filesystem::path &relativePath);
 
   private:
     /// <summary>

@@ -28,6 +28,7 @@ class SpriteManager {
     /// <param name="height">クライアント領域の高さ</param>
     void Initialize(DirectXCommon *dxCommon, TextureManager *textureManager,
                     SrvManager *srvManager, int width, int height);
+    void Finalize();
 
     /// <summary>
     /// 指定IDのスプライトを描画する
@@ -72,6 +73,16 @@ class SpriteManager {
     /// </summary>
     SpriteRenderer *GetRenderer() { return &spriteRenderer_; }
     const SpriteRenderer *GetRenderer() const { return &spriteRenderer_; }
+    bool IsReady() const { return spriteRenderer_.IsReady(); }
+    size_t GetUploadBytesPerFrame() const {
+        return spriteRenderer_.GetUploadBytesPerFrame();
+    }
+    size_t GetUploadTotalBytes() const {
+        return spriteRenderer_.GetUploadTotalBytes();
+    }
+    size_t GetUploadFrameOffset() const {
+        return spriteRenderer_.GetUploadFrameOffset();
+    }
 
     /// <summary>
     /// スプライトを取得する

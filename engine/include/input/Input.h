@@ -199,6 +199,7 @@ class Input {
     /// XInputからゲームパッドの接続状態と各入力値を読み込む
     /// </summary>
     void UpdateGamepad();
+    void ClearInputState(bool clearPrevious);
 
     struct InputFrame {
         std::array<BYTE, 256> keys{};
@@ -242,6 +243,7 @@ class Input {
     XINPUT_STATE gamepadState_{};
     XINPUT_STATE gamepadPrevState_{};
     bool gamepadConnected_ = false;
+    bool gamepadPrevConnected_ = false;
     float gamepadLeftStickX_ = 0.0f;
     float gamepadLeftStickY_ = 0.0f;
     float gamepadRightStickX_ = 0.0f;

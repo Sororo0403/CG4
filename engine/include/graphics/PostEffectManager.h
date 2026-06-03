@@ -44,6 +44,7 @@ class PostEffectManager {
     const PostProcessProfile &GetComposedProfile() const {
         return composedProfile_;
     }
+    bool IsReady() const { return system_ != nullptr; }
 
   private:
     struct Layer {

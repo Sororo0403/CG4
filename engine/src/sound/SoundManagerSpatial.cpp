@@ -1,5 +1,5 @@
 #include "sound/SoundManager.h"
-#include "core/AssetManager.h"
+#include "core/Numeric.h"
 
 #include <Objbase.h>
 #include <algorithm>
@@ -17,13 +17,6 @@
 using namespace DirectX;
 
 namespace {
-
-float ClampFinite(float value, float minimum, float maximum, float fallback) {
-    if (!std::isfinite(value)) {
-        return fallback;
-    }
-    return std::clamp(value, minimum, maximum);
-}
 
 XMVECTOR LoadFloat3OrDefault(const XMFLOAT3 &value, FXMVECTOR fallback) {
     if (!std::isfinite(value.x) || !std::isfinite(value.y) ||
@@ -151,9 +144,9 @@ void SoundManager::Apply3D(PlayingVoice &playingVoice) {
     const float attenuation =
         1.0f - (distance - minDistance) / (maxDistance - minDistance);
     const float voiceVolume =
-        ClampFinite(playingVoice.volume, 0.0f, 1.0f, 0.0f);
+        Numeric::ClampFinite(playingVoice.volume, 0.0f, 1.0f, 0.0f);
     const float volume =
-        voiceVolume * ClampFinite(attenuation, 0.0f, 1.0f, 0.0f);
+        voiceVolume * Numeric::ClampFinite(attenuation, 0.0f, 1.0f, 0.0f);
 
     XAUDIO2_VOICE_DETAILS sourceDetails{};
     XAUDIO2_VOICE_DETAILS masterDetails{};
@@ -179,7 +172,7 @@ void SoundManager::Apply3D(PlayingVoice &playingVoice) {
             XMVector3Cross(up, forward),
             XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f));
         XMVECTOR direction = NormalizeVectorOrDefault(toSource, forward);
-        const float pan = ClampFinite(
+        const float pan = Numeric::ClampFinite(
             XMVectorGetX(XMVector3Dot(direction, right)), -1.0f, 1.0f, 0.0f);
         const float left = volume * std::sqrt((1.0f - pan) * 0.5f);
         const float rightVolume = volume * std::sqrt((1.0f + pan) * 0.5f);

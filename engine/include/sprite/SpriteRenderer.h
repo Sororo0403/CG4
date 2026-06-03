@@ -15,6 +15,8 @@ class SrvManager;
 
 class SpriteRenderer {
   public:
+    ~SpriteRenderer();
+
     /// <summary>
     /// スプライト描画に必要なパイプラインとバッファを初期化する
     /// </summary>
@@ -25,6 +27,8 @@ class SpriteRenderer {
     /// <param name="height">クライアント領域の高さ</param>
     void Initialize(DirectXCommon *dxCommon, TextureManager *textureManager,
                     SrvManager *srvManager, int width, int height);
+    bool Finalize();
+    bool Finalize(bool allowFrameAbort);
 
     /// <summary>
     /// スプライト1枚分の頂点を一時バッファへ書き込んで描画する
@@ -51,6 +55,14 @@ class SpriteRenderer {
     /// 投影行列を更新する
     /// </summary>
     void UpdateProjection(int width, int height);
+    bool IsReady() const;
+    size_t GetUploadBytesPerFrame() const {
+        return uploadBuffer_.GetBytesPerFrame();
+    }
+    size_t GetUploadTotalBytes() const { return uploadBuffer_.GetTotalBytes(); }
+    size_t GetUploadFrameOffset() const {
+        return uploadBuffer_.GetFrameOffset();
+    }
 
   private:
     enum class PipelineKind : uint32_t {
@@ -68,7 +80,7 @@ class SpriteRenderer {
 
     static constexpr uint32_t kVerticesPerSprite = 6;
     static constexpr uint32_t kMaxSpriteDraws = 4096;
-    static constexpr size_t kUploadBytesPerFrame = 4 * 1024 * 1024;
+    static constexpr size_t kUploadBytesPerFrame = 1 * 1024 * 1024;
 
     struct SpriteVertex {
         DirectX::XMFLOAT3 pos;
@@ -94,6 +106,7 @@ class SpriteRenderer {
     bool HasAllPipelineStates() const;
 
     void CreateUploadBuffer();
+    void ResetResources();
     /// <summary>
     /// FlushQueuedDrawsを実行する
     /// </summary>

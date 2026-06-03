@@ -1,4 +1,5 @@
 #include "sprite/SpriteManager.h"
+#include "core/Numeric.h"
 #include "graphics/DirectXCommon.h"
 #include "sprite/Sprite.h"
 #include "texture/TextureManager.h"
@@ -8,9 +9,7 @@
 #include <numeric>
 
 namespace {
-float FiniteOr(float value, float fallback) {
-    return std::isfinite(value) ? value : fallback;
-}
+using Numeric::FiniteOr;
 
 Sprite &FallbackSprite() {
     static Sprite fallback{};
@@ -27,16 +26,22 @@ void SpriteManager::Initialize(DirectXCommon *dxCommon,
                                TextureManager *textureManager,
                                SrvManager *srvManager, int width, int height) {
     if (!dxCommon || !textureManager || !srvManager) {
-        dxCommon_ = nullptr;
-        textureManager_ = nullptr;
-        sprites_.clear();
+        Finalize();
         return;
     }
 
+    Finalize();
     spriteRenderer_.Initialize(dxCommon, textureManager, srvManager, width,
                                height);
     dxCommon_ = dxCommon;
     textureManager_ = textureManager;
+    sprites_.clear();
+}
+
+void SpriteManager::Finalize() {
+    spriteRenderer_.Finalize();
+    dxCommon_ = nullptr;
+    textureManager_ = nullptr;
     sprites_.clear();
 }
 
@@ -72,22 +77,31 @@ uint32_t SpriteManager::Create(const std::wstring &filePath) {
     if (textureManager_ == nullptr) {
         return UINT32_MAX;
     }
-
-    uint32_t texId = textureManager_->Load(filePath);
-
-    Sprite sprite{};
-    sprite.textureId = texId;
-    sprite.position = {0.0f, 0.0f};
-    sprite.size = {static_cast<float>(textureManager_->GetWidth(texId)),
-                   static_cast<float>(textureManager_->GetHeight(texId))};
-    sprite.uvLeftTop = {0.0f, 0.0f};
-    sprite.uvSize = {1.0f, 1.0f};
-    sprite.color = {1.0f, 1.0f, 1.0f, 1.0f};
-
     if (sprites_.size() >=
         static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
         return UINT32_MAX;
     }
+
+    uint32_t texId = textureManager_->Load(filePath);
+    if (!textureManager_->IsValidTextureId(texId)) {
+        return UINT32_MAX;
+    }
+
+    const uint32_t textureWidth = textureManager_->GetWidth(texId);
+    const uint32_t textureHeight = textureManager_->GetHeight(texId);
+    if (textureWidth == 0 || textureHeight == 0) {
+        return UINT32_MAX;
+    }
+
+    Sprite sprite{};
+    sprite.textureId = texId;
+    sprite.position = {0.0f, 0.0f};
+    sprite.size = {static_cast<float>(textureWidth),
+                   static_cast<float>(textureHeight)};
+    sprite.uvLeftTop = {0.0f, 0.0f};
+    sprite.uvSize = {1.0f, 1.0f};
+    sprite.color = {1.0f, 1.0f, 1.0f, 1.0f};
+
     sprites_.push_back(sprite);
     return static_cast<uint32_t>(sprites_.size() - 1);
 }

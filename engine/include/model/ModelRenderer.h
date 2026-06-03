@@ -24,6 +24,8 @@ class TextureManager;
 /// </summary>
 class ModelRenderer {
   public:
+    ~ModelRenderer();
+
     /// <summary>
     /// モデル描画に必要なパイプラインと各マネージャ参照を初期化する
     /// </summary>
@@ -35,6 +37,8 @@ class ModelRenderer {
     void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
                     MeshManager *meshManager, TextureManager *textureManager,
                     MaterialManager *materialManager);
+    bool Finalize();
+    bool Finalize(bool allowFrameAbort);
 
     /// <summary>
     /// Frameを開始する
@@ -108,7 +112,7 @@ class ModelRenderer {
     /// <summary>
     /// 現在フレームの描画エフェクトを設定する
     /// </summary>
-    void SetDrawEffect(const ModelDrawEffect &effect) { currentEffect_ = effect; }
+    void SetDrawEffect(const ModelDrawEffect &effect);
 
     /// <summary>
     /// 描画エフェクト設定を初期状態へ戻す
@@ -146,7 +150,7 @@ class ModelRenderer {
     /// モデル用スキンクラスターGPUリソースを生成する
     /// </summary>
     /// <param name="model">対象モデル</param>
-    void CreateSkinClusters(Model &model);
+    bool CreateSkinClusters(Model &model);
 
     /// <summary>
     /// スキンクラスターのパレット内容を更新する
@@ -163,6 +167,14 @@ class ModelRenderer {
     /// モデル描画後の状態を整理する
     /// </summary>
     void PostDraw();
+    bool IsReady() const;
+    size_t GetUploadBytesPerFrame() const {
+        return uploadBuffer_.GetBytesPerFrame();
+    }
+    size_t GetUploadTotalBytes() const { return uploadBuffer_.GetTotalBytes(); }
+    size_t GetUploadFrameOffset() const {
+        return uploadBuffer_.GetFrameOffset();
+    }
 
   private:
     /// <summary>
@@ -196,6 +208,11 @@ class ModelRenderer {
     void CreateSkinningPipelineState();
 
     void CreateUploadBuffer();
+    bool CreateIdentityPalette();
+    void ResetIdentityPalette() noexcept;
+    bool HasIdentityPaletteResources() const noexcept;
+    D3D12_GPU_VIRTUAL_ADDRESS GetIdentityPaletteAddress() const;
+    void ResetResources();
     D3D12_GPU_VIRTUAL_ADDRESS WriteObjectConstants(
         const DirectX::XMMATRIX &wvp, const DirectX::XMMATRIX &world,
         const DirectX::XMMATRIX &worldInverseTranspose);
@@ -230,7 +247,7 @@ class ModelRenderer {
 
   private:
     static constexpr uint32_t kMaxDraws = 4096;
-    static constexpr size_t kUploadBytesPerFrame = 16 * 1024 * 1024;
+    static constexpr size_t kUploadBytesPerFrame = 4 * 1024 * 1024;
     static constexpr size_t kPipelineVariantCount = 18;
 
     DirectXCommon *dxCommon_ = nullptr;
@@ -253,6 +270,7 @@ class ModelRenderer {
     Microsoft::WRL::ComPtr<ID3D12PipelineState> skinningPSO_;
 
     UploadRingBuffer uploadBuffer_;
+    std::vector<SkinPaletteFrame> identityPaletteFrames_;
     uint32_t drawIndex_ = 0;
     uint64_t skinningFrameId_ = 0;
     SceneLighting currentLighting_{};

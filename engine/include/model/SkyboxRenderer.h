@@ -3,6 +3,7 @@
 #include <DirectXMath.h>
 #include <cstdint>
 #include <d3d12.h>
+#include <vector>
 #include <wrl.h>
 
 class DirectXCommon;
@@ -28,7 +29,8 @@ class SkyboxRenderer {
     /// <summary>
     /// スカイボックス描画用GPUリソースを解放する
     /// </summary>
-    void Finalize();
+    bool Finalize();
+    bool Finalize(bool allowFrameAbort);
 
     /// <summary>
     /// スカイボックスを描画する
@@ -40,6 +42,12 @@ class SkyboxRenderer {
     /// 描画を実行する
     /// </summary>
     void Draw(uint32_t textureId, const Camera &camera);
+    bool IsReady() const {
+        return dxCommon_ != nullptr && srvManager_ != nullptr &&
+               textureManager_ != nullptr && rootSignature_ &&
+               pipelineState_ && vertexBuffer_ && indexBuffer_ &&
+               HasConstantBuffers() && indexCount_ > 0;
+    }
 
   private:
     /// <summary>
@@ -67,6 +75,23 @@ class SkyboxRenderer {
         DirectX::XMFLOAT4X4 matWVP{};
     };
 
+    struct ConstantFrame {
+        Microsoft::WRL::ComPtr<ID3D12Resource> resource;
+        ConstBufferData *mapped = nullptr;
+
+        void Reset() {
+            if (resource && mapped != nullptr) {
+                resource->Unmap(0, nullptr);
+                mapped = nullptr;
+            }
+            resource.Reset();
+        }
+    };
+
+    ConstantFrame *GetCurrentConstantFrame();
+    const ConstantFrame *GetCurrentConstantFrame() const;
+    bool HasConstantBuffers() const;
+
     DirectXCommon *dxCommon_ = nullptr;
     SrvManager *srvManager_ = nullptr;
     TextureManager *textureManager_ = nullptr;
@@ -75,15 +100,10 @@ class SkyboxRenderer {
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;
     Microsoft::WRL::ComPtr<ID3D12Resource> vertexBuffer_;
     Microsoft::WRL::ComPtr<ID3D12Resource> indexBuffer_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> constBuffer_;
+    std::vector<ConstantFrame> constantFrames_;
 
     D3D12_VERTEX_BUFFER_VIEW vbView_{};
     D3D12_INDEX_BUFFER_VIEW ibView_{};
 
-    ConstBufferData *mappedCB_ = nullptr;
     uint32_t indexCount_ = 0;
-    bool hasCachedCameraState_ = false;
-    DirectX::XMFLOAT3 cachedCameraPosition_ = {};
-    DirectX::XMFLOAT4X4 cachedView_ = {};
-    DirectX::XMFLOAT4X4 cachedProj_ = {};
 };

@@ -26,7 +26,8 @@ class ImguiManager {
     /// <summary>
     /// ImGuiバックエンドとSRV割り当てを解放する
     /// </summary>
-    void Finalize();
+    bool Finalize();
+    bool Finalize(bool allowFrameAbort);
 
     /// <summary>
     /// ImGuiの新しいフレームを開始する
@@ -39,10 +40,10 @@ class ImguiManager {
     /// </summary>
     /// <param name="commandList">コマンドリスト</param>
     void End(ID3D12GraphicsCommandList *commandList);
-
-  private:
     bool IsReady() const;
 
+  private:
+    DirectXCommon *dxCommon_ = nullptr;
     SrvManager *srvManager_ = nullptr;
     std::unordered_map<SIZE_T, UINT> allocatedSrvIndices_;
     bool contextCreated_ = false;

@@ -6,6 +6,8 @@
 #include "graphics/SrvManager.h"
 #include "model/MaterialManager.h"
 #include "model/MeshManager.h"
+#include "model/RendererMath.h"
+#include "model/RendererSceneConstants.h"
 #include "model/Vertex.h"
 #include "texture/TextureManager.h"
 #include <algorithm>
@@ -84,36 +86,6 @@ uint32_t ResolveNormalTextureId(TextureManager *textureManager,
 
 }
 
-static XMFLOAT4X4 StoreMatrix(const XMMATRIX &matrix) {
-    XMFLOAT4X4 result{};
-    XMStoreFloat4x4(&result, matrix);
-    return result;
-}
-
-static XMVECTOR LoadNormalizedQuaternionOrIdentity(const XMFLOAT4 &rotation) {
-    if (!std::isfinite(rotation.x) || !std::isfinite(rotation.y) ||
-        !std::isfinite(rotation.z) || !std::isfinite(rotation.w)) {
-        return XMQuaternionIdentity();
-    }
-    XMVECTOR q = XMLoadFloat4(&rotation);
-    const float lengthSq = XMVectorGetX(XMVector4LengthSq(q));
-    if (!std::isfinite(lengthSq) || lengthSq <= 0.000001f) {
-        return XMQuaternionIdentity();
-    }
-    return XMQuaternionNormalize(q);
-}
-
-static XMMATRIX MakeSafeInverseTranspose(const XMMATRIX &matrix) {
-    const XMVECTOR determinant = XMMatrixDeterminant(matrix);
-    const float determinantValue = XMVectorGetX(determinant);
-    if (!std::isfinite(determinantValue) ||
-        std::abs(determinantValue) <= 0.000001f) {
-        return XMMatrixIdentity();
-    }
-
-    return XMMatrixTranspose(XMMatrixInverse(nullptr, matrix));
-}
-
 bool CanStageInstanceData(size_t bytesPerFrame, uint32_t instanceCount) {
     if (bytesPerFrame == 0 || instanceCount == 0) {
         return false;
@@ -126,55 +98,10 @@ bool CanStageInstanceData(size_t bytesPerFrame, uint32_t instanceCount) {
            bytesPerFrame;
 }
 
-static void NormalizeInfluence(VertexInfluence &influence) {
-    float totalWeight = 0.0f;
-    for (float weight : influence.weights) {
-        totalWeight += weight;
-    }
-
-    if (totalWeight <= 0.00001f) {
-        return;
-    }
-
-    for (float &weight : influence.weights) {
-        weight /= totalWeight;
-    }
-}
-
 struct PerObjectConstBufferData {
     XMFLOAT4X4 matWVP;
     XMFLOAT4X4 matWorld;
     XMFLOAT4X4 matWorldInverseTranspose;
-};
-
-struct SceneConstBufferData {
-    struct PointLightData {
-        XMFLOAT4 positionRange;
-        XMFLOAT4 colorIntensity;
-    };
-    struct SpotLightData {
-        XMFLOAT4 positionRange;
-        XMFLOAT4 direction;
-        XMFLOAT4 colorIntensity;
-        XMFLOAT4 angleParams;
-    };
-
-    XMFLOAT4 cameraPos;
-    XMFLOAT4 keyLightDirection;
-    XMFLOAT4 keyLightColor;
-    XMFLOAT4 fillLightDirection;
-    XMFLOAT4 fillLightColor;
-    XMFLOAT4 ambientColor;
-    PointLightData pointLights[2];
-    XMFLOAT4 lightingParams;
-    XMFLOAT4 lightingModeParams;
-    XMFLOAT4 fogColor;
-    XMFLOAT4 fogParams;
-    XMFLOAT4X4 viewProjection;
-    XMFLOAT4X4 lightViewProjection;
-    XMFLOAT4 shadowParams;
-    XMFLOAT4 shadowFilterParams;
-    SpotLightData spotLight;
 };
 
 struct DrawEffectConstBufferData {
@@ -205,7 +132,7 @@ D3D12_GPU_VIRTUAL_ADDRESS ModelRenderer::WriteObjectConstants(
 
 D3D12_GPU_VIRTUAL_ADDRESS
 ModelRenderer::WriteSceneConstants(const Camera &camera) {
-    SceneConstBufferData data{};
+    ModelSceneConstBufferData data{};
     data.cameraPos = {camera.GetPosition().x, camera.GetPosition().y,
                       camera.GetPosition().z, 1.0f};
     data.keyLightDirection = {currentLighting_.keyLightDirection.x,
@@ -276,15 +203,8 @@ ModelRenderer::WriteInstances(const Model &model, const Transform *transforms,
 
     std::vector<InstanceData> instances(instanceCount);
     for (uint32_t index = 0; index < instanceCount; ++index) {
-        const Transform transform = SanitizeTransformForDraw(transforms[index]);
-        XMVECTOR q =
-            LoadNormalizedQuaternionOrIdentity(transform.rotation);
         const XMMATRIX world =
-            XMMatrixScaling(transform.scale.x, transform.scale.y,
-                            transform.scale.z) *
-            XMMatrixRotationQuaternion(q) *
-            XMMatrixTranslation(transform.position.x, transform.position.y,
-                                transform.position.z);
+            RendererMath::MakeWorldMatrix(transforms[index]);
         XMStoreFloat4x4(&instances[index].world, world);
     }
 

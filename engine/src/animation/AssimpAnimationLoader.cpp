@@ -1,12 +1,77 @@
 #include "animation/AssimpAnimationLoader.h"
+#include "model/ModelLimits.h"
+#include <algorithm>
+#include <cmath>
 #include <unordered_map>
+#include <vector>
 
 namespace {
 
+constexpr float kDefaultTicksPerSecond = 25.0f;
+constexpr float kMinimumClipDuration = 0.000001f;
+constexpr size_t kMaxAssimpNodeTraversal = 65536u;
+
 float ToSeconds(double ticks, float ticksPerSecond) {
     const float safeTicksPerSecond =
-        (ticksPerSecond > 0.0f) ? ticksPerSecond : 25.0f;
-    return static_cast<float>(ticks) / safeTicksPerSecond;
+        (std::isfinite(ticksPerSecond) && ticksPerSecond > 0.0f)
+            ? ticksPerSecond
+            : kDefaultTicksPerSecond;
+    if (!std::isfinite(ticks)) {
+        return 0.0f;
+    }
+
+    const float seconds = static_cast<float>(ticks) / safeTicksPerSecond;
+    if (!std::isfinite(seconds) || seconds < 0.0f) {
+        return 0.0f;
+    }
+    return seconds;
+}
+
+template <typename TValue>
+void NormalizeKeyframes(AnimationCurve<TValue> &curve) {
+    curve.keyframes.erase(
+        std::remove_if(curve.keyframes.begin(), curve.keyframes.end(),
+                       [](const Keyframe<TValue> &keyframe) {
+                           return !std::isfinite(keyframe.time) ||
+                                  keyframe.time < 0.0f;
+                       }),
+        curve.keyframes.end());
+    std::stable_sort(curve.keyframes.begin(), curve.keyframes.end(),
+                     [](const Keyframe<TValue> &lhs,
+                        const Keyframe<TValue> &rhs) {
+                         return lhs.time < rhs.time;
+                     });
+}
+
+void NormalizeNodeAnimation(NodeAnimation &nodeAnimation) {
+    NormalizeKeyframes(nodeAnimation.translate);
+    NormalizeKeyframes(nodeAnimation.rotate);
+    NormalizeKeyframes(nodeAnimation.scale);
+}
+
+bool HasKeyframes(const NodeAnimation &nodeAnimation) {
+    return !nodeAnimation.translate.keyframes.empty() ||
+           !nodeAnimation.rotate.keyframes.empty() ||
+           !nodeAnimation.scale.keyframes.empty();
+}
+
+template <typename TValue>
+float MaxKeyTime(const AnimationCurve<TValue> &curve) {
+    return curve.keyframes.empty() ? 0.0f : curve.keyframes.back().time;
+}
+
+float MaxNodeAnimationTime(const NodeAnimation &nodeAnimation) {
+    return (std::max)({MaxKeyTime(nodeAnimation.translate),
+                       MaxKeyTime(nodeAnimation.rotate),
+                       MaxKeyTime(nodeAnimation.scale)});
+}
+
+float MaxClipKeyTime(const AnimationClip &clip) {
+    float maxTime = 0.0f;
+    for (const auto &entry : clip.nodeAnimations) {
+        maxTime = (std::max)(maxTime, MaxNodeAnimationTime(entry.second));
+    }
+    return maxTime;
 }
 
 const aiNode *FindNearestAnimatedNode(
@@ -16,16 +81,40 @@ const aiNode *FindNearestAnimatedNode(
         return nullptr;
     }
 
-    if (nodeAnimations.find(node->mName.C_Str()) != nodeAnimations.end()) {
-        return node;
+    std::vector<const aiNode *> stack;
+    try {
+        stack.reserve(256u);
+        stack.push_back(node);
+    } catch (...) {
+        return nullptr;
     }
 
-    for (unsigned int childIndex = 0; childIndex < node->mNumChildren;
-         ++childIndex) {
-        const aiNode *found = FindNearestAnimatedNode(
-            node->mChildren[childIndex], nodeAnimations);
-        if (found) {
-            return found;
+    size_t visited = 0;
+    while (!stack.empty()) {
+        const aiNode *current = stack.back();
+        stack.pop_back();
+        if (!current) {
+            continue;
+        }
+        if (++visited > kMaxAssimpNodeTraversal) {
+            return nullptr;
+        }
+
+        if (nodeAnimations.find(current->mName.C_Str()) !=
+            nodeAnimations.end()) {
+            return current;
+        }
+
+        if (current->mNumChildren > 0 && current->mChildren == nullptr) {
+            return nullptr;
+        }
+        for (unsigned int childIndex = current->mNumChildren; childIndex > 0;
+             --childIndex) {
+            try {
+                stack.push_back(current->mChildren[childIndex - 1u]);
+            } catch (...) {
+                return nullptr;
+            }
         }
     }
 
@@ -39,10 +128,27 @@ void AssimpAnimationLoader::LoadAnimations(const aiScene *scene,
     if (!scene || !scene->HasAnimations()) {
         return;
     }
+    if (scene->mNumAnimations > ModelLimits::kMaxAnimations) {
+        return;
+    }
+    if (scene->mNumAnimations > 0 && scene->mAnimations == nullptr) {
+        return;
+    }
 
+    size_t totalChannels = 0;
+    size_t totalKeys = 0;
     for (unsigned int a = 0; a < scene->mNumAnimations; a++) {
         aiAnimation *anim = scene->mAnimations[a];
         if (!anim) {
+            continue;
+        }
+        if (anim->mNumChannels > ModelLimits::kMaxAnimationChannels ||
+            totalChannels >
+                ModelLimits::kMaxAnimationChannels - anim->mNumChannels) {
+            continue;
+        }
+        totalChannels += anim->mNumChannels;
+        if (anim->mNumChannels > 0 && anim->mChannels == nullptr) {
             continue;
         }
 
@@ -55,6 +161,21 @@ void AssimpAnimationLoader::LoadAnimations(const aiScene *scene,
             if (!channel) {
                 continue;
             }
+            if ((channel->mNumPositionKeys > 0 && !channel->mPositionKeys) ||
+                (channel->mNumRotationKeys > 0 && !channel->mRotationKeys) ||
+                (channel->mNumScalingKeys > 0 && !channel->mScalingKeys)) {
+                continue;
+            }
+            const size_t channelKeyCount =
+                static_cast<size_t>(channel->mNumPositionKeys) +
+                static_cast<size_t>(channel->mNumRotationKeys) +
+                static_cast<size_t>(channel->mNumScalingKeys);
+            if (channelKeyCount > ModelLimits::kMaxAnimationKeysPerChannel ||
+                totalKeys >
+                    ModelLimits::kMaxAnimationKeysTotal - channelKeyCount) {
+                continue;
+            }
+            totalKeys += channelKeyCount;
 
             NodeAnimation nodeAnim;
 
@@ -79,7 +200,21 @@ void AssimpAnimationLoader::LoadAnimations(const aiScene *scene,
                      {key.mValue.x, key.mValue.y, key.mValue.z}});
             }
 
+            NormalizeNodeAnimation(nodeAnim);
+            if (!HasKeyframes(nodeAnim)) {
+                continue;
+            }
             clip.nodeAnimations[channel->mNodeName.C_Str()] = nodeAnim;
+        }
+
+        if (clip.nodeAnimations.empty()) {
+            continue;
+        }
+
+        const float keyDuration = MaxClipKeyTime(clip);
+        clip.duration = (std::max)(clip.duration, keyDuration);
+        if (!std::isfinite(clip.duration) || clip.duration <= 0.0f) {
+            clip.duration = kMinimumClipDuration;
         }
 
         if (const aiNode *rootAnimatedNode = FindNearestAnimatedNode(

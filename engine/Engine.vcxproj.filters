@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="include">
@@ -79,8 +79,14 @@
     <Filter Include="include\particle">
       <UniqueIdentifier>{c2999ce7-771d-4d07-9c9e-fb53f656af97}</UniqueIdentifier>
     </Filter>
+    <Filter Include="include\physics">
+      <UniqueIdentifier>{5bf760fb-03cf-4e1d-9252-395d98ef4a97}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\particle">
       <UniqueIdentifier>{58a1f206-67c0-4ac7-a3ee-733507e97254}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\physics">
+      <UniqueIdentifier>{57c56d45-18dc-4d05-879c-569ef4e431ea}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\collision">
       <UniqueIdentifier>{024bd489-5878-4b22-bcf0-02c6b87fc14e}</UniqueIdentifier>
@@ -112,6 +118,9 @@
     <Filter Include="resources\shaders\postprocess">
       <UniqueIdentifier>{2be6bc38-3dda-4303-a10f-338456c66f26}</UniqueIdentifier>
     </Filter>
+    <Filter Include="resources\shaders\depth">
+      <UniqueIdentifier>{b6d18d26-3c91-4f5e-a6dd-52e2c1683db2}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\core\WinApp.cpp">
@@ -120,10 +129,25 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\DirectXCommon.cpp">
       <Filter>src\graphics</Filter>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\DirectXCommonResources.cpp">
+      <Filter>src\graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\DirectXCommonSync.cpp">
+      <Filter>src\graphics</Filter>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\Culling.cpp">
       <Filter>src\graphics</Filter>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\DepthPyramid.cpp">
+      <Filter>src\graphics</Filter>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\DynamicBuffer.cpp">
+      <Filter>src\graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\GpuProfiler.cpp">
+      <Filter>src\graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\RenderGraph.cpp">
       <Filter>src\graphics</Filter>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PipelineManager.cpp">
@@ -198,16 +222,25 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRendererBuffers.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRendererGpuCull.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRendererPipeline.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelManager.cpp">
       <Filter>src\model</Filter>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelPrimitiveFactory.cpp">
+      <Filter>src\model</Filter>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\imgui\ImguiManager.cpp">
       <Filter>src\imgui</Filter>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\sound\SoundManager.cpp">
+      <Filter>src\sound</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\sound\SoundManagerAnalysis.cpp">
       <Filter>src\sound</Filter>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\sound\SoundManagerSpatial.cpp">
@@ -219,6 +252,9 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\sound\AudioFileLoader.cpp">
       <Filter>src\sound</Filter>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\sound\SoundFormatUtils.cpp">
+      <Filter>src\sound</Filter>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\input\Input.cpp">
       <Filter>src\input</Filter>
     </ClCompile>
@@ -228,8 +264,26 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\SceneManager.cpp">
       <Filter>src\scene</Filter>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\EditorGizmo.cpp">
+      <Filter>src\scene</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\WorldStateStore.cpp">
+      <Filter>src\scene</Filter>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleSystem.cpp">
       <Filter>src\particle</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleEmitterUtils.cpp">
+      <Filter>src\particle</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleSystemResources.cpp">
+      <Filter>src\particle</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleSystemShared.cpp">
+      <Filter>src\particle</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\physics\CharacterController.cpp">
+      <Filter>src\physics</Filter>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\collision\CollisionManager.cpp">
       <Filter>src\collision</Filter>
@@ -261,6 +315,15 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\core\AssetManager.cpp">
       <Filter>src\core</Filter>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\core\AssetHotReloader.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\core\CpuProfiler.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\core\DebugSettingsStore.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\core\EngineRuntime.cpp">
       <Filter>src\core</Filter>
     </ClCompile>
@@ -284,6 +347,18 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\AssetManager.h">
       <Filter>include\core</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\core\AssetHotReloader.h">
+      <Filter>include\core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\core\ComInitialization.h">
+      <Filter>include\core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\core\CpuProfiler.h">
+      <Filter>include\core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\core\DebugSettingsStore.h">
+      <Filter>include\core</Filter>
+    </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\EngineRuntime.h">
       <Filter>include\core</Filter>
     </ClInclude>
@@ -293,16 +368,52 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\MathUtils.h">
       <Filter>include\core</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\core\Numeric.h">
+      <Filter>include\core</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\core\PathUtils.h">
+      <Filter>include\core</Filter>
+    </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\ResourceHandle.h">
       <Filter>include\core</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\DirectXCommon.h">
       <Filter>include\graphics</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\graphics\DirectXCommonInternal.h">
+      <Filter>src\graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\model\ModelPrimitiveFactory.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\model\RendererMaterialUtils.h">
+      <Filter>src\model</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleEmitterUtils.h">
+      <Filter>src\particle</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\FrameRollbackRegistry.h">
+      <Filter>include\graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\GpuResourceLifetime.h">
+      <Filter>include\graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\GpuResourceHelpers.h">
+      <Filter>include\graphics</Filter>
+    </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\Culling.h">
       <Filter>include\graphics</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\DepthPyramid.h">
+      <Filter>include\graphics</Filter>
+    </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\DynamicBuffer.h">
+      <Filter>include\graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\GpuProfiler.h">
+      <Filter>include\graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\RenderGraph.h">
       <Filter>include\graphics</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\Lighting.h">
@@ -365,6 +476,9 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\texture\TextureManager.h">
       <Filter>include\texture</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\texture\TextureLimits.h">
+      <Filter>include\texture</Filter>
+    </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\sprite\SpriteRenderer.h">
       <Filter>include\sprite</Filter>
     </ClInclude>
@@ -377,7 +491,22 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\ModelDrawEffect.h">
       <Filter>include\model</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\model\ModelLimits.h">
+      <Filter>include\model</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\model\RendererMath.h">
+      <Filter>include\model</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\model\RendererSceneConstants.h">
+      <Filter>include\model</Filter>
+    </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\InstanceData.h">
+      <Filter>include\model</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MeshGpuCullBuffer.h">
+      <Filter>include\model</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MeshInstanceBuffer.h">
       <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MeshPipelineFactory.h">
@@ -413,13 +542,22 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\sound\SoundManager.h">
       <Filter>include\sound</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\sound\AudioLimits.h">
+      <Filter>include\sound</Filter>
+    </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\sound\AudioFileLoader.h">
       <Filter>include\sound</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\sound\SoundFormatUtils.h">
+      <Filter>src\sound</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\sound\SoundVoiceCallback.h">
       <Filter>include\sound</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\input\Input.h">
+      <Filter>include\input</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\input\InputReplayLimits.h">
       <Filter>include\input</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\input\InputReplayTypes.h">
@@ -437,14 +575,26 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\SceneContext.h">
       <Filter>include\scene</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\EditorGizmo.h">
+      <Filter>include\scene</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\WorldStateStore.h">
+      <Filter>include\scene</Filter>
+    </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\Transform.h">
       <Filter>include\model</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\particle\GPUParticleSystem.h">
       <Filter>include\particle</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleSystemShared.h">
+      <Filter>src\particle</Filter>
+    </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\particle\ParticleEmitterSettings.h">
       <Filter>include\particle</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\physics\CharacterController.h">
+      <Filter>include\physics</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\collision\CollisionUtil.h">
       <Filter>include\collision</Filter>
@@ -488,6 +638,38 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\animation\SkeletonPoseBuilder.h">
       <Filter>include\animation</Filter>
     </ClInclude>
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\model\ModelPS.hlsl">
@@ -509,6 +691,18 @@
       <Filter>resources\shaders\mesh</Filter>
     </FxCompile>
     <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\mesh\MeshShadowPS.hlsl">
+      <Filter>resources\shaders\mesh</Filter>
+    </FxCompile>
+    <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\mesh\MeshGpuCullCS.hlsl">
+      <Filter>resources\shaders\mesh</Filter>
+    </FxCompile>
+    <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\mesh\MeshGpuCullArgsCS.hlsl">
+      <Filter>resources\shaders\mesh</Filter>
+    </FxCompile>
+    <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\mesh\MeshGpuLodCullCS.hlsl">
+      <Filter>resources\shaders\mesh</Filter>
+    </FxCompile>
+    <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\mesh\MeshGpuLodCullArgsCS.hlsl">
       <Filter>resources\shaders\mesh</Filter>
     </FxCompile>
     <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\model\ModelShadowVS.hlsl">
@@ -550,6 +744,9 @@
     <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\particle\GPUParticleUpdateCS.hlsl">
       <Filter>resources\shaders\particle</Filter>
     </FxCompile>
+    <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\particle\GPUParticleArgsCS.hlsl">
+      <Filter>resources\shaders\particle</Filter>
+    </FxCompile>
     <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\PostProcessPS.hlsl">
       <Filter>resources\shaders\postprocess</Filter>
     </FxCompile>
@@ -558,6 +755,9 @@
     </FxCompile>
     <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\PostProcessVS.hlsl">
       <Filter>resources\shaders\postprocess</Filter>
+    </FxCompile>
+    <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\depth\DepthPyramidCS.hlsl">
+      <Filter>resources\shaders\depth</Filter>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>

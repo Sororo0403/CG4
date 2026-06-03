@@ -1,5 +1,7 @@
 #pragma once
 
+#include "input/InputReplayTypes.h"
+
 #include <Windows.h>
 #include <memory>
 #include <string>
@@ -13,6 +15,9 @@ struct EngineRuntimeConfig {
     std::wstring title = L"App";
     bool cursorVisible = true;
     bool fullscreen = false;
+    std::wstring logPath;
+    InputReplayStartupOptions inputReplay;
+    float replayFixedDeltaTime = 1.0f / 60.0f;
 };
 
 class EngineRuntime {
@@ -35,15 +40,24 @@ class EngineRuntime {
 
   private:
     struct Systems;
+    enum class ResizeResult {
+        Ready,
+        Skipped,
+        Failed,
+    };
 
-    void Initialize(HINSTANCE instance, int showCommand,
+    bool Initialize(HINSTANCE instance, int showCommand,
                     const EngineRuntimeConfig &config);
+    bool InitializeLog(const std::wstring &path);
+    bool FailInitialize(const char *reason);
+    void Log(const std::string &message);
+    int RunMainLoop();
     /// <summary>
     /// 状態を更新する
     /// </summary>
     void UpdateFrameContext();
-    void ResizeIfNeeded();
-    void RenderFrame();
+    ResizeResult ResizeIfNeeded();
+    bool RenderFrame();
 
     std::unique_ptr<Systems> systems_;
 

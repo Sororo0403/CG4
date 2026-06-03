@@ -13,4 +13,5 @@ struct Vertex {
     DirectX::XMFLOAT4 tangent{1.0f, 0.0f, 0.0f, 1.0f};
     float custom0 = 0.0f;
     DirectX::XMFLOAT3 bindPosition{};
+    DirectX::XMFLOAT4 custom1{};
 };

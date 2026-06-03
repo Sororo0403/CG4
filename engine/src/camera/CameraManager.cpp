@@ -1,7 +1,20 @@
 #include "camera/CameraManager.h"
+#include <limits>
 
 namespace {
 CameraManager *gActiveCameraManager = nullptr;
+
+std::string MakeGeneratedCameraName(
+    const std::unordered_map<std::string, std::unique_ptr<Camera>> &cameras) {
+    for (size_t suffix = cameras.size();
+         suffix < (std::numeric_limits<size_t>::max)(); ++suffix) {
+        std::string candidate = "__camera" + std::to_string(suffix);
+        if (cameras.find(candidate) == cameras.end()) {
+            return candidate;
+        }
+    }
+    return "__camera";
+}
 }
 
 CameraManager &CameraManager::GetInstance() {
@@ -14,10 +27,12 @@ void CameraManager::SetActiveInstance(CameraManager *instance) {
 }
 
 Camera &CameraManager::CreateCamera(const std::string &name, float aspect) {
+    const std::string cameraName =
+        name.empty() ? MakeGeneratedCameraName(cameras_) : name;
     auto camera = std::make_unique<Camera>();
     camera->Initialize(aspect);
     Camera &result = *camera;
-    RegisterCamera(name, std::move(camera));
+    RegisterCamera(cameraName, std::move(camera));
     return result;
 }
 

@@ -6,6 +6,7 @@
 #include "graphics/SrvManager.h"
 #include "model/MaterialManager.h"
 #include "model/MeshManager.h"
+#include "RendererMaterialUtils.h"
 #include "model/Vertex.h"
 #include "texture/TextureManager.h"
 #include <algorithm>
@@ -18,6 +19,9 @@ using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
 namespace {
+using RendererMaterialUtils::IsTransparentMaterial;
+using RendererMaterialUtils::NormalizeCullMode;
+using RendererMaterialUtils::ToD3D12CullMode;
 
 constexpr UINT kSkinningThreadCount = 1024u;
 
@@ -26,23 +30,6 @@ enum class ModelBlendMode : size_t {
     Alpha = 1,
     Additive = 2,
 };
-
-bool IsTransparentMaterial(const Material &material) {
-    return material.blendMode == static_cast<int32_t>(BlendMode::Transparent) ||
-           material.color.w < 1.0f;
-}
-
-D3D12_CULL_MODE ToD3D12CullMode(const MaterialCullMode mode) {
-    switch (mode) {
-    case MaterialCullMode::None:
-        return D3D12_CULL_MODE_NONE;
-    case MaterialCullMode::Front:
-        return D3D12_CULL_MODE_FRONT;
-    case MaterialCullMode::Back:
-    default:
-        return D3D12_CULL_MODE_BACK;
-    }
-}
 
 size_t PipelineVariantIndex(ModelBlendMode blendMode, MaterialCullMode cullMode,
                             bool depthWrite) {
@@ -55,12 +42,7 @@ size_t PipelineVariantIndex(ModelBlendMode blendMode, MaterialCullMode cullMode,
 size_t PipelineVariantIndex(const Material &material,
                             const ModelDrawEffect &effect) {
     const Material drawMaterial = NormalizeMaterialForDraw(material);
-    MaterialCullMode cullMode =
-        static_cast<MaterialCullMode>(drawMaterial.cullMode);
-    if (drawMaterial.cullMode < static_cast<int32_t>(MaterialCullMode::None) ||
-        drawMaterial.cullMode > static_cast<int32_t>(MaterialCullMode::Back)) {
-        cullMode = MaterialCullMode::Back;
-    }
+    MaterialCullMode cullMode = NormalizeCullMode(drawMaterial.cullMode);
     if (effect.enabled && effect.disableCulling) {
         cullMode = MaterialCullMode::None;
     }
@@ -113,65 +95,10 @@ uint32_t ResolveNormalTextureId(TextureManager *textureManager,
 
 }
 
-static XMFLOAT4X4 StoreMatrix(const XMMATRIX &matrix) {
-    XMFLOAT4X4 result{};
-    XMStoreFloat4x4(&result, matrix);
-    return result;
-}
-
-static XMMATRIX MakeSafeInverseTranspose(const XMMATRIX &matrix) {
-    const XMVECTOR determinant = XMMatrixDeterminant(matrix);
-    const float determinantValue = XMVectorGetX(determinant);
-    if (!std::isfinite(determinantValue) ||
-        std::abs(determinantValue) <= 0.000001f) {
-        return XMMatrixIdentity();
-    }
-
-    return XMMatrixTranspose(XMMatrixInverse(nullptr, matrix));
-}
-
-static void NormalizeInfluence(VertexInfluence &influence) {
-    float totalWeight = 0.0f;
-    for (float weight : influence.weights) {
-        totalWeight += weight;
-    }
-
-    if (totalWeight <= 0.00001f) {
-        return;
-    }
-
-    for (float &weight : influence.weights) {
-        weight /= totalWeight;
-    }
-}
-
 struct PerObjectConstBufferData {
     XMFLOAT4X4 matWVP;
     XMFLOAT4X4 matWorld;
     XMFLOAT4X4 matWorldInverseTranspose;
-};
-
-struct SceneConstBufferData {
-    struct PointLightData {
-        XMFLOAT4 positionRange;
-        XMFLOAT4 colorIntensity;
-    };
-
-    XMFLOAT4 cameraPos;
-    XMFLOAT4 keyLightDirection;
-    XMFLOAT4 keyLightColor;
-    XMFLOAT4 fillLightDirection;
-    XMFLOAT4 fillLightColor;
-    XMFLOAT4 ambientColor;
-    PointLightData pointLights[2];
-    XMFLOAT4 lightingParams;
-    XMFLOAT4 lightingModeParams;
-    XMFLOAT4 fogColor;
-    XMFLOAT4 fogParams;
-    XMFLOAT4X4 viewProjection;
-    XMFLOAT4X4 lightViewProjection;
-    XMFLOAT4 shadowParams;
-    XMFLOAT4 shadowFilterParams;
 };
 
 bool ModelRenderer::SetPipelineForMaterial(const Material &material) {
@@ -231,9 +158,7 @@ void ModelRenderer::CreateRootSignature() {
     textureRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
     params[3].InitAsDescriptorTable(1, &textureRange);
 
-    CD3DX12_DESCRIPTOR_RANGE matrixPaletteRange{};
-    matrixPaletteRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
-    params[4].InitAsDescriptorTable(1, &matrixPaletteRange);
+    params[4].InitAsShaderResourceView(1);
 
     CD3DX12_DESCRIPTOR_RANGE environmentRange{};
     environmentRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);

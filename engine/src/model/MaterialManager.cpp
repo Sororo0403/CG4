@@ -1,20 +1,35 @@
 #include "model/MaterialManager.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
+#include "graphics/GpuResourceHelpers.h"
+#include "graphics/GpuResourceLifetime.h"
+#include <algorithm>
+#include <cstring>
 #include <limits>
 
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
 namespace {
+using GpuResourceHelpers::CreateCommittedResourceChecked;
+using GpuResourceHelpers::MapResourceChecked;
+
 const Material &FallbackMaterial() {
     static const Material fallback{};
     return fallback;
 }
+
+size_t CurrentFrameIndex(DirectXCommon *dxCommon, size_t frameCount) {
+    if (frameCount == 0) {
+        return 0;
+    }
+    return dxCommon != nullptr ? dxCommon->GetBackBufferIndex() % frameCount
+                               : 0;
+}
 } // namespace
 
 MaterialManager::~MaterialManager() {
-    Finalize();
+    Finalize(true);
 }
 
 void MaterialManager::Initialize(DirectXCommon *dxCommon) {
@@ -22,25 +37,38 @@ void MaterialManager::Initialize(DirectXCommon *dxCommon) {
         Finalize();
         return;
     }
-    Finalize();
+    if (!Finalize()) {
+        return;
+    }
     dxCommon_ = dxCommon;
 }
 
-void MaterialManager::Finalize() {
-    if (dxCommon_ && !dxCommon_->IsDeviceRemoved() &&
-        !dxCommon_->IsCommandListRecording()) {
-        dxCommon_->WaitForGpuIfPossible();
+bool MaterialManager::Finalize() { return Finalize(false); }
+
+bool MaterialManager::Finalize(bool allowFrameAbort) {
+    const bool hasGpuResources =
+        !materials_.empty() || !deferredDestroyedMaterials_.empty();
+    if (!CanReleaseGpuResources(dxCommon_, hasGpuResources,
+                                allowFrameAbort)) {
+        return false;
     }
 
     for (MaterialResource &material : materials_) {
         material.Reset();
     }
     materials_.clear();
+    deferredDestroyedMaterials_.clear();
     dxCommon_ = nullptr;
+    return true;
 }
 
 uint32_t MaterialManager::CreateMaterial(const Material &material) {
     if (!dxCommon_ || !dxCommon_->GetDevice()) {
+        return UINT32_MAX;
+    }
+    ReleaseDeferredResources();
+    if (materials_.size() >=
+        static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
         return UINT32_MAX;
     }
 
@@ -52,33 +80,66 @@ uint32_t MaterialManager::CreateMaterial(const Material &material) {
 
     CD3DX12_HEAP_PROPERTIES heapProp(D3D12_HEAP_TYPE_UPLOAD);
     auto resourceDesc = CD3DX12_RESOURCE_DESC::Buffer(size);
-
-    const HRESULT resourceResult =
-        dxCommon_->GetDevice()->CreateCommittedResource(
-            &heapProp, D3D12_HEAP_FLAG_NONE, &resourceDesc,
-            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            IID_PPV_ARGS(&matRes.resource));
-    if (FAILED(resourceResult) || !matRes.resource) {
+    const UINT frameCount = (std::max)(1u, dxCommon_->GetSwapChainBufferCount());
+    try {
+        matRes.frameResources.resize(frameCount);
+        matRes.dirtyFrames.assign(frameCount, false);
+        materials_.reserve(materials_.size() + 1);
+    } catch (...) {
         return UINT32_MAX;
     }
 
-    const HRESULT mapResult =
-        matRes.resource->Map(0, nullptr,
-                             reinterpret_cast<void **>(&matRes.mappedData));
-    if (FAILED(mapResult) || matRes.mappedData == nullptr) {
-        return UINT32_MAX;
+    for (MaterialResource::FrameResource &frame : matRes.frameResources) {
+        if (!CreateCommittedResourceChecked(
+                dxCommon_->GetDevice(), &heapProp, D3D12_HEAP_FLAG_NONE,
+                &resourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ,
+                frame.resource.GetAddressOf())) {
+            return UINT32_MAX;
+        }
+
+        if (!MapResourceChecked(frame.resource.Get(), &frame.mappedData)) {
+            return UINT32_MAX;
+        }
+
+        std::memcpy(frame.mappedData, &matRes.material, sizeof(Material));
     }
 
-    std::memcpy(matRes.mappedData, &matRes.material, sizeof(Material));
-
-    if (materials_.size() >=
-        static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
+    try {
+        materials_.push_back(std::move(matRes));
+    } catch (...) {
         return UINT32_MAX;
     }
-    materials_.push_back(std::move(matRes));
-    uint32_t materialId = static_cast<uint32_t>(materials_.size() - 1);
+    return static_cast<uint32_t>(materials_.size() - 1);
+}
 
-    return materialId;
+void MaterialManager::DestroyMaterial(uint32_t materialId) {
+    if (!IsValidMaterialId(materialId)) {
+        return;
+    }
+
+    try {
+        deferredDestroyedMaterials_.push_back(std::move(materials_[materialId]));
+        materials_[materialId] = MaterialResource{};
+    } catch (...) {
+        if (dxCommon_ != nullptr && !dxCommon_->IsCommandListRecording() &&
+            (dxCommon_->IsDeviceRemoved() ||
+             dxCommon_->WaitForGpuIfPossible())) {
+            materials_[materialId] = MaterialResource{};
+        }
+    }
+}
+
+void MaterialManager::ReleaseDeferredResources() {
+    if (dxCommon_ && dxCommon_->IsCommandListRecording()) {
+        return;
+    }
+    if (dxCommon_ && !dxCommon_->IsDeviceRemoved() &&
+        !deferredDestroyedMaterials_.empty()) {
+        if (!dxCommon_->WaitForGpuIfPossible()) {
+            return;
+        }
+    }
+    deferredDestroyedMaterials_.clear();
 }
 
 void MaterialManager::SetMaterial(uint32_t materialId,
@@ -88,17 +149,36 @@ void MaterialManager::SetMaterial(uint32_t materialId,
     }
 
     materials_[materialId].material = NormalizeMaterialForDraw(material);
-    std::memcpy(materials_[materialId].mappedData,
-                &materials_[materialId].material, sizeof(Material));
+    for (size_t frameIndex = 0;
+         frameIndex < materials_[materialId].dirtyFrames.size();
+         ++frameIndex) {
+        materials_[materialId].dirtyFrames[frameIndex] = true;
+    }
 }
 
 D3D12_GPU_VIRTUAL_ADDRESS
-MaterialManager::GetGPUVirtualAddress(uint32_t materialId) const {
+MaterialManager::GetGPUVirtualAddress(uint32_t materialId) {
     if (!IsValidMaterialId(materialId)) {
         return 0;
     }
 
-    return materials_[materialId].resource->GetGPUVirtualAddress();
+    MaterialResource &material = materials_[materialId];
+    const size_t frameIndex =
+        CurrentFrameIndex(dxCommon_, material.frameResources.size());
+    if (frameIndex >= material.frameResources.size()) {
+        return 0;
+    }
+    MaterialResource::FrameResource &frame =
+        material.frameResources[frameIndex];
+    if (!frame.resource || frame.mappedData == nullptr) {
+        return 0;
+    }
+    if (frameIndex < material.dirtyFrames.size() &&
+        material.dirtyFrames[frameIndex]) {
+        std::memcpy(frame.mappedData, &material.material, sizeof(Material));
+        material.dirtyFrames[frameIndex] = false;
+    }
+    return frame.resource->GetGPUVirtualAddress();
 }
 
 const Material &MaterialManager::GetMaterial(uint32_t materialId) const {
@@ -109,7 +189,11 @@ const Material &MaterialManager::GetMaterial(uint32_t materialId) const {
 }
 
 bool MaterialManager::IsValidMaterialId(uint32_t materialId) const {
-    return materialId < materials_.size() &&
-           materials_[materialId].resource != nullptr &&
-           materials_[materialId].mappedData != nullptr;
+    if (materialId >= materials_.size()) {
+        return false;
+    }
+    const MaterialResource &material = materials_[materialId];
+    return !material.frameResources.empty() &&
+           material.frameResources[0].resource != nullptr &&
+           material.frameResources[0].mappedData != nullptr;
 }

@@ -9,6 +9,8 @@ class DirectXCommon;
 
 class PipelineManager {
   public:
+    ~PipelineManager();
+
     /// <summary>
     /// 必要なリソースを初期化する
     /// </summary>
@@ -26,7 +28,8 @@ class PipelineManager {
     /// <summary>
     /// Clearを実行する
     /// </summary>
-    void Clear();
+    bool Clear();
+    bool Clear(bool allowFrameAbort);
 
   private:
     static std::string MakeShaderKey(const std::wstring &path,

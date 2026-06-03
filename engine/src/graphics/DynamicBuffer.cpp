@@ -1,11 +1,22 @@
 #include "graphics/DynamicBuffer.h"
 
 #include "graphics/DxHelpers.h"
+#include "graphics/GpuResourceHelpers.h"
 
+#include <cassert>
+#include <exception>
 #include <limits>
 #include <utility>
 
-DynamicBuffer::~DynamicBuffer() { Reset(); }
+DynamicBuffer::~DynamicBuffer() {
+    if (HasResource()) {
+        assert(false &&
+               "DynamicBuffer::Reset must be called after GPU idle before "
+               "destruction");
+        std::terminate();
+    }
+    Reset();
+}
 
 void DynamicBuffer::Initialize(ID3D12Device *device, size_t capacity,
                                size_t defaultAlignment) {
@@ -100,15 +111,13 @@ bool DynamicBuffer::CreateResource(size_t capacity) {
     auto desc = CD3DX12_RESOURCE_DESC::Buffer(alignedCapacity);
     Microsoft::WRL::ComPtr<ID3D12Resource> newResource;
     uint8_t *newMapped = nullptr;
-    const HRESULT resourceResult = device_->CreateCommittedResource(
-        &heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ,
-        nullptr, IID_PPV_ARGS(&newResource));
-    if (FAILED(resourceResult) || !newResource) {
+    if (!GpuResourceHelpers::CreateCommittedResourceChecked(
+            device_, &heap, D3D12_HEAP_FLAG_NONE, &desc,
+            D3D12_RESOURCE_STATE_GENERIC_READ, newResource.GetAddressOf())) {
         return false;
     }
-    const HRESULT mapResult =
-        newResource->Map(0, nullptr, reinterpret_cast<void **>(&newMapped));
-    if (FAILED(mapResult) || newMapped == nullptr) {
+    if (!GpuResourceHelpers::MapResourceChecked(newResource.Get(),
+                                                &newMapped)) {
         return false;
     }
     UnmapResource();

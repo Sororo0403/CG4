@@ -1,10 +1,12 @@
 #include "camera/Camera.h"
+#include "core/Numeric.h"
 #include <algorithm>
 #include <cmath>
 
 using namespace DirectX;
 
 namespace {
+using Numeric::FiniteOr;
 
 constexpr float kMinAspect = 0.0001f;
 constexpr float kMinFovY = XMConvertToRadians(1.0f);
@@ -18,9 +20,24 @@ constexpr float kDefaultOrthoHeight = 10.0f;
 constexpr float kDefaultNearZ = 0.1f;
 constexpr float kDefaultFarZ = 1000.0f;
 constexpr float kMinDeterminant = 0.000001f;
+constexpr float kTwoPi = XM_2PI;
 
-float FiniteOr(float value, float fallback) {
-    return std::isfinite(value) ? value : fallback;
+float NormalizeAngle(float value, float fallback) {
+    value = FiniteOr(value, fallback);
+    const float normalized = std::remainder(value, kTwoPi);
+    return FiniteOr(normalized, fallback);
+}
+
+bool IsFiniteVector(FXMVECTOR value) {
+    return std::isfinite(XMVectorGetX(value)) &&
+           std::isfinite(XMVectorGetY(value)) &&
+           std::isfinite(XMVectorGetZ(value)) &&
+           std::isfinite(XMVectorGetW(value));
+}
+
+bool IsFiniteMatrix(const XMMATRIX &matrix) {
+    return IsFiniteVector(matrix.r[0]) && IsFiniteVector(matrix.r[1]) &&
+           IsFiniteVector(matrix.r[2]) && IsFiniteVector(matrix.r[3]);
 }
 
 } // namespace
@@ -34,16 +51,24 @@ void Camera::Initialize(float aspect) {
 
 void Camera::UpdateMatrices() {
     SanitizeProjection();
+    position_ = {FiniteOr(position_.x, 0.0f), FiniteOr(position_.y, 0.0f),
+                 FiniteOr(position_.z, -5.0f)};
+    rotation_ = {NormalizeAngle(rotation_.x, 0.0f),
+                 NormalizeAngle(rotation_.y, 0.0f),
+                 NormalizeAngle(rotation_.z, 0.0f)};
 
     const XMMATRIX world =
         XMMatrixRotationRollPitchYaw(rotation_.x, rotation_.y, rotation_.z) *
         XMMatrixTranslation(position_.x, position_.y, position_.z);
     const XMVECTOR determinant = XMMatrixDeterminant(world);
     const float determinantValue = XMVectorGetX(determinant);
-    view_ = std::isfinite(determinantValue) &&
-                    std::abs(determinantValue) > kMinDeterminant
-                ? XMMatrixInverse(nullptr, world)
-                : XMMatrixIdentity();
+    if (IsFiniteMatrix(world) && std::isfinite(determinantValue) &&
+        std::abs(determinantValue) > kMinDeterminant) {
+        const XMMATRIX inverse = XMMatrixInverse(nullptr, world);
+        view_ = IsFiniteMatrix(inverse) ? inverse : XMMatrixIdentity();
+    } else {
+        view_ = XMMatrixIdentity();
+    }
 
     if (projectionMode_ == ProjectionMode::Orthographic) {
         proj_ = XMMatrixOrthographicLH(orthographicHeight_ * aspect_,
@@ -51,7 +76,13 @@ void Camera::UpdateMatrices() {
     } else {
         proj_ = XMMatrixPerspectiveFovLH(fovY_, aspect_, nearZ_, farZ_);
     }
+    if (!IsFiniteMatrix(proj_)) {
+        proj_ = XMMatrixIdentity();
+    }
     viewProjection_ = view_ * proj_;
+    if (!IsFiniteMatrix(viewProjection_)) {
+        viewProjection_ = XMMatrixIdentity();
+    }
 }
 
 void Camera::SetPosition(const XMFLOAT3 &position) {
@@ -62,9 +93,9 @@ void Camera::SetPosition(const XMFLOAT3 &position) {
 }
 
 void Camera::SetRotation(const XMFLOAT3 &rotation) {
-    rotation_ = {FiniteOr(rotation.x, rotation_.x),
-                 FiniteOr(rotation.y, rotation_.y),
-                 FiniteOr(rotation.z, rotation_.z)};
+    rotation_ = {NormalizeAngle(rotation.x, rotation_.x),
+                 NormalizeAngle(rotation.y, rotation_.y),
+                 NormalizeAngle(rotation.z, rotation_.z)};
     UpdateMatrices();
 }
 

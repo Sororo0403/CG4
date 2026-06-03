@@ -1,5 +1,6 @@
 #include "sound/SoundManager.h"
-#include "core/AssetManager.h"
+#include "core/Numeric.h"
+#include "core/PathUtils.h"
 
 #include <Objbase.h>
 #include <algorithm>
@@ -22,26 +23,6 @@ constexpr DWORD kFirstAudioStream =
     static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM);
 constexpr UINT32 kStreamQueuedBuffers = 3;
 constexpr size_t kStreamBufferBytes = 64 * 1024;
-
-std::filesystem::path ResolveAudioPath(const std::wstring &path) {
-    return AssetManager::ResolvePath(std::filesystem::path(path));
-}
-
-std::wstring NormalizePathKey(const std::filesystem::path &path) {
-    std::wstring key = path.lexically_normal().wstring();
-#ifdef _WIN32
-    std::transform(key.begin(), key.end(), key.begin(),
-                   [](wchar_t c) { return static_cast<wchar_t>(towlower(c)); });
-#endif
-    return key;
-}
-
-float ClampFinite(float value, float minimum, float maximum, float fallback) {
-    if (!std::isfinite(value)) {
-        return fallback;
-    }
-    return std::clamp(value, minimum, maximum);
-}
 
 XMVECTOR LoadFloat3OrDefault(const XMFLOAT3 &value, FXMVECTOR fallback) {
     if (!std::isfinite(value.x) || !std::isfinite(value.y) ||
@@ -238,7 +219,7 @@ uint32_t SoundManager::CreateStreamingVoice(const std::wstring &path,
         return kInvalidVoiceHandle;
     }
 
-    const std::filesystem::path resolvedPath = ResolveAudioPath(path);
+    const std::filesystem::path resolvedPath = PathUtils::ResolveAssetPath(path);
     std::error_code ec;
     if (!std::filesystem::exists(resolvedPath, ec)) {
         return kInvalidVoiceHandle;
@@ -287,7 +268,7 @@ uint32_t SoundManager::CreateStreamingVoice(const std::wstring &path,
         return kInvalidVoiceHandle;
     }
     playingVoice.soundId = kInvalidSoundId;
-    playingVoice.volume = ClampFinite(volume, 0.0f, 1.0f, 0.0f);
+    playingVoice.volume = Numeric::ClampFinite(volume, 0.0f, 1.0f, 0.0f);
     playingVoice.loop = loop;
     playingVoice.isStreaming = true;
     playingVoice.streamReader = reader;
@@ -304,14 +285,23 @@ uint32_t SoundManager::CreateStreamingVoice(const std::wstring &path,
         return kInvalidVoiceHandle;
     }
 
-    playingVoice.voice->SetVolume(playingVoice.volume);
-    if (FAILED(playingVoice.voice->Start())) {
-        playingVoice.voice->DestroyVoice();
+    try {
+        playingVoices_.push_back(std::move(playingVoice));
+    } catch (...) {
+        voice->DestroyVoice();
         return kInvalidVoiceHandle;
     }
 
-    playingVoices_.push_back(std::move(playingVoice));
-    return playingVoices_.back().handle;
+    PlayingVoice &storedVoice = playingVoices_.back();
+    const uint32_t handle = storedVoice.handle;
+    storedVoice.voice->SetVolume(storedVoice.volume);
+    if (FAILED(storedVoice.voice->Start())) {
+        DestroyVoice(storedVoice);
+        playingVoices_.pop_back();
+        return kInvalidVoiceHandle;
+    }
+
+    return handle;
 }
 
 bool SoundManager::SubmitNextStreamBuffer(PlayingVoice &playingVoice) {
@@ -344,12 +334,22 @@ bool SoundManager::SubmitNextStreamBuffer(PlayingVoice &playingVoice) {
         return false;
     }
 
+    bool endAfterBuffer = reachedEnd && !playingVoice.loop;
     if (reachedEnd && playingVoice.loop) {
-        SeekStreamToStart(playingVoice.streamReader.Get());
-        reachedEnd = false;
+        if (SeekStreamToStart(playingVoice.streamReader.Get())) {
+            reachedEnd = false;
+        } else {
+            endAfterBuffer = true;
+            playingVoice.streamSourceEnded = true;
+        }
     }
 
-    playingVoice.streamBuffers.push_back(std::move(pcm));
+    try {
+        playingVoice.streamBuffers.push_back(std::move(pcm));
+    } catch (...) {
+        playingVoice.streamSourceEnded = true;
+        return false;
+    }
 
     XAUDIO2_BUFFER buffer{};
     buffer.pAudioData = playingVoice.streamBuffers.back().data();
@@ -361,7 +361,7 @@ bool SoundManager::SubmitNextStreamBuffer(PlayingVoice &playingVoice) {
     }
     buffer.AudioBytes =
         static_cast<UINT32>(playingVoice.streamBuffers.back().size());
-    if (reachedEnd && !playingVoice.loop) {
+    if (endAfterBuffer) {
         buffer.Flags = XAUDIO2_END_OF_STREAM;
         playingVoice.streamSourceEnded = true;
     }

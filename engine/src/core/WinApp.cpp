@@ -14,6 +14,26 @@ bool WinApp::cursorVisible_ = true;
 bool WinApp::requestedCursorVisible_ = true;
 HWND WinApp::cursorWindow_ = nullptr;
 
+WinApp::~WinApp() {
+    if (cursorWindow_ == hwnd_) {
+        requestedCursorVisible_ = true;
+        ApplyVisibleCursorState();
+        cursorWindow_ = nullptr;
+    }
+
+    if (hwnd_ != nullptr) {
+        HWND hwnd = hwnd_;
+        hwnd_ = nullptr;
+        if (IsWindow(hwnd)) {
+            DestroyWindow(hwnd);
+        }
+    }
+
+    width_ = 0;
+    height_ = 0;
+    fullscreen_ = false;
+}
+
 LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                                     LPARAM lParam) {
 #ifdef _DEBUG
@@ -60,6 +80,11 @@ LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
         }
         break;
     case WM_DESTROY:
+        if (cursorWindow_ == hwnd) {
+            requestedCursorVisible_ = true;
+            ApplyVisibleCursorState();
+            cursorWindow_ = nullptr;
+        }
         PostQuitMessage(0);
         return 0;
     }
@@ -92,11 +117,13 @@ void WinApp::Initialize(HINSTANCE hInstance, int nCmdShow, int width,
     DWORD exStyle = 0;
     int windowX = CW_USEDEFAULT;
     int windowY = CW_USEDEFAULT;
-    int windowWidth = width;
-    int windowHeight = height;
+    const int clientWidth = width > 0 ? width : 1;
+    const int clientHeight = height > 0 ? height : 1;
+    int windowWidth = clientWidth;
+    int windowHeight = clientHeight;
 
     if (fullscreen) {
-        RECT restoredRect{0, 0, width, height};
+        RECT restoredRect{0, 0, clientWidth, clientHeight};
         AdjustWindowRect(&restoredRect, WS_OVERLAPPEDWINDOW, FALSE);
         const int restoredW = restoredRect.right - restoredRect.left;
         const int restoredH = restoredRect.bottom - restoredRect.top;
@@ -128,7 +155,7 @@ void WinApp::Initialize(HINSTANCE hInstance, int nCmdShow, int width,
             fullscreen_ = true;
         }
     } else {
-        RECT windowRect{0, 0, width, height};
+        RECT windowRect{0, 0, clientWidth, clientHeight};
         AdjustWindowRect(&windowRect, style, FALSE);
         windowWidth = windowRect.right - windowRect.left;
         windowHeight = windowRect.bottom - windowRect.top;
@@ -175,7 +202,7 @@ bool WinApp::ProcessMessage() {
     }
 
     MSG msg{};
-    if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+    while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
         if (msg.message == WM_QUIT) {
             return false;
         }

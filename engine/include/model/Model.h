@@ -43,6 +43,11 @@ struct WellForGPU {
     DirectX::XMFLOAT4X4 skeletonSpaceInverseTransposeMatrix{};
 };
 
+struct SkinPaletteFrame {
+    Microsoft::WRL::ComPtr<ID3D12Resource> resource;
+    WellForGPU *mappedPalette = nullptr;
+};
+
 /// <summary>
 /// スキンクラスター関連のGPUリソース群
 /// </summary>
@@ -56,12 +61,10 @@ struct SkinCluster {
     D3D12_CPU_DESCRIPTOR_HANDLE influenceSrvCpuHandle{};
     D3D12_GPU_DESCRIPTOR_HANDLE influenceSrvGpuHandle{};
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> paletteResource;
-    WellForGPU *mappedPalette = nullptr;
     uint32_t paletteCount = 0;
-    uint32_t paletteSrvIndex = UINT32_MAX;
-    D3D12_CPU_DESCRIPTOR_HANDLE paletteSrvCpuHandle{};
-    D3D12_GPU_DESCRIPTOR_HANDLE paletteSrvGpuHandle{};
+    std::vector<WellForGPU> paletteCpuData;
+    std::vector<SkinPaletteFrame> paletteFrames;
+    mutable std::vector<bool> paletteDirtyFrames;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> skinnedVertexResource;
     D3D12_VERTEX_BUFFER_VIEW skinnedVertexBufferView{};

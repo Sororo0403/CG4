@@ -24,7 +24,8 @@ class RenderTexture {
     /// <summary>
     /// 内部リソースとSRV割り当てを解放する
     /// </summary>
-    void Release();
+    bool Release();
+    bool Release(bool allowFrameAbort);
 
     /// <summary>
     /// RenderTextureへの描画を開始する
@@ -50,12 +51,18 @@ class RenderTexture {
     /// テクスチャ高さを取得する
     /// </summary>
     int GetHeight() const { return height_; }
+    bool IsReady() const {
+        return dxCommon_ != nullptr && srvManager_ != nullptr && resource_ &&
+               rtvHeap_ && srvIndex_ != UINT_MAX && GetGpuHandle().ptr != 0;
+    }
 
   private:
     /// <summary>
     /// 描画先リソースとビューを生成する
     /// </summary>
-    void CreateResources();
+    bool CreateResources();
+    bool ReleaseTextureResources();
+    bool ReleaseTextureResources(bool allowFrameAbort);
 
     DirectXCommon *dxCommon_ = nullptr;
     SrvManager *srvManager_ = nullptr;

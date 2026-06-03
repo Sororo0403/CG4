@@ -1,9 +1,11 @@
 #include "input/Input.h"
+#include "input/InputReplayLimits.h"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -20,8 +22,6 @@
 #pragma warning(pop)
 
 namespace {
-constexpr size_t kMaxReplayFrames = 1000000;
-
 std::string EncodeKeys(const std::array<BYTE, 256> &keys) {
     std::ostringstream stream;
     stream << std::hex << std::setfill('0');
@@ -172,6 +172,7 @@ bool Input::StartReplay(const std::wstring &path) {
         return false;
     }
 
+    ClearInputState(true);
     replayPath_ = path;
     replayFrameIndex_ = 0;
     replayFinished_ = replayFrames_.empty();
@@ -265,7 +266,23 @@ void Input::ApplyReplayFrame(const InputFrame &frame) {
 }
 
 void Input::UpdateReplayHotkeys(float fixedDeltaTime) {
-    (void)fixedDeltaTime;
+    if (!replayHotkeysEnabled_) {
+        return;
+    }
+
+    if (IsKeyTrigger(DIK_F9)) {
+        if (replayMode_ == ReplayMode::Record) {
+            StopRecording();
+        } else if (replayMode_ == ReplayMode::Live) {
+            StartRecording(MakeAutoReplayPath(), fixedDeltaTime);
+        }
+        return;
+    }
+
+    if (IsKeyTrigger(DIK_F10) && replayMode_ == ReplayMode::Live &&
+        !replayPath_.empty()) {
+        StartReplay(replayPath_);
+    }
 }
 
 std::wstring Input::MakeAutoReplayPath() const {
@@ -293,6 +310,11 @@ std::wstring Input::MakeAutoReplayPath() const {
 }
 
 bool Input::SaveRecording() const {
+    if (recordedFrames_.empty() ||
+        recordedFrames_.size() > InputReplayLimits::kMaxFrames) {
+        return false;
+    }
+
     const std::filesystem::path path(replayPath_);
     if (path.has_parent_path()) {
         std::error_code error;
@@ -302,10 +324,47 @@ bool Input::SaveRecording() const {
         }
     }
 
-    nlohmann::json root;
-    root["version"] = 1;
-    root["fixedDeltaTime"] = replayFixedDeltaTime_;
-    root["frames"] = nlohmann::json::array();
+    const std::filesystem::path tempPath(path.wstring() + L".tmp");
+    std::ofstream file(tempPath, std::ios::binary);
+    if (!file) {
+        return false;
+    }
+
+    std::uintmax_t bytesWritten = 0;
+    const auto cleanupTemp = [&]() {
+        file.close();
+        std::error_code removeError;
+        std::filesystem::remove(tempPath, removeError);
+    };
+    const auto writeText = [&](const std::string &text) -> bool {
+        const std::uintmax_t textSize =
+            static_cast<std::uintmax_t>(text.size());
+        if (bytesWritten > InputReplayLimits::kMaxFileBytes ||
+            textSize > InputReplayLimits::kMaxFileBytes - bytesWritten) {
+            return false;
+        }
+
+        file.write(text.data(), static_cast<std::streamsize>(text.size()));
+        if (!file.good()) {
+            return false;
+        }
+
+        bytesWritten += textSize;
+        return true;
+    };
+
+    std::string header = "{\n  \"version\": 1,\n  \"fixedDeltaTime\": ";
+    try {
+        header += nlohmann::json(replayFixedDeltaTime_).dump();
+    } catch (...) {
+        cleanupTemp();
+        return false;
+    }
+    header += ",\n  \"frames\": [\n";
+    if (!writeText(header)) {
+        cleanupTemp();
+        return false;
+    }
 
     for (size_t index = 0; index < recordedFrames_.size(); ++index) {
         const InputFrame &frame = recordedFrames_[index];
@@ -316,40 +375,79 @@ bool Input::SaveRecording() const {
             }
         }
 
-        nlohmann::json jsonFrame;
-        jsonFrame["frame"] = index;
-        jsonFrame["keys"] = EncodeKeys(frame.keys);
-        jsonFrame["mouseButtons"] = mouseButtons;
-        jsonFrame["mouseDX"] = frame.mouse.lX;
-        jsonFrame["mouseDY"] = frame.mouse.lY;
-        jsonFrame["mouseWheel"] = frame.mouse.lZ;
-        jsonFrame["gamepadConnected"] = frame.gamepadConnected;
-        jsonFrame["gamepadButtons"] = frame.gamepadButtons;
-        jsonFrame["leftStickX"] = frame.gamepadLeftStickX;
-        jsonFrame["leftStickY"] = frame.gamepadLeftStickY;
-        jsonFrame["rightStickX"] = frame.gamepadRightStickX;
-        jsonFrame["rightStickY"] = frame.gamepadRightStickY;
-        jsonFrame["leftTrigger"] = frame.gamepadLeftTrigger;
-        jsonFrame["rightTrigger"] = frame.gamepadRightTrigger;
-        root["frames"].push_back(std::move(jsonFrame));
+        std::string serializedFrame;
+        try {
+            nlohmann::json jsonFrame;
+            jsonFrame["frame"] = index;
+            jsonFrame["keys"] = EncodeKeys(frame.keys);
+            jsonFrame["mouseButtons"] = mouseButtons;
+            jsonFrame["mouseDX"] = frame.mouse.lX;
+            jsonFrame["mouseDY"] = frame.mouse.lY;
+            jsonFrame["mouseWheel"] = frame.mouse.lZ;
+            jsonFrame["gamepadConnected"] = frame.gamepadConnected;
+            jsonFrame["gamepadButtons"] = frame.gamepadButtons;
+            jsonFrame["leftStickX"] = frame.gamepadLeftStickX;
+            jsonFrame["leftStickY"] = frame.gamepadLeftStickY;
+            jsonFrame["rightStickX"] = frame.gamepadRightStickX;
+            jsonFrame["rightStickY"] = frame.gamepadRightStickY;
+            jsonFrame["leftTrigger"] = frame.gamepadLeftTrigger;
+            jsonFrame["rightTrigger"] = frame.gamepadRightTrigger;
+            serializedFrame = jsonFrame.dump();
+        } catch (...) {
+            cleanupTemp();
+            return false;
+        }
+
+        const std::string prefix = index == 0 ? "    " : ",\n    ";
+        if (!writeText(prefix) || !writeText(serializedFrame)) {
+            cleanupTemp();
+            return false;
+        }
     }
 
-    std::ofstream file(path, std::ios::binary);
-    if (!file) {
+    if (!writeText("\n  ]\n}\n")) {
+        cleanupTemp();
         return false;
     }
 
-    file << std::setw(2) << root << '\n';
-    return file.good();
+    file.close();
+    if (!file.good()) {
+        cleanupTemp();
+        return false;
+    }
+
+    std::error_code error;
+    std::filesystem::remove(path, error);
+    error.clear();
+    std::filesystem::rename(tempPath, path, error);
+    if (error) {
+        std::filesystem::remove(tempPath, error);
+        return false;
+    }
+
+    return true;
 }
 
 bool Input::LoadReplay(const std::wstring &path) {
+    std::error_code fileSizeError;
+    const std::uintmax_t fileSize =
+        std::filesystem::file_size(std::filesystem::path(path), fileSizeError);
+    if (fileSizeError || fileSize == 0 ||
+        fileSize > InputReplayLimits::kMaxFileBytes) {
+        return false;
+    }
+
     std::ifstream file(std::filesystem::path(path), std::ios::binary);
     if (!file) {
         return false;
     }
 
-    const nlohmann::json root = nlohmann::json::parse(file, nullptr, false);
+    nlohmann::json root;
+    try {
+        root = nlohmann::json::parse(file, nullptr, false);
+    } catch (...) {
+        return false;
+    }
     if (root.is_discarded()) {
         return false;
     }
@@ -357,12 +455,16 @@ bool Input::LoadReplay(const std::wstring &path) {
         return false;
     }
     if (root["frames"].size() == 0 ||
-        root["frames"].size() > kMaxReplayFrames) {
+        root["frames"].size() > InputReplayLimits::kMaxFrames) {
         return false;
     }
 
     std::vector<InputFrame> loadedFrames;
-    loadedFrames.reserve(root["frames"].size());
+    try {
+        loadedFrames.reserve(root["frames"].size());
+    } catch (...) {
+        return false;
+    }
     for (const nlohmann::json &jsonFrame : root["frames"]) {
         if (!jsonFrame.is_object()) {
             return false;

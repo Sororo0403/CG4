@@ -1,6 +1,8 @@
 #include "model/MeshManager.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
+#include "graphics/GpuResourceHelpers.h"
+#include "graphics/GpuResourceLifetime.h"
 #include <cstring>
 #include <limits>
 #include <utility>
@@ -8,14 +10,32 @@
 using Microsoft::WRL::ComPtr;
 
 namespace {
+using GpuResourceHelpers::CreateCommittedResourceChecked;
+using GpuResourceHelpers::MapResourceChecked;
+
 const Mesh &FallbackMesh() {
     static const Mesh fallback{};
     return fallback;
 }
+
+uint64_t MeshGpuBytes(const Mesh &mesh) {
+    if (!mesh.vertexBuffer && !mesh.indexBuffer) {
+        return 0;
+    }
+    return mesh.vertexBytes + mesh.indexBytes;
+}
+
+uint64_t ResourceByteWidth(ID3D12Resource *resource) {
+    if (resource == nullptr) {
+        return 0;
+    }
+    const D3D12_RESOURCE_DESC desc = resource->GetDesc();
+    return desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER ? desc.Width : 0;
+}
 } // namespace
 
 MeshManager::~MeshManager() {
-    Finalize();
+    Finalize(true);
 }
 
 void MeshManager::Initialize(DirectXCommon *dxCommon) {
@@ -23,29 +43,45 @@ void MeshManager::Initialize(DirectXCommon *dxCommon) {
         Finalize();
         return;
     }
-    Finalize();
+    if (!Finalize()) {
+        return;
+    }
     dxCommon_ = dxCommon;
 }
 
-void MeshManager::Finalize() {
-    if (dxCommon_ && !dxCommon_->IsDeviceRemoved() &&
-        !dxCommon_->IsCommandListRecording()) {
-        dxCommon_->WaitForGpuIfPossible();
+bool MeshManager::Finalize() { return Finalize(false); }
+
+bool MeshManager::Finalize(bool allowFrameAbort) {
+    const bool hasGpuResources =
+        !meshes_.empty() || !uploadBuffers_.empty() ||
+        !deferredDestroyedMeshes_.empty();
+    if (!CanReleaseGpuResources(dxCommon_, hasGpuResources,
+                                allowFrameAbort)) {
+        return false;
+    }
+    if (dxCommon_ != nullptr) {
+        dxCommon_->UnregisterFrameRollbacks(this);
     }
 
     meshes_.clear();
     uploadBuffers_.clear();
+    deferredDestroyedMeshes_.clear();
     dxCommon_ = nullptr;
+    return true;
 }
 
 void MeshManager::ReleaseUploadBuffers() {
     if (dxCommon_ && dxCommon_->IsCommandListRecording()) {
         return;
     }
-    if (dxCommon_ && !dxCommon_->IsDeviceRemoved() && !uploadBuffers_.empty()) {
-        dxCommon_->WaitForGpuIfPossible();
+    if (dxCommon_ && !dxCommon_->IsDeviceRemoved() &&
+        (!uploadBuffers_.empty() || !deferredDestroyedMeshes_.empty())) {
+        if (!dxCommon_->WaitForGpuIfPossible()) {
+            return;
+        }
     }
     uploadBuffers_.clear();
+    deferredDestroyedMeshes_.clear();
 }
 
 uint32_t MeshManager::CreateMesh(const void *vertexData, uint32_t vertexStride,
@@ -80,6 +116,8 @@ uint32_t MeshManager::CreateMesh(const void *vertexData, uint32_t vertexStride,
     }
     const UINT vbSize = static_cast<UINT>(vbSize64);
     const UINT ibSize = static_cast<UINT>(ibSize64);
+    mesh.vertexBytes = vbSize;
+    mesh.indexBytes = ibSize;
 
     if (meshes_.size() >=
         static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
@@ -94,28 +132,22 @@ uint32_t MeshManager::CreateMesh(const void *vertexData, uint32_t vertexStride,
     ComPtr<ID3D12Resource> vertexUploadBuffer;
     ComPtr<ID3D12Resource> indexUploadBuffer;
 
-    const HRESULT vertexBufferResult =
-        dxCommon_->GetDevice()->CreateCommittedResource(
-            &defaultHeapProps, D3D12_HEAP_FLAG_NONE, &vbDesc,
-            D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-            IID_PPV_ARGS(&mesh.vertexBuffer));
-    if (FAILED(vertexBufferResult) || !mesh.vertexBuffer) {
+    if (!CreateCommittedResourceChecked(
+            dxCommon_->GetDevice(), &defaultHeapProps, D3D12_HEAP_FLAG_NONE,
+            &vbDesc, D3D12_RESOURCE_STATE_COPY_DEST,
+            mesh.vertexBuffer.GetAddressOf())) {
         return UINT32_MAX;
     }
 
-    const HRESULT vertexUploadResult =
-        dxCommon_->GetDevice()->CreateCommittedResource(
-            &uploadHeapProps, D3D12_HEAP_FLAG_NONE, &vbDesc,
-            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            IID_PPV_ARGS(&vertexUploadBuffer));
-    if (FAILED(vertexUploadResult) || !vertexUploadBuffer) {
+    if (!CreateCommittedResourceChecked(
+            dxCommon_->GetDevice(), &uploadHeapProps, D3D12_HEAP_FLAG_NONE,
+            &vbDesc, D3D12_RESOURCE_STATE_GENERIC_READ,
+            vertexUploadBuffer.GetAddressOf())) {
         return UINT32_MAX;
     }
 
     void *vbMapped = nullptr;
-    const HRESULT vertexMapResult =
-        vertexUploadBuffer->Map(0, nullptr, &vbMapped);
-    if (FAILED(vertexMapResult) || vbMapped == nullptr) {
+    if (!MapResourceChecked(vertexUploadBuffer.Get(), &vbMapped)) {
         return UINT32_MAX;
     }
     memcpy(vbMapped, vertexData, vbSize);
@@ -126,28 +158,22 @@ uint32_t MeshManager::CreateMesh(const void *vertexData, uint32_t vertexStride,
     mesh.vbView.SizeInBytes = vbSize;
     mesh.vbView.StrideInBytes = vertexStride;
 
-    const HRESULT indexBufferResult =
-        dxCommon_->GetDevice()->CreateCommittedResource(
-            &defaultHeapProps, D3D12_HEAP_FLAG_NONE, &ibDesc,
-            D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-            IID_PPV_ARGS(&mesh.indexBuffer));
-    if (FAILED(indexBufferResult) || !mesh.indexBuffer) {
+    if (!CreateCommittedResourceChecked(
+            dxCommon_->GetDevice(), &defaultHeapProps, D3D12_HEAP_FLAG_NONE,
+            &ibDesc, D3D12_RESOURCE_STATE_COPY_DEST,
+            mesh.indexBuffer.GetAddressOf())) {
         return UINT32_MAX;
     }
 
-    const HRESULT indexUploadResult =
-        dxCommon_->GetDevice()->CreateCommittedResource(
-            &uploadHeapProps, D3D12_HEAP_FLAG_NONE, &ibDesc,
-            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            IID_PPV_ARGS(&indexUploadBuffer));
-    if (FAILED(indexUploadResult) || !indexUploadBuffer) {
+    if (!CreateCommittedResourceChecked(
+            dxCommon_->GetDevice(), &uploadHeapProps, D3D12_HEAP_FLAG_NONE,
+            &ibDesc, D3D12_RESOURCE_STATE_GENERIC_READ,
+            indexUploadBuffer.GetAddressOf())) {
         return UINT32_MAX;
     }
 
     void *ibMapped = nullptr;
-    const HRESULT indexMapResult =
-        indexUploadBuffer->Map(0, nullptr, &ibMapped);
-    if (FAILED(indexMapResult) || ibMapped == nullptr) {
+    if (!MapResourceChecked(indexUploadBuffer.Get(), &ibMapped)) {
         return UINT32_MAX;
     }
     memcpy(ibMapped, indexData, ibSize);
@@ -159,8 +185,14 @@ uint32_t MeshManager::CreateMesh(const void *vertexData, uint32_t vertexStride,
     mesh.ibView.SizeInBytes = ibSize;
 
     const bool ownsUploadPass = !dxCommon_->IsCommandListRecording();
-    if (ownsUploadPass) {
-        dxCommon_->BeginUpload();
+    try {
+        meshes_.reserve(meshes_.size() + 1);
+        uploadBuffers_.reserve(uploadBuffers_.size() + 2);
+    } catch (...) {
+        return UINT32_MAX;
+    }
+    if (ownsUploadPass && !dxCommon_->BeginUpload()) {
+        return UINT32_MAX;
     }
     if (!dxCommon_->IsCommandListRecording()) {
         return UINT32_MAX;
@@ -174,32 +206,83 @@ uint32_t MeshManager::CreateMesh(const void *vertexData, uint32_t vertexStride,
         return UINT32_MAX;
     }
 
-    commandList->CopyBufferRegion(mesh.vertexBuffer.Get(), 0,
+    if (!ownsUploadPass && !dxCommon_->ReserveFrameRollbacks(1)) {
+        return UINT32_MAX;
+    }
+
+    if (!ownsUploadPass) {
+        uploadBuffers_.push_back(vertexUploadBuffer);
+        uploadBuffers_.push_back(indexUploadBuffer);
+    }
+
+    meshes_.push_back(std::move(mesh));
+    const uint32_t meshId = static_cast<uint32_t>(meshes_.size() - 1);
+    Mesh &storedMesh = meshes_[meshId];
+
+    if (!ownsUploadPass) {
+        if (!dxCommon_->RegisterFrameRollback(this, [this, meshId]() {
+                if (meshId < meshes_.size()) {
+                    meshes_[meshId] = {};
+                }
+            })) {
+            meshes_[meshId] = {};
+            uploadBuffers_.resize(uploadBuffers_.size() - 2);
+            return UINT32_MAX;
+        }
+    }
+
+    commandList->CopyBufferRegion(storedMesh.vertexBuffer.Get(), 0,
                                   vertexUploadBuffer.Get(), 0, vbSize);
-    commandList->CopyBufferRegion(mesh.indexBuffer.Get(), 0,
+    commandList->CopyBufferRegion(storedMesh.indexBuffer.Get(), 0,
                                   indexUploadBuffer.Get(), 0, ibSize);
 
     D3D12_RESOURCE_BARRIER barriers[] = {
         CD3DX12_RESOURCE_BARRIER::Transition(
-            mesh.vertexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+            storedMesh.vertexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
             D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER),
         CD3DX12_RESOURCE_BARRIER::Transition(
-            mesh.indexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+            storedMesh.indexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
             D3D12_RESOURCE_STATE_INDEX_BUFFER),
     };
     commandList->ResourceBarrier(_countof(barriers), barriers);
 
     if (ownsUploadPass) {
-        dxCommon_->EndUpload();
-    } else {
-        uploadBuffers_.push_back(std::move(vertexUploadBuffer));
-        uploadBuffers_.push_back(std::move(indexUploadBuffer));
+        const DirectXCommon::UploadPassResult uploadResult =
+            dxCommon_->EndUploadPass();
+        if (uploadResult == DirectXCommon::UploadPassResult::Failed) {
+            if (meshId < meshes_.size()) {
+                meshes_[meshId] = {};
+            }
+            return UINT32_MAX;
+        }
+        if (uploadResult == DirectXCommon::UploadPassResult::Submitted) {
+            uploadBuffers_.push_back(vertexUploadBuffer);
+            uploadBuffers_.push_back(indexUploadBuffer);
+        }
+    }
+    return meshId;
+}
+
+void MeshManager::DestroyMesh(uint32_t meshId) {
+    if (meshId >= meshes_.size()) {
+        return;
     }
 
-    meshes_.push_back(std::move(mesh));
-    uint32_t meshId = static_cast<uint32_t>(meshes_.size() - 1);
+    Mesh &mesh = meshes_[meshId];
+    if (!mesh.vertexBuffer && !mesh.indexBuffer) {
+        return;
+    }
 
-    return meshId;
+    try {
+        deferredDestroyedMeshes_.push_back(std::move(mesh));
+        mesh = {};
+    } catch (...) {
+        if (dxCommon_ != nullptr && !dxCommon_->IsCommandListRecording() &&
+            (dxCommon_->IsDeviceRemoved() ||
+             dxCommon_->WaitForGpuIfPossible())) {
+            mesh = {};
+        }
+    }
 }
 
 const Mesh &MeshManager::GetMesh(uint32_t meshId) const {
@@ -213,4 +296,38 @@ bool MeshManager::IsValidMeshId(uint32_t meshId) const {
     return meshId < meshes_.size() && meshes_[meshId].vertexBuffer &&
            meshes_[meshId].indexBuffer && meshes_[meshId].indexCount > 0 &&
            meshes_[meshId].vertexStride > 0;
+}
+
+size_t MeshManager::GetActiveMeshCount() const {
+    size_t count = 0;
+    for (const Mesh &mesh : meshes_) {
+        if (mesh.vertexBuffer || mesh.indexBuffer) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+uint64_t MeshManager::GetActiveGpuBytes() const {
+    uint64_t bytes = 0;
+    for (const Mesh &mesh : meshes_) {
+        bytes += MeshGpuBytes(mesh);
+    }
+    return bytes;
+}
+
+uint64_t MeshManager::GetDeferredGpuBytes() const {
+    uint64_t bytes = 0;
+    for (const Mesh &mesh : deferredDestroyedMeshes_) {
+        bytes += MeshGpuBytes(mesh);
+    }
+    return bytes;
+}
+
+uint64_t MeshManager::GetUploadBytes() const {
+    uint64_t bytes = 0;
+    for (const auto &buffer : uploadBuffers_) {
+        bytes += ResourceByteWidth(buffer.Get());
+    }
+    return bytes;
 }

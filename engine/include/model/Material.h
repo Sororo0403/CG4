@@ -1,7 +1,6 @@
 #pragma once
+#include "core/Numeric.h"
 #include <DirectXMath.h>
-#include <algorithm>
-#include <cmath>
 #include <cstdint>
 
 /// <summary>
@@ -54,26 +53,13 @@ struct Material {
 };
 
 namespace MaterialDetail {
-inline float FiniteOr(float value, float fallback) {
-    return std::isfinite(value) ? value : fallback;
-}
-
-inline float ClampFinite(float value, float minimum, float maximum,
-                         float fallback) {
-    return std::clamp(FiniteOr(value, fallback), minimum, maximum);
-}
-
-inline float ClampFiniteMin(float value, float minimum, float fallback) {
-    return (std::max)(FiniteOr(value, fallback), minimum);
-}
-
 inline DirectX::XMFLOAT4 FiniteFloat4(const DirectX::XMFLOAT4 &value,
                                       const DirectX::XMFLOAT4 &fallback) {
     return {
-        FiniteOr(value.x, fallback.x),
-        FiniteOr(value.y, fallback.y),
-        FiniteOr(value.z, fallback.z),
-        FiniteOr(value.w, fallback.w),
+        Numeric::FiniteOr(value.x, fallback.x),
+        Numeric::FiniteOr(value.y, fallback.y),
+        Numeric::FiniteOr(value.z, fallback.z),
+        Numeric::FiniteOr(value.w, fallback.w),
     };
 }
 
@@ -84,7 +70,8 @@ FiniteMatrix(const DirectX::XMFLOAT4X4 &value,
     for (int row = 0; row < 4; ++row) {
         for (int column = 0; column < 4; ++column) {
             result.m[row][column] =
-                FiniteOr(result.m[row][column], fallback.m[row][column]);
+                Numeric::FiniteOr(result.m[row][column],
+                                  fallback.m[row][column]);
         }
     }
     return result;
@@ -108,21 +95,21 @@ inline Material NormalizeMaterialForDraw(Material material) {
     material.color =
         MaterialDetail::FiniteFloat4(material.color, defaults.color);
     material.color.w =
-        MaterialDetail::ClampFinite(material.color.w, 0.0f, 1.0f, 1.0f);
+        Numeric::ClampFinite(material.color.w, 0.0f, 1.0f, 1.0f);
     material.uvTransform =
         MaterialDetail::FiniteMatrix(material.uvTransform,
                                      defaults.uvTransform);
-    material.reflectionStrength = MaterialDetail::ClampFiniteMin(
+    material.reflectionStrength = Numeric::AtLeastFinite(
         material.reflectionStrength, 0.0f, defaults.reflectionStrength);
-    material.reflectionFresnelStrength = MaterialDetail::ClampFiniteMin(
+    material.reflectionFresnelStrength = Numeric::AtLeastFinite(
         material.reflectionFresnelStrength, 0.0f,
         defaults.reflectionFresnelStrength);
-    material.reflectionRoughness = MaterialDetail::ClampFinite(
+    material.reflectionRoughness = Numeric::ClampFinite(
         material.reflectionRoughness, 0.0f, 1.0f,
         defaults.reflectionRoughness);
-    material.roughness = MaterialDetail::ClampFinite(
+    material.roughness = Numeric::ClampFinite(
         material.roughness, 0.0f, 1.0f, defaults.roughness);
-    material.metallic = MaterialDetail::ClampFinite(
+    material.metallic = Numeric::ClampFinite(
         material.metallic, 0.0f, 1.0f, defaults.metallic);
     material.customParams =
         MaterialDetail::FiniteFloat4(material.customParams,
@@ -138,7 +125,7 @@ inline Material NormalizeMaterialForDraw(Material material) {
         material.depthWrite = 0;
     }
 
-    material.alphaCutoff = MaterialDetail::ClampFinite(
+    material.alphaCutoff = Numeric::ClampFinite(
         material.alphaCutoff, 0.0f, 1.0f, defaults.alphaCutoff);
 
     const int32_t cullModeValue = material.cullMode;
@@ -147,7 +134,7 @@ inline Material NormalizeMaterialForDraw(Material material) {
         material.cullMode = static_cast<int32_t>(MaterialCullMode::Back);
     }
 
-    material.normalStrength = MaterialDetail::ClampFiniteMin(
+    material.normalStrength = Numeric::AtLeastFinite(
         material.normalStrength, 0.0f, defaults.normalStrength);
 
     material.enableNormalMap =

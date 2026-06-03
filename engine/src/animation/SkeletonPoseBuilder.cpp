@@ -1,26 +1,12 @@
 #include "animation/SkeletonPoseBuilder.h"
 #include "animation/AnimationSampler.h"
+#include "core/MathUtils.h"
 #include <DirectXMath.h>
 #include <cmath>
 
 using namespace DirectX;
 
 namespace {
-
-constexpr float kQuaternionEpsilon = 0.000001f;
-
-XMVECTOR LoadNormalizedQuaternionOrIdentity(const XMFLOAT4 &rotation) {
-    if (!std::isfinite(rotation.x) || !std::isfinite(rotation.y) ||
-        !std::isfinite(rotation.z) || !std::isfinite(rotation.w)) {
-        return XMQuaternionIdentity();
-    }
-    XMVECTOR q = XMLoadFloat4(&rotation);
-    const float lengthSq = XMVectorGetX(XMVector4LengthSq(q));
-    if (!std::isfinite(lengthSq) || lengthSq <= kQuaternionEpsilon) {
-        return XMQuaternionIdentity();
-    }
-    return XMQuaternionNormalize(q);
-}
 
 bool ResolveReadyParentIndex(int parentIndex, size_t childIndex,
                              size_t boneCount, size_t &resolvedIndex) {
@@ -58,7 +44,7 @@ XMMATRIX MakeAnimatedLocalMatrix(const BoneInfo &bone,
                        ? XMFLOAT4{0.0f, 0.0f, 0.0f, 1.0f}
                        : AnimationSampler::SampleQuat(anim.rotate, time);
 
-    XMVECTOR q = LoadNormalizedQuaternionOrIdentity(rot);
+    XMVECTOR q = MathUtils::LoadNormalizedQuaternionOrIdentity(rot);
     XMMATRIX animatedLocal = XMMatrixScaling(scl.x, scl.y, scl.z) *
                              XMMatrixRotationQuaternion(q) *
                              XMMatrixTranslation(pos.x, pos.y, pos.z);

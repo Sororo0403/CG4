@@ -1,6 +1,7 @@
 #include "sound/AudioFileLoader.h"
 
-#include "core/AssetManager.h"
+#include "core/PathUtils.h"
+#include "sound/AudioLimits.h"
 
 #include <Objbase.h>
 #include <algorithm>
@@ -19,10 +20,6 @@ namespace {
 constexpr DWORD kAllStreams = static_cast<DWORD>(MF_SOURCE_READER_ALL_STREAMS);
 constexpr DWORD kFirstAudioStream =
     static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM);
-
-std::filesystem::path ResolveAudioPath(const std::wstring &path) {
-    return AssetManager::ResolvePath(std::filesystem::path(path));
-}
 
 class MediaBufferLock {
   public:
@@ -166,7 +163,8 @@ bool ReadPcmData(IMFSourceReader *reader, std::vector<BYTE> &decodedPcm) {
         }
         const size_t oldSize = decodedPcm.size();
         if (locked.Size() >
-            (std::numeric_limits<size_t>::max)() - oldSize) {
+                (std::numeric_limits<size_t>::max)() - oldSize ||
+            oldSize + locked.Size() > AudioLimits::kMaxDecodedPcmBytes) {
             decodedPcm.clear();
             return false;
         }
@@ -190,7 +188,7 @@ AudioFileLoader::SoundData AudioFileLoader::Load(const std::wstring &path) {
 bool AudioFileLoader::TryLoad(const std::wstring &path, SoundData &outData) {
     outData = {};
 
-    const std::filesystem::path resolvedPath = ResolveAudioPath(path);
+    const std::filesystem::path resolvedPath = PathUtils::ResolveAssetPath(path);
     std::error_code ec;
     if (!std::filesystem::exists(resolvedPath, ec)) {
         return false;

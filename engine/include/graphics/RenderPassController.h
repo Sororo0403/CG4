@@ -49,6 +49,9 @@ class RenderPassController {
     const RenderContext &GetContext() const { return context_; }
     const RenderContext *GetContextPtr() const { return &context_; }
     RenderPass GetCurrentPass() const { return context_.pass; }
+    bool IsReady() const {
+        return dxCommon_ != nullptr && srvManager_ != nullptr;
+    }
 
     /// <summary>
     /// PassNameを取得する

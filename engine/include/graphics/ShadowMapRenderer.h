@@ -16,8 +16,9 @@ class ShadowMapRenderer {
     /// <summary>
     /// Releaseを実行する
     /// </summary>
-    void Release();
-    void Resize(uint32_t width, uint32_t height);
+    bool Release();
+    bool Release(bool allowFrameAbort);
+    bool Resize(uint32_t width, uint32_t height);
 
     void Begin();
     /// <summary>
@@ -40,14 +41,20 @@ class ShadowMapRenderer {
 
     uint32_t GetWidth() const { return width_; }
     uint32_t GetHeight() const { return height_; }
+    bool IsReady() const {
+        return dxCommon_ != nullptr && srvManager_ != nullptr &&
+               depthTexture_ && dsvHeap_ && srvIndex_ != UINT32_MAX &&
+               srvGpuHandle_.ptr != 0;
+    }
 
   private:
     /// <summary>
     /// DepthResourcesを解放する
     /// </summary>
-    void ReleaseDepthResources();
-    void CreateResources();
-    void UpdateSrv();
+    bool ReleaseDepthResources();
+    bool ReleaseDepthResources(bool allowFrameAbort);
+    bool CreateResources();
+    bool UpdateSrv();
 
     DirectXCommon *dxCommon_ = nullptr;
     SrvManager *srvManager_ = nullptr;

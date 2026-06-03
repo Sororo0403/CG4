@@ -1,8 +1,10 @@
 #pragma once
 #include "BaseScene.h"
 #include <DirectXMath.h>
-#include <array>
 #include <cstdint>
+#include <vector>
+
+class SpriteManager;
 
 class GameScene : public BaseScene {
   public:
@@ -33,21 +35,24 @@ class GameScene : public BaseScene {
     void DrawTransparent() override;
 
   private:
-    struct Rect {
-        DirectX::XMFLOAT2 position{};
-        DirectX::XMFLOAT2 size{};
-        DirectX::XMFLOAT4 color{};
+    struct HitParticle {
+        DirectX::XMFLOAT2 offset{0.0f, 0.0f};
+        DirectX::XMFLOAT2 velocity{0.0f, 0.0f};
+        DirectX::XMFLOAT2 startSize{8.0f, 8.0f};
+        DirectX::XMFLOAT2 endSize{0.0f, 0.0f};
+        DirectX::XMFLOAT4 color{1.0f, 1.0f, 1.0f, 1.0f};
+        float rotation = 0.0f;
+        float angularVelocity = 0.0f;
+        float age = 0.0f;
+        float lifeTime = 0.5f;
+        float zOrder = 1.0f;
     };
 
-    void Reset();
-    void UpdatePlayer(float deltaTime);
-    bool Intersects(const Rect &a, const Rect &b) const;
-    void DrawRect(const Rect &rect, float zOrder);
+    void TriggerHitEffect();
+    void UpdateHitEffect(float deltaTime);
+    void DrawHitEffect(SpriteManager *sprite, float centerX,
+                       float centerY) const;
 
-    DirectX::XMFLOAT2 playerPosition_{128.0f, 360.0f};
-    DirectX::XMFLOAT2 velocity_{};
-    float elapsedTime_ = 0.0f;
-    bool goalReached_ = false;
     uint32_t whiteTextureId_ = 0;
-    std::array<Rect, 4> obstacles_{};
+    std::vector<HitParticle> hitParticles_;
 };

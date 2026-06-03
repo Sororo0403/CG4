@@ -3,9 +3,40 @@
 #include "camera/Camera.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 using namespace DirectX;
+
+namespace {
+
+bool IsFinitePosition(const XMFLOAT3 &position) {
+    return std::isfinite(position.x) && std::isfinite(position.y) &&
+           std::isfinite(position.z);
+}
+
+float SafeDistanceSquared(const XMFLOAT3 &worldPosition,
+                          const XMFLOAT3 &cameraPosition) {
+    if (!IsFinitePosition(worldPosition) || !IsFinitePosition(cameraPosition)) {
+        return 0.0f;
+    }
+
+    const double dx = static_cast<double>(worldPosition.x) -
+                      static_cast<double>(cameraPosition.x);
+    const double dy = static_cast<double>(worldPosition.y) -
+                      static_cast<double>(cameraPosition.y);
+    const double dz = static_cast<double>(worldPosition.z) -
+                      static_cast<double>(cameraPosition.z);
+    const double distanceSquared = dx * dx + dy * dy + dz * dz;
+    const float maxDistanceSquared = (std::numeric_limits<float>::max)();
+    if (!std::isfinite(distanceSquared) ||
+        distanceSquared > static_cast<double>(maxDistanceSquared)) {
+        return maxDistanceSquared;
+    }
+    return static_cast<float>(distanceSquared);
+}
+
+} // namespace
 
 void TransparentRenderQueue::Clear() {
     items_.clear();
@@ -17,7 +48,7 @@ void TransparentRenderQueue::Submit(float distanceSquared, DrawCallback draw) {
         return;
     }
 
-    if (!std::isfinite(distanceSquared)) {
+    if (!std::isfinite(distanceSquared) || distanceSquared < 0.0f) {
         distanceSquared = 0.0f;
     }
 
@@ -27,10 +58,7 @@ void TransparentRenderQueue::Submit(float distanceSquared, DrawCallback draw) {
 void TransparentRenderQueue::Submit(const XMFLOAT3 &worldPosition,
                                     const Camera &camera, DrawCallback draw) {
     const XMFLOAT3 cameraPosition = camera.GetPosition();
-    const float dx = worldPosition.x - cameraPosition.x;
-    const float dy = worldPosition.y - cameraPosition.y;
-    const float dz = worldPosition.z - cameraPosition.z;
-    Submit(dx * dx + dy * dy + dz * dz, std::move(draw));
+    Submit(SafeDistanceSquared(worldPosition, cameraPosition), std::move(draw));
 }
 
 void TransparentRenderQueue::Flush() {

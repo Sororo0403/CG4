@@ -68,6 +68,7 @@ class DynamicBuffer {
     size_t GetCapacity() const { return capacity_; }
     size_t GetOffset() const { return offset_; }
     size_t GetDefaultAlignment() const { return defaultAlignment_; }
+    bool HasResource() const noexcept { return resource_ != nullptr; }
 
   private:
     /// <summary>

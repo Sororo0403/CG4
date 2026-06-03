@@ -1,13 +1,18 @@
 #include "model/MeshRenderer.h"
 
+#include "core/Numeric.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
+#include "graphics/GpuResourceLifetime.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
+#include "RendererMaterialUtils.h"
+#include "model/RendererMath.h"
 #include "model/Vertex.h"
 #include "texture/TextureManager.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 
@@ -15,6 +20,12 @@ using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
 namespace {
+using Numeric::AtLeastFinite;
+using Numeric::ClampFinite;
+using Numeric::FiniteOr;
+using RendererMaterialUtils::PipelineVariantIndex;
+using RendererMaterialUtils::ResolveBaseColorTextureId;
+using RendererMaterialUtils::ResolveNormalTextureId;
 
 struct PerObjectConstBufferData {
     XMFLOAT4X4 matWVP;
@@ -22,184 +33,36 @@ struct PerObjectConstBufferData {
     XMFLOAT4X4 matWorldInverseTranspose;
 };
 
-struct SceneConstBufferData {
-    struct PointLightData {
-        XMFLOAT4 positionRange;
-        XMFLOAT4 colorIntensity;
-    };
-
-    XMFLOAT4 cameraPos;
-    XMFLOAT4 keyLightDirection;
-    XMFLOAT4 keyLightColor;
-    XMFLOAT4 fillLightDirection;
-    XMFLOAT4 fillLightColor;
-    XMFLOAT4 ambientColor;
-    PointLightData pointLights[2];
-    XMFLOAT4 lightingParams;
-    XMFLOAT4 fogColor;
-    XMFLOAT4 fogParams;
-    XMFLOAT4X4 viewProjection;
-    XMFLOAT4X4 lightViewProjection;
-    XMFLOAT4 shadowParams;
-    XMFLOAT4 shadowFilterParams;
-    XMFLOAT4 customSceneParams0;
-    XMFLOAT4 customSceneParams1;
-};
-
-XMVECTOR LoadNormalizedQuaternionOrIdentity(const XMFLOAT4 &rotation) {
-    if (!std::isfinite(rotation.x) || !std::isfinite(rotation.y) ||
-        !std::isfinite(rotation.z) || !std::isfinite(rotation.w)) {
-        return XMQuaternionIdentity();
-    }
-    XMVECTOR q = XMLoadFloat4(&rotation);
-    const float lengthSq = XMVectorGetX(XMVector4LengthSq(q));
-    if (!std::isfinite(lengthSq) || lengthSq <= 0.000001f) {
-        return XMQuaternionIdentity();
-    }
-    return XMQuaternionNormalize(q);
+XMFLOAT4 SanitizeFloat4(const XMFLOAT4 &value, const XMFLOAT4 &fallback) {
+    return {FiniteOr(value.x, fallback.x), FiniteOr(value.y, fallback.y),
+            FiniteOr(value.z, fallback.z), FiniteOr(value.w, fallback.w)};
 }
 
-float ClampFinite(float value, float minimum, float maximum, float fallback) {
-    if (!std::isfinite(value)) {
-        return fallback;
-    }
-    return std::clamp(value, minimum, maximum);
-}
-
-float ClampFiniteMin(float value, float minimum) {
-    if (!std::isfinite(value)) {
-        return minimum;
-    }
-    return (std::max)(value, minimum);
-}
-
-XMMATRIX MakeWorldMatrix(const Transform &transform) {
-    const Transform safeTransform = SanitizeTransformForDraw(transform);
-    XMVECTOR q = LoadNormalizedQuaternionOrIdentity(safeTransform.rotation);
-    return XMMatrixScaling(safeTransform.scale.x, safeTransform.scale.y,
-                           safeTransform.scale.z) *
-           XMMatrixRotationQuaternion(q) *
-           XMMatrixTranslation(safeTransform.position.x,
-                               safeTransform.position.y,
-                               safeTransform.position.z);
-}
-
-XMMATRIX MakeWorldInverseTranspose(const XMMATRIX &world) {
-    const XMVECTOR determinant = XMMatrixDeterminant(world);
-    const float determinantValue = XMVectorGetX(determinant);
-    if (!std::isfinite(determinantValue) ||
-        std::abs(determinantValue) <= 0.000001f) {
-        return XMMatrixIdentity();
-    }
-    return XMMatrixTranspose(XMMatrixInverse(nullptr, world));
-}
-
-bool IsTransparentMaterial(const Material &material) {
-    return material.blendMode == static_cast<int32_t>(BlendMode::Transparent) ||
-           material.color.w < 1.0f;
-}
-
-D3D12_CULL_MODE ToD3D12CullMode(const MaterialCullMode mode) {
-    switch (mode) {
-    case MaterialCullMode::None:
-        return D3D12_CULL_MODE_NONE;
-    case MaterialCullMode::Front:
-        return D3D12_CULL_MODE_FRONT;
-    case MaterialCullMode::Back:
-    default:
-        return D3D12_CULL_MODE_BACK;
-    }
-}
-
-size_t PipelineVariantIndex(bool transparent, MaterialCullMode cullMode,
-                            bool depthWrite) {
-    const size_t blendIndex = transparent ? 1 : 0;
-    const size_t cullIndex = static_cast<size_t>(cullMode);
-    const size_t depthIndex = depthWrite ? 1 : 0;
-    return blendIndex * 6 + cullIndex * 2 + depthIndex;
-}
-
-size_t PipelineVariantIndex(const Material &material) {
-    const Material drawMaterial = NormalizeMaterialForDraw(material);
-    MaterialCullMode cullMode =
-        static_cast<MaterialCullMode>(drawMaterial.cullMode);
-    if (drawMaterial.cullMode < static_cast<int32_t>(MaterialCullMode::None) ||
-        drawMaterial.cullMode > static_cast<int32_t>(MaterialCullMode::Back)) {
-        cullMode = MaterialCullMode::Back;
-    }
-    return PipelineVariantIndex(IsTransparentMaterial(drawMaterial), cullMode,
-                                drawMaterial.depthWrite != 0);
-}
-
-uint32_t ResolveTextureId(TextureManager *textureManager, uint32_t textureId,
-                          uint32_t fallbackTextureId) {
-    if (textureManager == nullptr) {
-        return UINT32_MAX;
-    }
-    if (textureId != UINT32_MAX &&
-        textureManager->IsValidTextureId(textureId)) {
-        return textureId;
-    }
-    if (fallbackTextureId != UINT32_MAX &&
-        textureManager->IsValidTextureId(fallbackTextureId)) {
-        return fallbackTextureId;
-    }
-    return textureManager->GetWhiteTextureId();
-}
-
-uint32_t ResolveNormalTextureId(TextureManager *textureManager,
-                                uint32_t normalTextureId) {
-    const uint32_t fallbackTextureId =
-        textureManager != nullptr ? textureManager->GetDefaultNormalTextureId()
-                                  : UINT32_MAX;
-    return ResolveTextureId(textureManager, normalTextureId,
-                            fallbackTextureId);
-}
-
-uint32_t ResolveBaseColorTextureId(TextureManager *textureManager,
-                                   const Material &material,
-                                   uint32_t fallbackTextureId) {
-    const uint32_t textureId = material.baseColorTextureId == UINT32_MAX
-                                   ? fallbackTextureId
-                                   : material.baseColorTextureId;
-    return ResolveTextureId(textureManager, textureId, fallbackTextureId);
-}
-
-uint32_t ResolveNormalTextureId(TextureManager *textureManager,
-                                const Material &material,
-                                uint32_t fallbackTextureId) {
-    const uint32_t textureId = material.normalTextureId == UINT32_MAX
-                                   ? fallbackTextureId
-                                   : material.normalTextureId;
-    return ResolveNormalTextureId(textureManager, textureId);
+bool IsDrawableMesh(const Mesh &mesh) {
+    return mesh.vertexBuffer && mesh.indexBuffer && mesh.indexCount > 0 &&
+           mesh.vertexStride > 0 && mesh.vbView.BufferLocation != 0 &&
+           mesh.vbView.SizeInBytes > 0 &&
+           mesh.vbView.StrideInBytes > 0 &&
+           mesh.ibView.BufferLocation != 0 && mesh.ibView.SizeInBytes > 0 &&
+           mesh.primitiveTopology != D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
 }
 
 } // namespace
 
+MeshRenderer::~MeshRenderer() {
+    Finalize(true);
+}
+
 void MeshRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
                               TextureManager *textureManager) {
     if (!dxCommon || !dxCommon->GetDevice() || !srvManager || !textureManager) {
-        dxCommon_ = nullptr;
-        srvManager_ = nullptr;
-        textureManager_ = nullptr;
-        rootSignature_.Reset();
-        shadowRootSignature_.Reset();
-        for (auto &pipeline : pipelineStates_) {
-            pipeline.Reset();
-        }
-        for (auto &pipeline : instancedPipelineStates_) {
-            pipeline.Reset();
-        }
-        shadowPSO_.Reset();
-        instancedShadowPSO_.Reset();
-        customPipelines_.clear();
-        customInstancedPipelines_.clear();
-        uploadBuffer_.Reset();
-        drawIndex_ = 0;
-        shadowMapGpuHandle_ = {};
+        Finalize();
         return;
     }
 
+    if (!Finalize()) {
+        return;
+    }
     dxCommon_ = dxCommon;
     srvManager_ = srvManager;
     textureManager_ = textureManager;
@@ -208,39 +71,246 @@ void MeshRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
 
     CreateRootSignature();
     CreateShadowRootSignature();
+    CreateGpuCullResources();
+    CreateFallbackOcclusionTexture();
     CreatePipelineStates();
     CreateShadowPipelineStates();
     CreateUploadBuffer();
-    if (!rootSignature_ || !shadowRootSignature_ || !pipelineStates_[0] ||
-        !instancedPipelineStates_[0] || !shadowPSO_ ||
-        !instancedShadowPSO_ || uploadBuffer_.GetBytesPerFrame() == 0) {
-        dxCommon_ = nullptr;
-        srvManager_ = nullptr;
-        textureManager_ = nullptr;
-        rootSignature_.Reset();
-        shadowRootSignature_.Reset();
-        for (auto &pipeline : pipelineStates_) {
-            pipeline.Reset();
-        }
-        for (auto &pipeline : instancedPipelineStates_) {
-            pipeline.Reset();
-        }
-        shadowPSO_.Reset();
-        instancedShadowPSO_.Reset();
-        customPipelines_.clear();
-        customInstancedPipelines_.clear();
-        uploadBuffer_.Reset();
-        drawIndex_ = 0;
-        shadowMapGpuHandle_ = {};
+    if (!IsReady()) {
+        Finalize();
     }
+}
+
+bool MeshRenderer::Finalize() { return Finalize(false); }
+
+bool MeshRenderer::Finalize(bool allowFrameAbort) {
+    const bool hasGpuResources =
+        rootSignature_ || shadowRootSignature_ || pipelineStates_[0] ||
+        instancedPipelineStates_[0] || shadowPSO_ || instancedShadowPSO_ ||
+        uploadBuffer_.GetBytesPerFrame() != 0 || !customPipelines_.empty() ||
+        !customInstancedPipelines_.empty() || fallbackOcclusionTexture_ ||
+        fallbackOcclusionSrvIndex_ != UINT32_MAX || gpuCullRootSignature_ ||
+        gpuCullPSO_ || gpuCullArgsPSO_ || gpuCullCommandSignature_ ||
+        gpuLodCullRootSignature_ || gpuLodCullPSO_ || gpuLodCullArgsPSO_;
+    if (!CanReleaseGpuResources(dxCommon_, hasGpuResources,
+                                allowFrameAbort)) {
+        return false;
+    }
+
+    ResetResources();
+    return true;
+}
+
+void MeshRenderer::ResetResources() {
+    fallbackOcclusionTexture_.Reset();
+    if (srvManager_ != nullptr && fallbackOcclusionSrvIndex_ != UINT32_MAX) {
+        srvManager_->FreeIfAllocated(fallbackOcclusionSrvIndex_);
+    }
+    fallbackOcclusionSrvIndex_ = UINT32_MAX;
+    fallbackOcclusionGpuHandle_ = {};
+
+    dxCommon_ = nullptr;
+    srvManager_ = nullptr;
+    textureManager_ = nullptr;
+    rootSignature_.Reset();
+    shadowRootSignature_.Reset();
+    for (auto &pipeline : pipelineStates_) {
+        pipeline.Reset();
+    }
+    for (auto &pipeline : instancedPipelineStates_) {
+        pipeline.Reset();
+    }
+    shadowPSO_.Reset();
+    instancedShadowPSO_.Reset();
+    gpuCullRootSignature_.Reset();
+    gpuCullPSO_.Reset();
+    gpuCullArgsPSO_.Reset();
+    gpuCullCommandSignature_.Reset();
+    gpuLodCullRootSignature_.Reset();
+    gpuLodCullPSO_.Reset();
+    gpuLodCullArgsPSO_.Reset();
+    customPipelines_.clear();
+    customInstancedPipelines_.clear();
+    uploadBuffer_.Reset();
+    InvalidateConstantCaches();
+    InvalidateCommandState();
+    instanceScratch_.clear();
+    instanceScratch_.shrink_to_fit();
+    drawIndex_ = 0;
+    shadowMapGpuHandle_ = {};
+    ClearOcclusionPyramid();
+}
+
+bool MeshRenderer::ReleasePipeline(uint32_t pipelineId,
+                                   bool allowFrameAbort) noexcept {
+    if (pipelineId >= customPipelines_.size()) {
+        return false;
+    }
+
+    bool hasGpuResources = false;
+    for (const auto &pipeline : customPipelines_[pipelineId].pipelineStates) {
+        hasGpuResources = hasGpuResources || static_cast<bool>(pipeline);
+    }
+    if (!CanReleaseGpuResources(dxCommon_, hasGpuResources, allowFrameAbort)) {
+        return false;
+    }
+
+    customPipelines_[pipelineId] = MeshPipelineSet{};
+    InvalidateCommandState();
+    return true;
+}
+
+bool MeshRenderer::ReleaseInstancedPipeline(uint32_t pipelineId,
+                                            bool allowFrameAbort) noexcept {
+    if (pipelineId >= customInstancedPipelines_.size()) {
+        return false;
+    }
+
+    const InstancedPipelineSet &pipelineSet =
+        customInstancedPipelines_[pipelineId];
+    bool hasGpuResources = static_cast<bool>(pipelineSet.shadowPipelineState);
+    for (const auto &pipeline : pipelineSet.pipelineStates) {
+        hasGpuResources = hasGpuResources || static_cast<bool>(pipeline);
+    }
+    if (!CanReleaseGpuResources(dxCommon_, hasGpuResources, allowFrameAbort)) {
+        return false;
+    }
+
+    customInstancedPipelines_[pipelineId] = InstancedPipelineSet{};
+    InvalidateCommandState();
+    return true;
+}
+
+void MeshRenderer::InvalidateConstantCaches() noexcept {
+    sceneConstantsCache_ = {};
+    shadowSceneConstantsCache_ = {};
+    materialConstantsCache_ = {};
+}
+
+void MeshRenderer::InvalidateCommandState() noexcept {
+    cachedRootSignature_ = nullptr;
+    cachedPipelineState_ = nullptr;
+    cachedRootParameterKinds_.fill(RootParameterKind::None);
+    cachedRootParameterValues_.fill(0);
+    cachedVertexBufferViews_ = {};
+    cachedVertexBufferStartSlot_ = 0;
+    cachedVertexBufferViewCount_ = 0;
+    cachedVertexBuffersValid_ = false;
+    cachedIndexBufferView_ = {};
+    cachedIndexBufferValid_ = false;
+    cachedPrimitiveTopology_ = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
+}
+
+void MeshRenderer::SetGraphicsRootSignatureCached(
+    ID3D12RootSignature *rootSignature) {
+    auto *cmd = dxCommon_ ? dxCommon_->GetCommandList() : nullptr;
+    if (cmd == nullptr || rootSignature == nullptr) {
+        return;
+    }
+    cmd->SetGraphicsRootSignature(rootSignature);
+    cachedRootSignature_ = rootSignature;
+    cachedRootParameterKinds_.fill(RootParameterKind::None);
+    cachedRootParameterValues_.fill(0);
+}
+
+void MeshRenderer::SetPipelineStateCached(ID3D12PipelineState *pipelineState) {
+    auto *cmd = dxCommon_ ? dxCommon_->GetCommandList() : nullptr;
+    if (cmd == nullptr || pipelineState == nullptr) {
+        return;
+    }
+    cmd->SetPipelineState(pipelineState);
+    cachedPipelineState_ = pipelineState;
+}
+
+void MeshRenderer::SetGraphicsRootConstantBufferViewCached(
+    uint32_t rootIndex, D3D12_GPU_VIRTUAL_ADDRESS address) {
+    auto *cmd = dxCommon_ ? dxCommon_->GetCommandList() : nullptr;
+    if (cmd == nullptr || rootIndex >= cachedRootParameterValues_.size()) {
+        return;
+    }
+    cmd->SetGraphicsRootConstantBufferView(rootIndex, address);
+    cachedRootParameterKinds_[rootIndex] = RootParameterKind::ConstantBuffer;
+    cachedRootParameterValues_[rootIndex] = address;
+}
+
+void MeshRenderer::SetGraphicsRootDescriptorTableCached(
+    uint32_t rootIndex, D3D12_GPU_DESCRIPTOR_HANDLE handle) {
+    auto *cmd = dxCommon_ ? dxCommon_->GetCommandList() : nullptr;
+    if (cmd == nullptr || rootIndex >= cachedRootParameterValues_.size()) {
+        return;
+    }
+    cmd->SetGraphicsRootDescriptorTable(rootIndex, handle);
+    cachedRootParameterKinds_[rootIndex] = RootParameterKind::DescriptorTable;
+    cachedRootParameterValues_[rootIndex] = handle.ptr;
+}
+
+void MeshRenderer::IASetVertexBuffersCached(
+    uint32_t startSlot, uint32_t viewCount,
+    const D3D12_VERTEX_BUFFER_VIEW *views) {
+    auto *cmd = dxCommon_ ? dxCommon_->GetCommandList() : nullptr;
+    if (cmd == nullptr || views == nullptr || viewCount == 0u ||
+        viewCount > cachedVertexBufferViews_.size()) {
+        return;
+    }
+
+    cmd->IASetVertexBuffers(startSlot, viewCount, views);
+    cachedVertexBufferStartSlot_ = startSlot;
+    cachedVertexBufferViewCount_ = viewCount;
+    cachedVertexBuffersValid_ = true;
+    for (uint32_t index = 0u; index < viewCount; ++index) {
+        cachedVertexBufferViews_[index] = views[index];
+    }
+}
+
+void MeshRenderer::IASetIndexBufferCached(const D3D12_INDEX_BUFFER_VIEW &view) {
+    auto *cmd = dxCommon_ ? dxCommon_->GetCommandList() : nullptr;
+    if (cmd == nullptr) {
+        return;
+    }
+    cmd->IASetIndexBuffer(&view);
+    cachedIndexBufferView_ = view;
+    cachedIndexBufferValid_ = true;
+}
+
+void MeshRenderer::IASetPrimitiveTopologyCached(
+    D3D12_PRIMITIVE_TOPOLOGY topology) {
+    auto *cmd = dxCommon_ ? dxCommon_->GetCommandList() : nullptr;
+    if (cmd == nullptr) {
+        return;
+    }
+    cmd->IASetPrimitiveTopology(topology);
+    cachedPrimitiveTopology_ = topology;
+}
+
+bool MeshRenderer::IsReady() const {
+    const auto hasAllPipelineStates = [](const auto &pipelines) {
+        for (const auto &pipeline : pipelines) {
+            if (!pipeline) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    return dxCommon_ != nullptr && srvManager_ != nullptr &&
+           textureManager_ != nullptr && rootSignature_ &&
+           shadowRootSignature_ && hasAllPipelineStates(pipelineStates_) &&
+           hasAllPipelineStates(instancedPipelineStates_) && shadowPSO_ &&
+           instancedShadowPSO_ && gpuCullRootSignature_ && gpuCullPSO_ &&
+           gpuCullArgsPSO_ && gpuCullCommandSignature_ &&
+           gpuLodCullRootSignature_ && gpuLodCullPSO_ &&
+           gpuLodCullArgsPSO_ && uploadBuffer_.GetBytesPerFrame() != 0;
 }
 
 void MeshRenderer::BeginFrame() {
     if (!dxCommon_) {
         drawIndex_ = 0;
+        InvalidateConstantCaches();
         return;
     }
     uploadBuffer_.BeginFrame(dxCommon_->GetBackBufferIndex());
+    InvalidateConstantCaches();
+    InvalidateCommandState();
 }
 
 void MeshRenderer::PreDraw() {
@@ -255,8 +325,9 @@ void MeshRenderer::PreDraw() {
         return;
     }
     ID3D12DescriptorHeap *heaps[] = {heap};
+    InvalidateCommandState();
     cmd->SetDescriptorHeaps(1, heaps);
-    cmd->SetGraphicsRootSignature(rootSignature_.Get());
+    SetGraphicsRootSignatureCached(rootSignature_.Get());
     drawIndex_ = 0;
 }
 
@@ -274,22 +345,23 @@ void MeshRenderer::PreDrawShadow() {
         return;
     }
     ID3D12DescriptorHeap *heaps[] = {heap};
+    InvalidateCommandState();
     cmd->SetDescriptorHeaps(1, heaps);
-    cmd->SetGraphicsRootSignature(shadowRootSignature_.Get());
+    SetGraphicsRootSignatureCached(shadowRootSignature_.Get());
     drawIndex_ = 0;
 }
-
 void MeshRenderer::DrawMesh(const Mesh &mesh, const Material &material,
                             const Transform &transform, const Camera &camera,
                             uint32_t textureId, uint32_t normalTextureId) {
     if (!dxCommon_ || !textureManager_ || !rootSignature_ ||
-        drawIndex_ >= kMaxDraws) {
+        !IsDrawableMesh(mesh) || drawIndex_ >= kMaxDraws) {
         return;
     }
 
     auto *cmd = dxCommon_->GetCommandList();
-    const XMMATRIX world = MakeWorldMatrix(transform);
-    const XMMATRIX worldInverseTranspose = MakeWorldInverseTranspose(world);
+    const XMMATRIX world = RendererMath::MakeWorldMatrix(transform);
+    const XMMATRIX worldInverseTranspose =
+        RendererMath::MakeSafeInverseTranspose(world);
     const XMMATRIX wvp = world * camera.GetView() * camera.GetProj();
     const Material drawMaterial = NormalizeMaterialForDraw(material);
 
@@ -302,24 +374,28 @@ void MeshRenderer::DrawMesh(const Mesh &mesh, const Material &material,
         return;
     }
 
-    if (cmd == nullptr || !SetPipelineForMaterial(drawMaterial)) {
+    if (cmd == nullptr) {
         return;
     }
-    cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(1, sceneCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(2, materialCbAddr);
-    cmd->SetGraphicsRootDescriptorTable(
+    SetGraphicsRootSignatureCached(rootSignature_.Get());
+    if (!SetPipelineForMaterial(drawMaterial)) {
+        return;
+    }
+    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
+    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
+    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
+    SetGraphicsRootDescriptorTableCached(
         3, textureManager_->GetGpuHandle(
                ResolveBaseColorTextureId(textureManager_, drawMaterial,
                                          textureId)));
-    cmd->SetGraphicsRootDescriptorTable(4, shadowMapGpuHandle_);
-    cmd->SetGraphicsRootDescriptorTable(
+    SetGraphicsRootDescriptorTableCached(4, shadowMapGpuHandle_);
+    SetGraphicsRootDescriptorTableCached(
         5, textureManager_->GetGpuHandle(
                ResolveNormalTextureId(textureManager_, drawMaterial,
                                       normalTextureId)));
-    cmd->IASetVertexBuffers(0, 1, &mesh.vbView);
-    cmd->IASetIndexBuffer(&mesh.ibView);
-    cmd->IASetPrimitiveTopology(mesh.primitiveTopology);
+    IASetVertexBuffersCached(0, 1, &mesh.vbView);
+    IASetIndexBufferCached(mesh.ibView);
+    IASetPrimitiveTopologyCached(mesh.primitiveTopology);
     cmd->DrawIndexedInstanced(mesh.indexCount, 1, 0, 0, 0);
 
     ++drawIndex_;
@@ -330,13 +406,15 @@ void MeshRenderer::DrawMeshWithPipeline(
     const Transform &transform, const Camera &camera, uint32_t textureId,
     uint32_t normalTextureId) {
     if (!dxCommon_ || !textureManager_ || !rootSignature_ ||
-        pipelineId >= customPipelines_.size() || drawIndex_ >= kMaxDraws) {
+        pipelineId >= customPipelines_.size() || !IsDrawableMesh(mesh) ||
+        drawIndex_ >= kMaxDraws) {
         return;
     }
 
     auto *cmd = dxCommon_->GetCommandList();
-    const XMMATRIX world = MakeWorldMatrix(transform);
-    const XMMATRIX worldInverseTranspose = MakeWorldInverseTranspose(world);
+    const XMMATRIX world = RendererMath::MakeWorldMatrix(transform);
+    const XMMATRIX worldInverseTranspose =
+        RendererMath::MakeSafeInverseTranspose(world);
     const XMMATRIX wvp = world * camera.GetView() * camera.GetProj();
     const Material drawMaterial = NormalizeMaterialForDraw(material);
 
@@ -349,26 +427,29 @@ void MeshRenderer::DrawMeshWithPipeline(
         return;
     }
 
-    if (cmd == nullptr ||
-        !SetPipelineForMaterial(customPipelines_[pipelineId].pipelineStates,
+    if (cmd == nullptr) {
+        return;
+    }
+    SetGraphicsRootSignatureCached(rootSignature_.Get());
+    if (!SetPipelineForMaterial(customPipelines_[pipelineId].pipelineStates,
                                 drawMaterial)) {
         return;
     }
-    cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(1, sceneCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(2, materialCbAddr);
-    cmd->SetGraphicsRootDescriptorTable(
+    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
+    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
+    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
+    SetGraphicsRootDescriptorTableCached(
         3, textureManager_->GetGpuHandle(
                ResolveBaseColorTextureId(textureManager_, drawMaterial,
                                          textureId)));
-    cmd->SetGraphicsRootDescriptorTable(4, shadowMapGpuHandle_);
-    cmd->SetGraphicsRootDescriptorTable(
+    SetGraphicsRootDescriptorTableCached(4, shadowMapGpuHandle_);
+    SetGraphicsRootDescriptorTableCached(
         5, textureManager_->GetGpuHandle(
                ResolveNormalTextureId(textureManager_, drawMaterial,
                                       normalTextureId)));
-    cmd->IASetVertexBuffers(0, 1, &mesh.vbView);
-    cmd->IASetIndexBuffer(&mesh.ibView);
-    cmd->IASetPrimitiveTopology(mesh.primitiveTopology);
+    IASetVertexBuffersCached(0, 1, &mesh.vbView);
+    IASetIndexBufferCached(mesh.ibView);
+    IASetPrimitiveTopologyCached(mesh.primitiveTopology);
     cmd->DrawIndexedInstanced(mesh.indexCount, 1, 0, 0, 0);
 
     ++drawIndex_;
@@ -380,13 +461,15 @@ void MeshRenderer::DrawMeshWithPipelineHandles(
     D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
     D3D12_GPU_DESCRIPTOR_HANDLE normalTextureHandle) {
     if (!dxCommon_ || !textureManager_ || !rootSignature_ ||
-        pipelineId >= customPipelines_.size() || drawIndex_ >= kMaxDraws) {
+        pipelineId >= customPipelines_.size() || !IsDrawableMesh(mesh) ||
+        drawIndex_ >= kMaxDraws) {
         return;
     }
 
     auto *cmd = dxCommon_->GetCommandList();
-    const XMMATRIX world = MakeWorldMatrix(transform);
-    const XMMATRIX worldInverseTranspose = MakeWorldInverseTranspose(world);
+    const XMMATRIX world = RendererMath::MakeWorldMatrix(transform);
+    const XMMATRIX worldInverseTranspose =
+        RendererMath::MakeSafeInverseTranspose(world);
     const XMMATRIX wvp = world * camera.GetView() * camera.GetProj();
     const Material drawMaterial = NormalizeMaterialForDraw(material);
 
@@ -399,14 +482,17 @@ void MeshRenderer::DrawMeshWithPipelineHandles(
         return;
     }
 
-    if (cmd == nullptr ||
-        !SetPipelineForMaterial(customPipelines_[pipelineId].pipelineStates,
+    if (cmd == nullptr) {
+        return;
+    }
+    SetGraphicsRootSignatureCached(rootSignature_.Get());
+    if (!SetPipelineForMaterial(customPipelines_[pipelineId].pipelineStates,
                                 drawMaterial)) {
         return;
     }
-    cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(1, sceneCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(2, materialCbAddr);
+    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
+    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
+    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
     const D3D12_GPU_DESCRIPTOR_HANDLE baseColorHandle =
         textureHandle.ptr != 0
             ? textureHandle
@@ -416,12 +502,12 @@ void MeshRenderer::DrawMeshWithPipelineHandles(
             ? normalTextureHandle
             : textureManager_->GetGpuHandle(
                   textureManager_->GetDefaultNormalTextureId());
-    cmd->SetGraphicsRootDescriptorTable(3, baseColorHandle);
-    cmd->SetGraphicsRootDescriptorTable(4, shadowMapGpuHandle_);
-    cmd->SetGraphicsRootDescriptorTable(5, normalHandle);
-    cmd->IASetVertexBuffers(0, 1, &mesh.vbView);
-    cmd->IASetIndexBuffer(&mesh.ibView);
-    cmd->IASetPrimitiveTopology(mesh.primitiveTopology);
+    SetGraphicsRootDescriptorTableCached(3, baseColorHandle);
+    SetGraphicsRootDescriptorTableCached(4, shadowMapGpuHandle_);
+    SetGraphicsRootDescriptorTableCached(5, normalHandle);
+    IASetVertexBuffersCached(0, 1, &mesh.vbView);
+    IASetIndexBufferCached(mesh.ibView);
+    IASetPrimitiveTopologyCached(mesh.primitiveTopology);
     cmd->DrawIndexedInstanced(mesh.indexCount, 1, 0, 0, 0);
 
     ++drawIndex_;
@@ -433,8 +519,9 @@ void MeshRenderer::DrawMeshInstanced(const Mesh &mesh, const Material &material,
                                      const Camera &camera,
                                      uint32_t textureId,
                                      uint32_t normalTextureId) {
-    if (!dxCommon_ || !textureManager_ || !rootSignature_ || !instances ||
-        instanceCount == 0 || drawIndex_ >= kMaxDraws) {
+    if (!dxCommon_ || !textureManager_ || !rootSignature_ ||
+        !IsDrawableMesh(mesh) || !instances || instanceCount == 0 ||
+        drawIndex_ >= kMaxDraws) {
         return;
     }
 
@@ -454,25 +541,29 @@ void MeshRenderer::DrawMeshInstanced(const Mesh &mesh, const Material &material,
         return;
     }
 
-    if (cmd == nullptr || !SetInstancedPipelineForMaterial(drawMaterial)) {
+    if (cmd == nullptr) {
         return;
     }
-    cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(1, sceneCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(2, materialCbAddr);
-    cmd->SetGraphicsRootDescriptorTable(
+    SetGraphicsRootSignatureCached(rootSignature_.Get());
+    if (!SetInstancedPipelineForMaterial(drawMaterial)) {
+        return;
+    }
+    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
+    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
+    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
+    SetGraphicsRootDescriptorTableCached(
         3, textureManager_->GetGpuHandle(
                ResolveBaseColorTextureId(textureManager_, drawMaterial,
                                          textureId)));
-    cmd->SetGraphicsRootDescriptorTable(4, shadowMapGpuHandle_);
-    cmd->SetGraphicsRootDescriptorTable(
+    SetGraphicsRootDescriptorTableCached(4, shadowMapGpuHandle_);
+    SetGraphicsRootDescriptorTableCached(
         5, textureManager_->GetGpuHandle(
                ResolveNormalTextureId(textureManager_, drawMaterial,
                                       normalTextureId)));
     D3D12_VERTEX_BUFFER_VIEW views[] = {mesh.vbView, instanceView};
-    cmd->IASetVertexBuffers(0, 2, views);
-    cmd->IASetIndexBuffer(&mesh.ibView);
-    cmd->IASetPrimitiveTopology(mesh.primitiveTopology);
+    IASetVertexBuffersCached(0, 2, views);
+    IASetIndexBufferCached(mesh.ibView);
+    IASetPrimitiveTopologyCached(mesh.primitiveTopology);
     cmd->DrawIndexedInstanced(mesh.indexCount, instanceCount, 0, 0, 0);
 
     ++drawIndex_;
@@ -483,8 +574,9 @@ void MeshRenderer::DrawMeshInstancedWithPipeline(
     const InstanceData *instances, uint32_t instanceCount, const Camera &camera,
     uint32_t textureId, uint32_t normalTextureId) {
     if (!dxCommon_ || !textureManager_ || !rootSignature_ ||
-        pipelineId >= customInstancedPipelines_.size() || !instances ||
-        instanceCount == 0 || drawIndex_ >= kMaxDraws) {
+        pipelineId >= customInstancedPipelines_.size() ||
+        !IsDrawableMesh(mesh) || !instances || instanceCount == 0 ||
+        drawIndex_ >= kMaxDraws) {
         return;
     }
 
@@ -504,33 +596,101 @@ void MeshRenderer::DrawMeshInstancedWithPipeline(
         return;
     }
 
-    if (cmd == nullptr ||
-        !SetInstancedPipelineForMaterial(
+    if (cmd == nullptr) {
+        return;
+    }
+    SetGraphicsRootSignatureCached(rootSignature_.Get());
+    if (!SetInstancedPipelineForMaterial(
             customInstancedPipelines_[pipelineId].pipelineStates,
             drawMaterial)) {
         return;
     }
-    cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(1, sceneCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(2, materialCbAddr);
-    cmd->SetGraphicsRootDescriptorTable(
+    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
+    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
+    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
+    SetGraphicsRootDescriptorTableCached(
         3, textureManager_->GetGpuHandle(
                ResolveBaseColorTextureId(textureManager_, drawMaterial,
                                          textureId)));
-    cmd->SetGraphicsRootDescriptorTable(4, shadowMapGpuHandle_);
-    cmd->SetGraphicsRootDescriptorTable(
+    SetGraphicsRootDescriptorTableCached(4, shadowMapGpuHandle_);
+    SetGraphicsRootDescriptorTableCached(
         5, textureManager_->GetGpuHandle(
                ResolveNormalTextureId(textureManager_, drawMaterial,
                                       normalTextureId)));
     D3D12_VERTEX_BUFFER_VIEW views[] = {mesh.vbView, instanceView};
-    cmd->IASetVertexBuffers(0, 2, views);
-    cmd->IASetIndexBuffer(&mesh.ibView);
-    cmd->IASetPrimitiveTopology(mesh.primitiveTopology);
+    IASetVertexBuffersCached(0, 2, views);
+    IASetIndexBufferCached(mesh.ibView);
+    IASetPrimitiveTopologyCached(mesh.primitiveTopology);
     cmd->DrawIndexedInstanced(mesh.indexCount, instanceCount, 0, 0, 0);
 
     ++drawIndex_;
 }
 
+void MeshRenderer::DrawMeshInstancedWithPipeline(
+    uint32_t pipelineId, const Mesh &mesh, const Material &material,
+    const MeshInstanceBuffer &instanceBuffer, const Camera &camera,
+    uint32_t textureId, uint32_t normalTextureId) {
+    if (!instanceBuffer.IsValid()) {
+        return;
+    }
+    const Material drawMaterial = NormalizeMaterialForDraw(material);
+    DrawInstancedWithPreparedBuffer(
+        pipelineId, mesh, drawMaterial, instanceBuffer.view,
+        instanceBuffer.instanceCount, camera, textureId, normalTextureId);
+}
+
+bool MeshRenderer::DrawInstancedWithPreparedBuffer(
+    uint32_t pipelineId, const Mesh &mesh, const Material &drawMaterial,
+    const D3D12_VERTEX_BUFFER_VIEW &instanceView, uint32_t instanceCount,
+    const Camera &camera, uint32_t textureId, uint32_t normalTextureId) {
+    if (!dxCommon_ || !textureManager_ || !rootSignature_ ||
+        pipelineId >= customInstancedPipelines_.size() ||
+        !IsDrawableMesh(mesh) || instanceCount == 0 ||
+        instanceView.BufferLocation == 0 || drawIndex_ >= kMaxDraws) {
+        return false;
+    }
+
+    auto *cmd = dxCommon_->GetCommandList();
+    const D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr =
+        WriteObjectConstants(XMMatrixIdentity(), XMMatrixIdentity(),
+                             XMMatrixIdentity());
+    const D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr = WriteSceneConstants(camera);
+    const D3D12_GPU_VIRTUAL_ADDRESS materialCbAddr =
+        WriteMaterialConstants(drawMaterial);
+    if (objectCbAddr == 0 || sceneCbAddr == 0 || materialCbAddr == 0) {
+        return false;
+    }
+
+    if (cmd == nullptr) {
+        return false;
+    }
+    SetGraphicsRootSignatureCached(rootSignature_.Get());
+    if (!SetInstancedPipelineForMaterial(
+            customInstancedPipelines_[pipelineId].pipelineStates,
+            drawMaterial)) {
+        return false;
+    }
+    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
+    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
+    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
+    SetGraphicsRootDescriptorTableCached(
+        3, textureManager_->GetGpuHandle(
+               ResolveBaseColorTextureId(textureManager_, drawMaterial,
+                                         textureId)));
+    SetGraphicsRootDescriptorTableCached(4, shadowMapGpuHandle_);
+    SetGraphicsRootDescriptorTableCached(
+        5, textureManager_->GetGpuHandle(
+               ResolveNormalTextureId(textureManager_, drawMaterial,
+                                      normalTextureId)));
+    D3D12_VERTEX_BUFFER_VIEW views[] = {mesh.vbView, instanceView};
+    IASetVertexBuffersCached(0, 2, views);
+    IASetIndexBufferCached(mesh.ibView);
+    IASetPrimitiveTopologyCached(mesh.primitiveTopology);
+    cmd->DrawIndexedInstanced(mesh.indexCount, instanceCount, 0, 0, 0);
+
+    ++drawIndex_;
+    return true;
+}
 void MeshRenderer::DrawMeshShadow(
     const Mesh &mesh, const Transform &transform,
     const DirectX::XMFLOAT4X4 &lightViewProjection) {
@@ -541,12 +701,12 @@ void MeshRenderer::DrawMeshShadow(
     const Mesh &mesh, const Material &material, const Transform &transform,
     const DirectX::XMFLOAT4X4 &lightViewProjection, uint32_t textureId) {
     if (!dxCommon_ || !textureManager_ || !shadowRootSignature_ ||
-        !shadowPSO_ || drawIndex_ >= kMaxDraws) {
+        !shadowPSO_ || !IsDrawableMesh(mesh) || drawIndex_ >= kMaxDraws) {
         return;
     }
 
     auto *cmd = dxCommon_->GetCommandList();
-    const XMMATRIX world = MakeWorldMatrix(transform);
+    const XMMATRIX world = RendererMath::MakeWorldMatrix(transform);
     const XMMATRIX lightVP = XMLoadFloat4x4(&lightViewProjection);
     const XMMATRIX wvp = world * lightVP;
     const Material drawMaterial = NormalizeMaterialForDraw(material);
@@ -563,18 +723,18 @@ void MeshRenderer::DrawMeshShadow(
     if (cmd == nullptr) {
         return;
     }
-    cmd->SetGraphicsRootSignature(shadowRootSignature_.Get());
-    cmd->SetPipelineState(shadowPSO_.Get());
-    cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(1, sceneCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(2, materialCbAddr);
-    cmd->SetGraphicsRootDescriptorTable(
+    SetGraphicsRootSignatureCached(shadowRootSignature_.Get());
+    SetPipelineStateCached(shadowPSO_.Get());
+    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
+    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
+    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
+    SetGraphicsRootDescriptorTableCached(
         3, textureManager_->GetGpuHandle(
                ResolveBaseColorTextureId(textureManager_, drawMaterial,
                                          textureId)));
-    cmd->IASetVertexBuffers(0, 1, &mesh.vbView);
-    cmd->IASetIndexBuffer(&mesh.ibView);
-    cmd->IASetPrimitiveTopology(mesh.primitiveTopology);
+    IASetVertexBuffersCached(0, 1, &mesh.vbView);
+    IASetIndexBufferCached(mesh.ibView);
+    IASetPrimitiveTopologyCached(mesh.primitiveTopology);
     cmd->DrawIndexedInstanced(mesh.indexCount, 1, 0, 0, 0);
     ++drawIndex_;
 }
@@ -591,8 +751,8 @@ void MeshRenderer::DrawMeshInstancedShadow(
     uint32_t instanceCount, const DirectX::XMFLOAT4X4 &lightViewProjection,
     uint32_t textureId) {
     if (!dxCommon_ || !textureManager_ || !shadowRootSignature_ ||
-        !instancedShadowPSO_ || !instances || instanceCount == 0 ||
-        drawIndex_ >= kMaxDraws) {
+        !instancedShadowPSO_ || !IsDrawableMesh(mesh) || !instances ||
+        instanceCount == 0 || drawIndex_ >= kMaxDraws) {
         return;
     }
 
@@ -616,20 +776,20 @@ void MeshRenderer::DrawMeshInstancedShadow(
     if (cmd == nullptr) {
         return;
     }
-    cmd->SetGraphicsRootSignature(shadowRootSignature_.Get());
-    cmd->SetPipelineState(instancedShadowPSO_.Get());
-    cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(1, sceneCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(2, materialCbAddr);
-    cmd->SetGraphicsRootDescriptorTable(
+    SetGraphicsRootSignatureCached(shadowRootSignature_.Get());
+    SetPipelineStateCached(instancedShadowPSO_.Get());
+    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
+    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
+    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
+    SetGraphicsRootDescriptorTableCached(
         3, textureManager_->GetGpuHandle(
                ResolveBaseColorTextureId(textureManager_, drawMaterial,
                                          textureId)));
 
     D3D12_VERTEX_BUFFER_VIEW views[] = {mesh.vbView, instanceView};
-    cmd->IASetVertexBuffers(0, 2, views);
-    cmd->IASetIndexBuffer(&mesh.ibView);
-    cmd->IASetPrimitiveTopology(mesh.primitiveTopology);
+    IASetVertexBuffersCached(0, 2, views);
+    IASetIndexBufferCached(mesh.ibView);
+    IASetPrimitiveTopologyCached(mesh.primitiveTopology);
     cmd->DrawIndexedInstanced(mesh.indexCount, instanceCount, 0, 0, 0);
     ++drawIndex_;
 }
@@ -639,8 +799,9 @@ void MeshRenderer::DrawMeshInstancedShadowWithPipeline(
     const InstanceData *instances, uint32_t instanceCount,
     const DirectX::XMFLOAT4X4 &lightViewProjection, uint32_t textureId) {
     if (!dxCommon_ || !textureManager_ || !shadowRootSignature_ ||
-        pipelineId >= customInstancedPipelines_.size() || !instances ||
-        instanceCount == 0 || drawIndex_ >= kMaxDraws) {
+        pipelineId >= customInstancedPipelines_.size() ||
+        !IsDrawableMesh(mesh) || !instances || instanceCount == 0 ||
+        drawIndex_ >= kMaxDraws) {
         return;
     }
 
@@ -665,27 +826,84 @@ void MeshRenderer::DrawMeshInstancedShadowWithPipeline(
         !customInstancedPipelines_[pipelineId].shadowPipelineState) {
         return;
     }
-    cmd->SetGraphicsRootSignature(shadowRootSignature_.Get());
-    cmd->SetPipelineState(
+    SetGraphicsRootSignatureCached(shadowRootSignature_.Get());
+    SetPipelineStateCached(
         customInstancedPipelines_[pipelineId].shadowPipelineState.Get());
-    cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(1, sceneCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(2, materialCbAddr);
-    cmd->SetGraphicsRootDescriptorTable(
+    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
+    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
+    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
+    SetGraphicsRootDescriptorTableCached(
         3, textureManager_->GetGpuHandle(
                ResolveBaseColorTextureId(textureManager_, drawMaterial,
                                          textureId)));
 
     D3D12_VERTEX_BUFFER_VIEW views[] = {mesh.vbView, instanceView};
-    cmd->IASetVertexBuffers(0, 2, views);
-    cmd->IASetIndexBuffer(&mesh.ibView);
-    cmd->IASetPrimitiveTopology(mesh.primitiveTopology);
+    IASetVertexBuffersCached(0, 2, views);
+    IASetIndexBufferCached(mesh.ibView);
+    IASetPrimitiveTopologyCached(mesh.primitiveTopology);
     cmd->DrawIndexedInstanced(mesh.indexCount, instanceCount, 0, 0, 0);
     ++drawIndex_;
 }
 
+void MeshRenderer::DrawMeshInstancedShadowWithPipeline(
+    uint32_t pipelineId, const Mesh &mesh, const Material &material,
+    const MeshInstanceBuffer &instanceBuffer,
+    const DirectX::XMFLOAT4X4 &lightViewProjection, uint32_t textureId) {
+    if (!instanceBuffer.IsValid()) {
+        return;
+    }
+    const Material drawMaterial = NormalizeMaterialForDraw(material);
+    DrawInstancedShadowWithPreparedBuffer(
+        pipelineId, mesh, drawMaterial, instanceBuffer.view,
+        instanceBuffer.instanceCount, lightViewProjection, textureId);
+}
 
+bool MeshRenderer::DrawInstancedShadowWithPreparedBuffer(
+    uint32_t pipelineId, const Mesh &mesh, const Material &drawMaterial,
+    const D3D12_VERTEX_BUFFER_VIEW &instanceView, uint32_t instanceCount,
+    const DirectX::XMFLOAT4X4 &lightViewProjection, uint32_t textureId) {
+    if (!dxCommon_ || !textureManager_ || !shadowRootSignature_ ||
+        pipelineId >= customInstancedPipelines_.size() ||
+        !IsDrawableMesh(mesh) || instanceCount == 0 ||
+        instanceView.BufferLocation == 0 || drawIndex_ >= kMaxDraws) {
+        return false;
+    }
 
+    auto *cmd = dxCommon_->GetCommandList();
+    const D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr =
+        WriteObjectConstants(XMMatrixIdentity(), XMMatrixIdentity(),
+                             XMMatrixIdentity());
+    const D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr =
+        WriteShadowSceneConstants(lightViewProjection);
+    const D3D12_GPU_VIRTUAL_ADDRESS materialCbAddr =
+        WriteMaterialConstants(drawMaterial);
+    if (objectCbAddr == 0 || sceneCbAddr == 0 || materialCbAddr == 0) {
+        return false;
+    }
+
+    if (cmd == nullptr ||
+        !customInstancedPipelines_[pipelineId].shadowPipelineState) {
+        return false;
+    }
+    SetGraphicsRootSignatureCached(shadowRootSignature_.Get());
+    SetPipelineStateCached(
+        customInstancedPipelines_[pipelineId].shadowPipelineState.Get());
+    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
+    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
+    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
+    SetGraphicsRootDescriptorTableCached(
+        3, textureManager_->GetGpuHandle(
+               ResolveBaseColorTextureId(textureManager_, drawMaterial,
+                                         textureId)));
+
+    D3D12_VERTEX_BUFFER_VIEW views[] = {mesh.vbView, instanceView};
+    IASetVertexBuffersCached(0, 2, views);
+    IASetIndexBufferCached(mesh.ibView);
+    IASetPrimitiveTopologyCached(mesh.primitiveTopology);
+    cmd->DrawIndexedInstanced(mesh.indexCount, instanceCount, 0, 0, 0);
+    ++drawIndex_;
+    return true;
+}
 bool MeshRenderer::SetPipelineForMaterial(const Material &material) {
     auto *cmd = dxCommon_ ? dxCommon_->GetCommandList() : nullptr;
     ID3D12PipelineState *pipelineState =
@@ -693,7 +911,7 @@ bool MeshRenderer::SetPipelineForMaterial(const Material &material) {
     if (cmd == nullptr || pipelineState == nullptr) {
         return false;
     }
-    cmd->SetPipelineState(pipelineState);
+    SetPipelineStateCached(pipelineState);
     return true;
 }
 
@@ -707,7 +925,7 @@ bool MeshRenderer::SetPipelineForMaterial(
     if (cmd == nullptr || pipelineState == nullptr) {
         return false;
     }
-    cmd->SetPipelineState(pipelineState);
+    SetPipelineStateCached(pipelineState);
     return true;
 }
 
@@ -718,7 +936,7 @@ bool MeshRenderer::SetInstancedPipelineForMaterial(const Material &material) {
     if (cmd == nullptr || pipelineState == nullptr) {
         return false;
     }
-    cmd->SetPipelineState(pipelineState);
+    SetPipelineStateCached(pipelineState);
     return true;
 }
 
@@ -732,7 +950,7 @@ bool MeshRenderer::SetInstancedPipelineForMaterial(
     if (cmd == nullptr || pipelineState == nullptr) {
         return false;
     }
-    cmd->SetPipelineState(pipelineState);
+    SetPipelineStateCached(pipelineState);
     return true;
 }
 
@@ -745,6 +963,7 @@ void MeshRenderer::SetShadowMap(
         shadowLightViewProjection_ = lightViewProjection;
         shadowParams_ = {};
         shadowFilterParams_ = {};
+        InvalidateConstantCaches();
         return;
     }
     const bool hasShadowMap = shadowMap.ptr != 0;
@@ -758,13 +977,43 @@ void MeshRenderer::SetShadowMap(
         std::isfinite(settings.bias) ? settings.bias : 0.0f,
         ClampFinite(settings.strength, 0.0f, 1.0f, 0.0f),
         std::isfinite(settings.normalBias) ? settings.normalBias : 0.0f};
-    shadowFilterParams_ = {ClampFiniteMin(settings.filterRadius, 0.0f),
-                           ClampFiniteMin(settings.depthSoftness, 0.0001f),
-                           ClampFiniteMin(settings.edgeFade, 0.0f), 0.0f};
+    shadowFilterParams_ = {
+        AtLeastFinite(settings.filterRadius, 0.0f, 0.0f),
+        AtLeastFinite(settings.depthSoftness, 0.0001f, 0.0001f),
+        AtLeastFinite(settings.edgeFade, 0.0f, 0.0f), 0.0f};
+    InvalidateConstantCaches();
+}
+
+void MeshRenderer::SetOcclusionPyramid(
+    D3D12_GPU_DESCRIPTOR_HANDLE depthPyramid,
+    const DirectX::XMMATRIX &viewProjection, uint32_t width, uint32_t height,
+    uint32_t mipCount, float depthBias) {
+    if (depthPyramid.ptr == 0 || width == 0u || height == 0u ||
+        mipCount == 0u) {
+        ClearOcclusionPyramid();
+        return;
+    }
+
+    XMStoreFloat4x4(&occlusionViewProjection_,
+                    XMMatrixTranspose(viewProjection));
+    occlusionParams_ = {
+        static_cast<float>(width),
+        static_cast<float>(height),
+        static_cast<float>(mipCount),
+        ClampFinite(depthBias, 0.0f, 0.05f, 0.006f)};
+    occlusionPyramidGpuHandle_ = depthPyramid;
+    occlusionPyramidEnabled_ = true;
+}
+
+void MeshRenderer::ClearOcclusionPyramid() {
+    occlusionPyramidGpuHandle_ = {};
+    occlusionParams_ = {0.0f, 0.0f, 0.0f, 0.006f};
+    occlusionPyramidEnabled_ = false;
 }
 
 void MeshRenderer::SetCustomSceneParams(const DirectX::XMFLOAT4 &params0,
                                         const DirectX::XMFLOAT4 &params1) {
-    customSceneParams0_ = params0;
-    customSceneParams1_ = params1;
+    customSceneParams0_ = SanitizeFloat4(params0, customSceneParams0_);
+    customSceneParams1_ = SanitizeFloat4(params1, customSceneParams1_);
+    InvalidateConstantCaches();
 }

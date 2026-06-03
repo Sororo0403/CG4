@@ -1,15 +1,13 @@
 #include "graphics/Culling.h"
 #include "camera/Camera.h"
+#include "core/Numeric.h"
 #include <algorithm>
 #include <cmath>
 
 using namespace DirectX;
 
 namespace {
-
-float FiniteOr(float value, float fallback) {
-    return std::isfinite(value) ? value : fallback;
-}
+using Numeric::FiniteOr;
 
 XMFLOAT4 NormalizePlane(FXMVECTOR plane) {
     const XMVECTOR normal = XMVectorSetW(plane, 0.0f);

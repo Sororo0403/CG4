@@ -1,6 +1,8 @@
 #include "sprite/SpriteRenderer.h"
+#include "core/Numeric.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
+#include "graphics/GpuResourceLifetime.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
@@ -16,10 +18,9 @@ struct SpriteConstBuffer {
 };
 
 namespace {
+using Numeric::FiniteOr;
 
-float FiniteOr(float value, float fallback) {
-    return std::isfinite(value) ? value : fallback;
-}
+bool IsFinite(float value) { return std::isfinite(value); }
 
 XMFLOAT2 SanitizeFloat2(const XMFLOAT2 &value,
                         const XMFLOAT2 &fallback) {
@@ -52,25 +53,21 @@ uint32_t ResolveSpriteTextureId(TextureManager *textureManager,
 
 } // namespace
 
+SpriteRenderer::~SpriteRenderer() {
+    Finalize(true);
+}
+
 void SpriteRenderer::Initialize(DirectXCommon *dxCommon,
                                 TextureManager *textureManager,
                                 SrvManager *srvManager, int width, int height) {
     if (!dxCommon || !dxCommon->GetDevice() || !textureManager || !srvManager) {
-        dxCommon_ = nullptr;
-        textureManager_ = nullptr;
-        srvManager_ = nullptr;
-        rootSignature_.Reset();
-        for (auto &targetPipelines : pipelineStates_) {
-            for (auto &pipeline : targetPipelines) {
-                pipeline.Reset();
-            }
-        }
-        uploadBuffer_.Reset();
-        queuedDraws_.clear();
-        batchVertices_.clear();
+        Finalize();
         return;
     }
 
+    if (!Finalize()) {
+        return;
+    }
     dxCommon_ = dxCommon;
     textureManager_ = textureManager;
     srvManager_ = srvManager;
@@ -81,19 +78,22 @@ void SpriteRenderer::Initialize(DirectXCommon *dxCommon,
     UpdateProjection(width, height);
     if (!rootSignature_ || !HasAllPipelineStates() ||
         uploadBuffer_.GetBytesPerFrame() == 0) {
-        dxCommon_ = nullptr;
-        textureManager_ = nullptr;
-        srvManager_ = nullptr;
-        rootSignature_.Reset();
-        for (auto &targetPipelines : pipelineStates_) {
-            for (auto &pipeline : targetPipelines) {
-                pipeline.Reset();
-            }
-        }
-        uploadBuffer_.Reset();
-        queuedDraws_.clear();
-        batchVertices_.clear();
+        ResetResources();
     }
+}
+
+bool SpriteRenderer::Finalize() { return Finalize(false); }
+
+bool SpriteRenderer::Finalize(bool allowFrameAbort) {
+    if (!CanReleaseGpuResources(dxCommon_, rootSignature_ ||
+                                               HasAllPipelineStates() ||
+                                               uploadBuffer_.GetBytesPerFrame() !=
+                                                   0,
+                                allowFrameAbort)) {
+        return false;
+    }
+    ResetResources();
+    return true;
 }
 
 void SpriteRenderer::Draw(const Sprite &sprite) {
@@ -103,10 +103,12 @@ void SpriteRenderer::Draw(const Sprite &sprite) {
 
     const XMFLOAT2 position = SanitizeFloat2(sprite.position, {0.0f, 0.0f});
     const XMFLOAT2 size = SanitizeFloat2(sprite.size, {0.0f, 0.0f});
+    const XMFLOAT2 pivotValue = SanitizeFloat2(sprite.pivot, {0.0f, 0.0f});
     const XMFLOAT2 uvLeftTop =
         SanitizeFloat2(sprite.uvLeftTop, {0.0f, 0.0f});
     const XMFLOAT2 uvSize = SanitizeFloat2(sprite.uvSize, {1.0f, 1.0f});
     const XMFLOAT4 color = SanitizeColor(sprite.color);
+    const float rotation = FiniteOr(sprite.rotation, 0.0f);
 
     const float l = position.x;
     const float t = position.y;
@@ -116,6 +118,26 @@ void SpriteRenderer::Draw(const Sprite &sprite) {
     const float v0 = uvLeftTop.y;
     const float u1 = uvLeftTop.x + uvSize.x;
     const float v1 = uvLeftTop.y + uvSize.y;
+    if (!IsFinite(l) || !IsFinite(t) || !IsFinite(r) || !IsFinite(b) ||
+        !IsFinite(u0) || !IsFinite(v0) || !IsFinite(u1) || !IsFinite(v1)) {
+        return;
+    }
+
+    const float pivotX = position.x + size.x * pivotValue.x;
+    const float pivotY = position.y + size.y * pivotValue.y;
+    const float c = std::cos(rotation);
+    const float s = std::sin(rotation);
+    auto transformPoint = [&](float x, float y) {
+        const float dx = x - pivotX;
+        const float dy = y - pivotY;
+        return XMFLOAT3{pivotX + dx * c - dy * s,
+                        pivotY + dx * s + dy * c, 0.0f};
+    };
+
+    const XMFLOAT3 p0 = transformPoint(l, t);
+    const XMFLOAT3 p1 = transformPoint(r, t);
+    const XMFLOAT3 p2 = transformPoint(l, b);
+    const XMFLOAT3 p3 = transformPoint(r, b);
 
     auto drawPass = [&](PipelineKind pipelineKind, const XMFLOAT4 &color) {
         if (drawCursor_ >= kMaxSpriteDraws) {
@@ -130,12 +152,12 @@ void SpriteRenderer::Draw(const Sprite &sprite) {
             return;
         }
         draw.vertices = std::array<SpriteVertex, kVerticesPerSprite>{
-            SpriteVertex{{l, t, 0.0f}, {u0, v0}, color},
-            SpriteVertex{{r, t, 0.0f}, {u1, v0}, color},
-            SpriteVertex{{l, b, 0.0f}, {u0, v1}, color},
-            SpriteVertex{{l, b, 0.0f}, {u0, v1}, color},
-            SpriteVertex{{r, t, 0.0f}, {u1, v0}, color},
-            SpriteVertex{{r, b, 0.0f}, {u1, v1}, color},
+            SpriteVertex{p0, {u0, v0}, color},
+            SpriteVertex{p1, {u1, v0}, color},
+            SpriteVertex{p2, {u0, v1}, color},
+            SpriteVertex{p2, {u0, v1}, color},
+            SpriteVertex{p1, {u1, v0}, color},
+            SpriteVertex{p3, {u1, v1}, color},
         };
         queuedDraws_.push_back(draw);
         ++drawCursor_;
@@ -266,11 +288,16 @@ void SpriteRenderer::FlushQueuedDraws() {
         }
 
         batchVertices_.clear();
-        batchVertices_.reserve((runEnd - runStart) * kVerticesPerSprite);
-        for (size_t index = runStart; index < runEnd; ++index) {
-            const auto &vertices = queuedDraws_[index].vertices;
-            batchVertices_.insert(batchVertices_.end(), vertices.begin(),
-                                  vertices.end());
+        try {
+            batchVertices_.reserve((runEnd - runStart) * kVerticesPerSprite);
+            for (size_t index = runStart; index < runEnd; ++index) {
+                const auto &vertices = queuedDraws_[index].vertices;
+                batchVertices_.insert(batchVertices_.end(), vertices.begin(),
+                                      vertices.end());
+            }
+        } catch (...) {
+            runStart = runEnd;
+            continue;
         }
 
         const UploadAllocation allocation = uploadBuffer_.WriteArray(
@@ -313,6 +340,25 @@ void SpriteRenderer::CreateUploadBuffer() {
         return;
     }
     uploadBuffer_.Initialize(dxCommon_->GetDevice(), kUploadBytesPerFrame, 2);
+}
+
+void SpriteRenderer::ResetResources() {
+    dxCommon_ = nullptr;
+    textureManager_ = nullptr;
+    srvManager_ = nullptr;
+    rootSignature_.Reset();
+    for (auto &targetPipelines : pipelineStates_) {
+        for (auto &pipeline : targetPipelines) {
+            pipeline.Reset();
+        }
+    }
+    uploadBuffer_.Reset();
+    drawCursor_ = 0;
+    queuedDraws_.clear();
+    batchVertices_.clear();
+    matProjection_ = {};
+    activePipelineKind_ = PipelineKind::Alpha;
+    activeRenderTargetKind_ = RenderTargetKind::SceneColor;
 }
 
 void SpriteRenderer::UpdateProjection(int width, int height) {
@@ -369,6 +415,12 @@ bool SpriteRenderer::HasAllPipelineStates() const {
         }
     }
     return true;
+}
+
+bool SpriteRenderer::IsReady() const {
+    return dxCommon_ != nullptr && textureManager_ != nullptr &&
+           srvManager_ != nullptr && rootSignature_ &&
+           HasAllPipelineStates() && uploadBuffer_.GetBytesPerFrame() != 0;
 }
 
 void SpriteRenderer::CreatePipelineState() {

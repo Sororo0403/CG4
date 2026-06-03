@@ -20,6 +20,9 @@ class RenderTexture;
 class SkyboxRenderer;
 class ShadowMapRenderer;
 class TransparentRenderQueue;
+class DepthPyramid;
+class GpuProfiler;
+class CpuProfiler;
 struct RenderContext;
 
 #ifdef _DEBUG
@@ -35,6 +38,7 @@ struct SceneSystemServices {
     SoundManager *sound = nullptr;
     TextureManager *texture = nullptr;
     CameraManager *cameraManager = nullptr;
+    CpuProfiler *cpuProfiler = nullptr;
 
 #ifdef _DEBUG
     ImguiManager *imgui = nullptr;
@@ -60,6 +64,8 @@ struct SceneRenderServices {
     SkyboxRenderer *skyboxRenderer = nullptr;
     ShadowMapRenderer *shadowMapRenderer = nullptr;
     TransparentRenderQueue *transparentQueue = nullptr;
+    DepthPyramid *depthPyramid = nullptr;
+    GpuProfiler *gpuProfiler = nullptr;
 };
 
 /// <summary>

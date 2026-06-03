@@ -2,9 +2,12 @@
 
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
+#include "graphics/GpuResourceHelpers.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
+#include "RendererMaterialUtils.h"
+#include "model/RendererMath.h"
 #include "model/Vertex.h"
 #include "texture/TextureManager.h"
 #include <algorithm>
@@ -16,107 +19,15 @@ using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
 namespace {
+using GpuResourceHelpers::CreateCommittedResourceChecked;
+using RendererMaterialUtils::PipelineVariantIndex;
+using RendererMaterialUtils::ToD3D12CullMode;
 
 struct PerObjectConstBufferData {
     XMFLOAT4X4 matWVP;
     XMFLOAT4X4 matWorld;
     XMFLOAT4X4 matWorldInverseTranspose;
 };
-
-struct SceneConstBufferData {
-    struct PointLightData {
-        XMFLOAT4 positionRange;
-        XMFLOAT4 colorIntensity;
-    };
-
-    XMFLOAT4 cameraPos;
-    XMFLOAT4 keyLightDirection;
-    XMFLOAT4 keyLightColor;
-    XMFLOAT4 fillLightDirection;
-    XMFLOAT4 fillLightColor;
-    XMFLOAT4 ambientColor;
-    PointLightData pointLights[2];
-    XMFLOAT4 lightingParams;
-    XMFLOAT4 fogColor;
-    XMFLOAT4 fogParams;
-    XMFLOAT4X4 viewProjection;
-    XMFLOAT4X4 lightViewProjection;
-    XMFLOAT4 shadowParams;
-    XMFLOAT4 shadowFilterParams;
-    XMFLOAT4 customSceneParams0;
-    XMFLOAT4 customSceneParams1;
-};
-
-XMVECTOR LoadNormalizedQuaternionOrIdentity(const XMFLOAT4 &rotation) {
-    if (!std::isfinite(rotation.x) || !std::isfinite(rotation.y) ||
-        !std::isfinite(rotation.z) || !std::isfinite(rotation.w)) {
-        return XMQuaternionIdentity();
-    }
-    XMVECTOR q = XMLoadFloat4(&rotation);
-    const float lengthSq = XMVectorGetX(XMVector4LengthSq(q));
-    if (!std::isfinite(lengthSq) || lengthSq <= 0.000001f) {
-        return XMQuaternionIdentity();
-    }
-    return XMQuaternionNormalize(q);
-}
-
-XMMATRIX MakeWorldMatrix(const Transform &transform) {
-    const Transform safeTransform = SanitizeTransformForDraw(transform);
-    XMVECTOR q = LoadNormalizedQuaternionOrIdentity(safeTransform.rotation);
-    return XMMatrixScaling(safeTransform.scale.x, safeTransform.scale.y,
-                           safeTransform.scale.z) *
-           XMMatrixRotationQuaternion(q) *
-           XMMatrixTranslation(safeTransform.position.x,
-                               safeTransform.position.y,
-                               safeTransform.position.z);
-}
-
-XMMATRIX MakeWorldInverseTranspose(const XMMATRIX &world) {
-    const XMVECTOR determinant = XMMatrixDeterminant(world);
-    const float determinantValue = XMVectorGetX(determinant);
-    if (!std::isfinite(determinantValue) ||
-        std::abs(determinantValue) <= 0.000001f) {
-        return XMMatrixIdentity();
-    }
-    return XMMatrixTranspose(XMMatrixInverse(nullptr, world));
-}
-
-bool IsTransparentMaterial(const Material &material) {
-    return material.blendMode == static_cast<int32_t>(BlendMode::Transparent) ||
-           material.color.w < 1.0f;
-}
-
-D3D12_CULL_MODE ToD3D12CullMode(const MaterialCullMode mode) {
-    switch (mode) {
-    case MaterialCullMode::None:
-        return D3D12_CULL_MODE_NONE;
-    case MaterialCullMode::Front:
-        return D3D12_CULL_MODE_FRONT;
-    case MaterialCullMode::Back:
-    default:
-        return D3D12_CULL_MODE_BACK;
-    }
-}
-
-size_t PipelineVariantIndex(bool transparent, MaterialCullMode cullMode,
-                            bool depthWrite) {
-    const size_t blendIndex = transparent ? 1 : 0;
-    const size_t cullIndex = static_cast<size_t>(cullMode);
-    const size_t depthIndex = depthWrite ? 1 : 0;
-    return blendIndex * 6 + cullIndex * 2 + depthIndex;
-}
-
-size_t PipelineVariantIndex(const Material &material) {
-    const Material drawMaterial = NormalizeMaterialForDraw(material);
-    MaterialCullMode cullMode =
-        static_cast<MaterialCullMode>(drawMaterial.cullMode);
-    if (drawMaterial.cullMode < static_cast<int32_t>(MaterialCullMode::None) ||
-        drawMaterial.cullMode > static_cast<int32_t>(MaterialCullMode::Back)) {
-        cullMode = MaterialCullMode::Back;
-    }
-    return PipelineVariantIndex(IsTransparentMaterial(drawMaterial), cullMode,
-                                drawMaterial.depthWrite != 0);
-}
 
 uint32_t ResolveNormalTextureId(TextureManager *textureManager,
                                 uint32_t normalTextureId) {
@@ -221,6 +132,238 @@ void MeshRenderer::CreateShadowRootSignature() {
     }
 }
 
+void MeshRenderer::CreateGpuCullResources() {
+    if (!dxCommon_ || !dxCommon_->GetDevice()) {
+        return;
+    }
+
+    ID3D12Device *device = dxCommon_->GetDevice();
+    CD3DX12_ROOT_PARAMETER params[6]{};
+    params[0].InitAsConstantBufferView(0);
+
+    CD3DX12_DESCRIPTOR_RANGE sourceRange{};
+    sourceRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    params[1].InitAsDescriptorTable(1, &sourceRange);
+
+    CD3DX12_DESCRIPTOR_RANGE occlusionRange{};
+    occlusionRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+    params[2].InitAsDescriptorTable(1, &occlusionRange);
+
+    CD3DX12_DESCRIPTOR_RANGE outputRange{};
+    outputRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+    params[3].InitAsDescriptorTable(1, &outputRange);
+
+    CD3DX12_DESCRIPTOR_RANGE countRange{};
+    countRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
+    params[4].InitAsDescriptorTable(1, &countRange);
+
+    CD3DX12_DESCRIPTOR_RANGE drawArgsRange{};
+    drawArgsRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2);
+    params[5].InitAsDescriptorTable(1, &drawArgsRange);
+
+    CD3DX12_ROOT_SIGNATURE_DESC desc;
+    desc.Init(_countof(params), params, 0, nullptr);
+
+    ComPtr<ID3DBlob> blob, error;
+    if (FAILED(D3D12SerializeRootSignature(
+            &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error)) ||
+        !blob) {
+        return;
+    }
+    if (FAILED(device->CreateRootSignature(
+            0, blob->GetBufferPointer(), blob->GetBufferSize(),
+            IID_PPV_ARGS(&gpuCullRootSignature_))) ||
+        !gpuCullRootSignature_) {
+        gpuCullRootSignature_.Reset();
+        return;
+    }
+
+    auto cullCs =
+        ShaderCompiler::Compile(ShaderPaths::MeshGpuCullCS, "main", "cs_6_6");
+    auto argsCs = ShaderCompiler::Compile(ShaderPaths::MeshGpuCullArgsCS,
+                                          "main", "cs_6_6");
+    if (!cullCs || !argsCs) {
+        gpuCullRootSignature_.Reset();
+        return;
+    }
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC cullPso{};
+    cullPso.pRootSignature = gpuCullRootSignature_.Get();
+    cullPso.CS = {cullCs->GetBufferPointer(), cullCs->GetBufferSize()};
+    if (FAILED(device->CreateComputePipelineState(
+            &cullPso, IID_PPV_ARGS(&gpuCullPSO_))) ||
+        !gpuCullPSO_) {
+        gpuCullRootSignature_.Reset();
+        gpuCullPSO_.Reset();
+        return;
+    }
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC argsPso{};
+    argsPso.pRootSignature = gpuCullRootSignature_.Get();
+    argsPso.CS = {argsCs->GetBufferPointer(), argsCs->GetBufferSize()};
+    if (FAILED(device->CreateComputePipelineState(
+            &argsPso, IID_PPV_ARGS(&gpuCullArgsPSO_))) ||
+        !gpuCullArgsPSO_) {
+        gpuCullRootSignature_.Reset();
+        gpuCullPSO_.Reset();
+        gpuCullArgsPSO_.Reset();
+        return;
+    }
+
+    D3D12_INDIRECT_ARGUMENT_DESC indirectArgument{};
+    indirectArgument.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED;
+
+    D3D12_COMMAND_SIGNATURE_DESC commandSignatureDesc{};
+    commandSignatureDesc.ByteStride = sizeof(D3D12_DRAW_INDEXED_ARGUMENTS);
+    commandSignatureDesc.NumArgumentDescs = 1;
+    commandSignatureDesc.pArgumentDescs = &indirectArgument;
+    if (FAILED(device->CreateCommandSignature(
+            &commandSignatureDesc, nullptr,
+            IID_PPV_ARGS(&gpuCullCommandSignature_))) ||
+        !gpuCullCommandSignature_) {
+        gpuCullRootSignature_.Reset();
+        gpuCullPSO_.Reset();
+        gpuCullArgsPSO_.Reset();
+        gpuCullCommandSignature_.Reset();
+        return;
+    }
+
+    CD3DX12_ROOT_PARAMETER lodParams[12]{};
+    lodParams[0].InitAsConstantBufferView(0);
+
+    CD3DX12_DESCRIPTOR_RANGE lodSourceRange{};
+    lodSourceRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    lodParams[1].InitAsDescriptorTable(1, &lodSourceRange);
+
+    CD3DX12_DESCRIPTOR_RANGE lodOcclusionRange{};
+    lodOcclusionRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+    lodParams[2].InitAsDescriptorTable(1, &lodOcclusionRange);
+
+    CD3DX12_DESCRIPTOR_RANGE lodOutputRanges[kMeshGpuCullLodCount]{};
+    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
+        lodOutputRanges[lod].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, lod);
+        lodParams[3 + lod].InitAsDescriptorTable(1, &lodOutputRanges[lod]);
+    }
+
+    CD3DX12_DESCRIPTOR_RANGE lodCountRanges[kMeshGpuCullLodCount]{};
+    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
+        lodCountRanges[lod].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1,
+                                 3u + lod);
+        lodParams[6 + lod].InitAsDescriptorTable(1, &lodCountRanges[lod]);
+    }
+
+    CD3DX12_DESCRIPTOR_RANGE lodDrawArgsRanges[kMeshGpuCullLodCount]{};
+    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
+        lodDrawArgsRanges[lod].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1,
+                                    6u + lod);
+        lodParams[9 + lod].InitAsDescriptorTable(
+            1, &lodDrawArgsRanges[lod]);
+    }
+
+    CD3DX12_ROOT_SIGNATURE_DESC lodDesc;
+    lodDesc.Init(_countof(lodParams), lodParams, 0, nullptr);
+    blob.Reset();
+    error.Reset();
+    if (FAILED(D3D12SerializeRootSignature(
+            &lodDesc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error)) ||
+        !blob) {
+        return;
+    }
+    if (FAILED(device->CreateRootSignature(
+            0, blob->GetBufferPointer(), blob->GetBufferSize(),
+            IID_PPV_ARGS(&gpuLodCullRootSignature_))) ||
+        !gpuLodCullRootSignature_) {
+        gpuLodCullRootSignature_.Reset();
+        return;
+    }
+
+    auto lodCullCs = ShaderCompiler::Compile(ShaderPaths::MeshGpuLodCullCS,
+                                             "main", "cs_6_6");
+    auto lodArgsCs = ShaderCompiler::Compile(ShaderPaths::MeshGpuLodCullArgsCS,
+                                             "main", "cs_6_6");
+    if (!lodCullCs || !lodArgsCs) {
+        gpuLodCullRootSignature_.Reset();
+        return;
+    }
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC lodCullPso{};
+    lodCullPso.pRootSignature = gpuLodCullRootSignature_.Get();
+    lodCullPso.CS = {lodCullCs->GetBufferPointer(),
+                     lodCullCs->GetBufferSize()};
+    if (FAILED(device->CreateComputePipelineState(
+            &lodCullPso, IID_PPV_ARGS(&gpuLodCullPSO_))) ||
+        !gpuLodCullPSO_) {
+        gpuLodCullRootSignature_.Reset();
+        gpuLodCullPSO_.Reset();
+        return;
+    }
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC lodArgsPso{};
+    lodArgsPso.pRootSignature = gpuLodCullRootSignature_.Get();
+    lodArgsPso.CS = {lodArgsCs->GetBufferPointer(),
+                     lodArgsCs->GetBufferSize()};
+    if (FAILED(device->CreateComputePipelineState(
+            &lodArgsPso, IID_PPV_ARGS(&gpuLodCullArgsPSO_))) ||
+        !gpuLodCullArgsPSO_) {
+        gpuLodCullRootSignature_.Reset();
+        gpuLodCullPSO_.Reset();
+        gpuLodCullArgsPSO_.Reset();
+    }
+}
+
+bool MeshRenderer::CreateFallbackOcclusionTexture() {
+    if (!dxCommon_ || !dxCommon_->GetDevice() || !srvManager_) {
+        return false;
+    }
+    if (fallbackOcclusionTexture_ && fallbackOcclusionGpuHandle_.ptr != 0) {
+        return true;
+    }
+
+    if (fallbackOcclusionSrvIndex_ == UINT32_MAX) {
+        if (!srvManager_->CanAllocate()) {
+            return false;
+        }
+        fallbackOcclusionSrvIndex_ = srvManager_->Allocate();
+    }
+    if (fallbackOcclusionSrvIndex_ == UINT32_MAX) {
+        return false;
+    }
+
+    D3D12_RESOURCE_DESC desc{};
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    desc.Width = 1;
+    desc.Height = 1;
+    desc.DepthOrArraySize = 1;
+    desc.MipLevels = 1;
+    desc.Format = DXGI_FORMAT_R32_FLOAT;
+    desc.SampleDesc.Count = 1;
+    desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+
+    CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+    if (!CreateCommittedResourceChecked(
+            dxCommon_->GetDevice(), &heapProps, D3D12_HEAP_FLAG_NONE, &desc,
+            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+            fallbackOcclusionTexture_.GetAddressOf())) {
+        srvManager_->FreeIfAllocated(fallbackOcclusionSrvIndex_);
+        fallbackOcclusionSrvIndex_ = UINT32_MAX;
+        fallbackOcclusionGpuHandle_ = {};
+        return false;
+    }
+    fallbackOcclusionTexture_->SetName(L"MeshRenderer.FallbackOcclusion");
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MipLevels = 1;
+    dxCommon_->GetDevice()->CreateShaderResourceView(
+        fallbackOcclusionTexture_.Get(), &srvDesc,
+        srvManager_->GetCpuHandle(fallbackOcclusionSrvIndex_));
+    fallbackOcclusionGpuHandle_ =
+        srvManager_->GetGpuHandle(fallbackOcclusionSrvIndex_);
+    return fallbackOcclusionGpuHandle_.ptr != 0;
+}
+
 void MeshRenderer::CreatePipelineStates() {
     auto *device = dxCommon_->GetDevice();
     if (device == nullptr || !rootSignature_) {
@@ -253,6 +396,12 @@ void MeshRenderer::CreatePipelineStates() {
         {"CUSTOM", 0, DXGI_FORMAT_R32_FLOAT, 0,
          D3D12_APPEND_ALIGNED_ELEMENT,
          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"BINDPOS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
+         D3D12_APPEND_ALIGNED_ELEMENT,
+         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"CUSTOM", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
+         D3D12_APPEND_ALIGNED_ELEMENT,
+         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     };
 
     D3D12_INPUT_ELEMENT_DESC instancedLayout[] = {
@@ -262,6 +411,8 @@ void MeshRenderer::CreatePipelineStates() {
         baseLayout[3],
         baseLayout[4],
         baseLayout[5],
+        baseLayout[6],
+        baseLayout[7],
         {"WORLD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0,
          D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
         {"WORLD", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 1,
@@ -371,6 +522,12 @@ uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc &desc) {
         {"CUSTOM", 0, DXGI_FORMAT_R32_FLOAT, 0,
          D3D12_APPEND_ALIGNED_ELEMENT,
          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"BINDPOS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
+         D3D12_APPEND_ALIGNED_ELEMENT,
+         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"CUSTOM", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
+         D3D12_APPEND_ALIGNED_ELEMENT,
+         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     };
 
     MeshPipelineSet pipelineSet = MeshPipelineFactory::CreatePipelineSet(
@@ -379,6 +536,12 @@ uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc &desc) {
         DirectXCommon::kDepthStencilFormat);
     if (!pipelineSet.pipelineStates[0]) {
         return UINT32_MAX;
+    }
+    for (size_t index = 0; index < customPipelines_.size(); ++index) {
+        if (!customPipelines_[index].pipelineStates[0]) {
+            customPipelines_[index] = std::move(pipelineSet);
+            return static_cast<uint32_t>(index);
+        }
     }
     if (customPipelines_.size() >=
         static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
@@ -445,6 +608,12 @@ uint32_t MeshRenderer::CreateInstancedPipeline(
          D3D12_APPEND_ALIGNED_ELEMENT,
          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         {"CUSTOM", 0, DXGI_FORMAT_R32_FLOAT, 0,
+         D3D12_APPEND_ALIGNED_ELEMENT,
+         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"BINDPOS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
+         D3D12_APPEND_ALIGNED_ELEMENT,
+         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"CUSTOM", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
          D3D12_APPEND_ALIGNED_ELEMENT,
          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         {"WORLD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0,
@@ -546,6 +715,7 @@ uint32_t MeshRenderer::CreateInstancedPipeline(
     shadowPso.SampleDesc.Count = 1;
     shadowPso.SampleMask = UINT_MAX;
     shadowPso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    shadowPso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
     shadowPso.RasterizerState.DepthBias = 1000;
     shadowPso.RasterizerState.SlopeScaledDepthBias = 1.5f;
     shadowPso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
@@ -563,6 +733,14 @@ uint32_t MeshRenderer::CreateInstancedPipeline(
         return UINT32_MAX;
     }
 
+    for (size_t index = 0; index < customInstancedPipelines_.size(); ++index) {
+        const InstancedPipelineSet &existing =
+            customInstancedPipelines_[index];
+        if (!existing.pipelineStates[0] && !existing.shadowPipelineState) {
+            customInstancedPipelines_[index] = std::move(pipelineSet);
+            return static_cast<uint32_t>(index);
+        }
+    }
     if (customInstancedPipelines_.size() >=
         static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
         return UINT32_MAX;
@@ -606,6 +784,12 @@ void MeshRenderer::CreateShadowPipelineStates() {
         {"CUSTOM", 0, DXGI_FORMAT_R32_FLOAT, 0,
          D3D12_APPEND_ALIGNED_ELEMENT,
          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"BINDPOS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
+         D3D12_APPEND_ALIGNED_ELEMENT,
+         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"CUSTOM", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
+         D3D12_APPEND_ALIGNED_ELEMENT,
+         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     };
 
     D3D12_INPUT_ELEMENT_DESC instancedLayout[] = {
@@ -615,6 +799,8 @@ void MeshRenderer::CreateShadowPipelineStates() {
         baseLayout[3],
         baseLayout[4],
         baseLayout[5],
+        baseLayout[6],
+        baseLayout[7],
         {"WORLD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0,
          D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
         {"WORLD", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 1,
@@ -651,6 +837,7 @@ void MeshRenderer::CreateShadowPipelineStates() {
         pso.SampleDesc.Count = 1;
         pso.SampleMask = UINT_MAX;
         pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
         pso.RasterizerState.DepthBias = 1000;
         pso.RasterizerState.SlopeScaledDepthBias = 1.5f;
         pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);

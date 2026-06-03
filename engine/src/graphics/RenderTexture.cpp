@@ -1,33 +1,17 @@
 #include "graphics/RenderTexture.h"
+#include "core/Numeric.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
+#include "graphics/GpuResourceHelpers.h"
+#include "graphics/GpuResourceLifetime.h"
 #include "graphics/SrvManager.h"
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace {
-float ClampFinite(float value, float minimum, float maximum, float fallback) {
-    if (!std::isfinite(value)) {
-        return fallback;
-    }
-    return std::clamp(value, minimum, maximum);
-}
-
-bool CreateCommittedResourceChecked(
-    ID3D12Device *device, const D3D12_HEAP_PROPERTIES *heapProperties,
-    D3D12_HEAP_FLAGS heapFlags, const D3D12_RESOURCE_DESC *resourceDesc,
-    D3D12_RESOURCE_STATES initialState, const D3D12_CLEAR_VALUE *clearValue,
-    ID3D12Resource **resource) {
-    if (device == nullptr || heapProperties == nullptr ||
-        resourceDesc == nullptr || resource == nullptr) {
-        return false;
-    }
-    *resource = nullptr;
-    return SUCCEEDED(device->CreateCommittedResource(
-        heapProperties, heapFlags, resourceDesc, initialState, clearValue,
-        IID_PPV_ARGS(resource))) &&
-           *resource != nullptr;
-}
+using GpuResourceHelpers::CreateCommittedResourceChecked;
+using Numeric::ClampFinite;
 
 class RenderTextureInitializationGuard {
   public:
@@ -53,7 +37,7 @@ class RenderTextureInitializationGuard {
 } // namespace
 
 RenderTexture::~RenderTexture() {
-    Release();
+    Release(true);
 }
 
 void RenderTexture::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
@@ -67,7 +51,9 @@ void RenderTexture::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
         return;
     }
 
-    Release();
+    if (!Release()) {
+        return;
+    }
 
     dxCommon_ = dxCommon;
     srvManager_ = srvManager;
@@ -82,47 +68,45 @@ void RenderTexture::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
     width_ = width;
     height_ = height;
 
-    CreateResources();
-    if (!resource_ || !rtvHeap_ || GetGpuHandle().ptr == 0) {
+    if (!CreateResources() || !resource_ || !rtvHeap_ ||
+        GetGpuHandle().ptr == 0) {
         return;
     }
     initializeGuard.Commit();
 }
 
 void RenderTexture::Resize(int width, int height) {
-    if (width <= 0 || height <= 0 || (width == width_ && height == height_)) {
+    if (width <= 0 || height <= 0 ||
+        (width == width_ && height == height_ && resource_ && rtvHeap_)) {
         return;
     }
     if (!dxCommon_ || !srvManager_ || srvIndex_ == UINT_MAX) {
         return;
     }
-
-    if (resource_ && dxCommon_ && !dxCommon_->IsDeviceRemoved() &&
-        !dxCommon_->IsCommandListRecording()) {
-        dxCommon_->WaitForGpuIfPossible();
+    if (dxCommon_->IsCommandListRecording()) {
+        return;
     }
 
+    const int previousWidth = width_;
+    const int previousHeight = height_;
     width_ = width;
     height_ = height;
-    resource_.Reset();
-    rtvHeap_.Reset();
 
-    CreateResources();
-    if (!resource_ || !rtvHeap_ || GetGpuHandle().ptr == 0) {
-        Release();
+    if (!CreateResources()) {
+        width_ = previousWidth;
+        height_ = previousHeight;
     }
 }
 
-void RenderTexture::Release() {
-    if (resource_ && dxCommon_ && !dxCommon_->IsDeviceRemoved() &&
-        !dxCommon_->IsCommandListRecording()) {
-        dxCommon_->WaitForGpuIfPossible();
-    }
+bool RenderTexture::Release() { return Release(false); }
 
-    resource_.Reset();
-    rtvHeap_.Reset();
-    rtvDescriptorSize_ = 0;
-    resourceState_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+bool RenderTexture::Release(bool allowFrameAbort) {
+    if (!ReleaseTextureResources(allowFrameAbort)) {
+        return false;
+    }
+    if (dxCommon_ != nullptr) {
+        dxCommon_->UnregisterFrameRollbacks(this);
+    }
 
     if (srvManager_ != nullptr && srvIndex_ != UINT_MAX) {
         srvManager_->FreeIfAllocated(srvIndex_);
@@ -133,6 +117,7 @@ void RenderTexture::Release() {
     srvManager_ = nullptr;
     width_ = 0;
     height_ = 0;
+    return true;
 }
 
 void RenderTexture::BeginRender(const DirectX::XMFLOAT4 &clearColor) {
@@ -147,6 +132,12 @@ void RenderTexture::BeginRender(const DirectX::XMFLOAT4 &clearColor) {
     }
 
     if (resourceState_ != D3D12_RESOURCE_STATE_RENDER_TARGET) {
+        const D3D12_RESOURCE_STATES previousState = resourceState_;
+        if (!dxCommon_->RegisterFrameRollback(
+                this,
+                [this, previousState]() { resourceState_ = previousState; })) {
+            return;
+        }
         auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
             resource_.Get(), resourceState_,
             D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -191,13 +182,19 @@ void RenderTexture::EndRender() {
     }
 
     if (resourceState_ != D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) {
-        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-            resource_.Get(), resourceState_,
-            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         auto commandList = dxCommon_->GetCommandList();
         if (commandList == nullptr) {
             return;
         }
+        const D3D12_RESOURCE_STATES previousState = resourceState_;
+        if (!dxCommon_->RegisterFrameRollback(
+                this,
+                [this, previousState]() { resourceState_ = previousState; })) {
+            return;
+        }
+        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+            resource_.Get(), resourceState_,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         commandList->ResourceBarrier(1, &barrier);
         resourceState_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     }
@@ -211,22 +208,41 @@ D3D12_GPU_DESCRIPTOR_HANDLE RenderTexture::GetGpuHandle() const {
     return srvManager_->GetGpuHandle(srvIndex_);
 }
 
-void RenderTexture::CreateResources() {
-    auto device = dxCommon_->GetDevice();
-    if (device == nullptr || srvManager_ == nullptr || srvIndex_ == UINT_MAX) {
-        return;
+bool RenderTexture::ReleaseTextureResources() {
+    return ReleaseTextureResources(false);
+}
+
+bool RenderTexture::ReleaseTextureResources(bool allowFrameAbort) {
+    if (!CanReleaseGpuResources(dxCommon_, resource_ != nullptr || rtvHeap_ ||
+                                               srvIndex_ != UINT_MAX,
+                                allowFrameAbort)) {
+        return false;
     }
 
+    resource_.Reset();
+    rtvHeap_.Reset();
+    rtvDescriptorSize_ = 0;
+    resourceState_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    return true;
+}
+
+bool RenderTexture::CreateResources() {
+    auto device = dxCommon_->GetDevice();
+    if (device == nullptr || srvManager_ == nullptr || srvIndex_ == UINT_MAX) {
+        return false;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> newRtvHeap;
     D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc{};
     rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
     rtvHeapDesc.NumDescriptors = 1;
     if (FAILED(device->CreateDescriptorHeap(&rtvHeapDesc,
-                                            IID_PPV_ARGS(&rtvHeap_))) ||
-        !rtvHeap_) {
-        return;
+                                            IID_PPV_ARGS(&newRtvHeap))) ||
+        !newRtvHeap) {
+        return false;
     }
 
-    rtvDescriptorSize_ = device->GetDescriptorHandleIncrementSize(
+    const UINT newRtvDescriptorSize = device->GetDescriptorHandleIncrementSize(
         D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
     auto resourceDesc = CD3DX12_RESOURCE_DESC::Tex2D(
@@ -242,20 +258,20 @@ void RenderTexture::CreateResources() {
     clearValue.Color[3] = 1.0f;
 
     CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+    Microsoft::WRL::ComPtr<ID3D12Resource> newResource;
     if (!CreateCommittedResourceChecked(
             device, &heapProps, D3D12_HEAP_FLAG_NONE, &resourceDesc,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &clearValue,
-            resource_.GetAddressOf())) {
-        return;
+            newResource.GetAddressOf())) {
+        return false;
     }
-    resourceState_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
     D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
     rtvDesc.Format = DirectXCommon::kSceneColorFormat;
     rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
     device->CreateRenderTargetView(
-        resource_.Get(), &rtvDesc,
-        rtvHeap_->GetCPUDescriptorHandleForHeapStart());
+        newResource.Get(), &rtvDesc,
+        newRtvHeap->GetCPUDescriptorHandleForHeapStart());
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -265,7 +281,18 @@ void RenderTexture::CreateResources() {
     const D3D12_CPU_DESCRIPTOR_HANDLE srvHandle =
         srvManager_->GetCpuHandle(srvIndex_);
     if (srvHandle.ptr == 0) {
-        return;
+        return false;
     }
-    device->CreateShaderResourceView(resource_.Get(), &srvDesc, srvHandle);
+
+    if (!CanReleaseGpuResources(dxCommon_, resource_ != nullptr || rtvHeap_ ||
+                                               srvIndex_ != UINT_MAX)) {
+        return false;
+    }
+    device->CreateShaderResourceView(newResource.Get(), &srvDesc, srvHandle);
+
+    resource_ = std::move(newResource);
+    rtvHeap_ = std::move(newRtvHeap);
+    rtvDescriptorSize_ = newRtvDescriptorSize;
+    resourceState_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    return true;
 }

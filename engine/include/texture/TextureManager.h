@@ -1,11 +1,13 @@
 #pragma once
 #include "texture/Texture.h"
 #include <DirectXTex.h>
+#include <atomic>
 #include <cstdint>
 #include <d3d12.h>
-#include <future>
+#include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 #include <wrl.h>
@@ -23,7 +25,7 @@ class TextureManager {
     /// </summary>
     struct Entry {
         Texture texture;
-        uint32_t srvIndex = 0;
+        uint32_t srvIndex = UINT32_MAX;
     };
 
   public:
@@ -49,7 +51,8 @@ class TextureManager {
     /// <summary>
     /// 管理中のテクスチャとSRV割り当てを解放する
     /// </summary>
-    void Finalize();
+    bool Finalize();
+    bool Finalize(bool allowFrameAbort);
 
     /// <summary>
     /// ファイルからテクスチャをロードしてidを返す
@@ -145,6 +148,7 @@ class TextureManager {
     /// 指定IDが有効なテクスチャを指しているかを取得する
     /// </summary>
     bool IsValidTextureId(uint32_t textureId) const;
+    bool IsCubeTextureId(uint32_t textureId) const;
 
     /// <summary>
     /// テクスチャリソースを取得する
@@ -166,6 +170,9 @@ class TextureManager {
     /// <param name="id">テクスチャID</param>
     /// <returns>テクスチャ高さ</returns>
     uint32_t GetHeight(uint32_t id) const;
+    size_t GetTextureCount() const;
+    uint64_t GetTextureGpuBytes() const;
+    uint64_t GetUploadBytes() const;
 
   private:
     /// <summary>
@@ -186,9 +193,16 @@ class TextureManager {
         bool succeeded = false;
     };
 
+    struct AsyncTextureJob {
+        DecodedTexture decoded;
+        std::atomic_bool ready = false;
+    };
+
     struct AsyncTextureRequest {
         uint32_t requestId = 0;
-        std::future<DecodedTexture> future;
+        std::wstring filePath;
+        std::shared_ptr<AsyncTextureJob> job;
+        std::thread worker;
         uint32_t textureId = UINT32_MAX;
         bool completed = false;
         bool failed = false;
@@ -197,6 +211,8 @@ class TextureManager {
   private:
     uint32_t AllocateAsyncRequestId();
     void PruneCompletedAsyncRequests();
+    void StartQueuedAsyncLoads();
+    void StopAsyncLoads();
 
     DirectXCommon *dxCommon_ = nullptr;
     SrvManager *srvManager_ = nullptr;

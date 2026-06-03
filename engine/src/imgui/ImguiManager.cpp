@@ -2,6 +2,7 @@
 #include "imgui/ImguiManager.h"
 #include "core/WinApp.h"
 #include "graphics/DirectXCommon.h"
+#include "graphics/GpuResourceLifetime.h"
 #include "graphics/SrvManager.h"
 #include "imgui.h"
 #include "imgui_impl_dx12.h"
@@ -55,7 +56,7 @@ class ImguiDescriptorAllocationGuard {
 } // namespace
 
 ImguiManager::~ImguiManager() {
-    Finalize();
+    Finalize(true);
 }
 
 void ImguiManager::Initialize(WinApp *winApp, DirectXCommon *dxCommon,
@@ -65,8 +66,11 @@ void ImguiManager::Initialize(WinApp *winApp, DirectXCommon *dxCommon,
         return;
     }
 
-    Finalize();
+    if (!Finalize()) {
+        return;
+    }
 
+    dxCommon_ = dxCommon;
     srvManager_ = srvManager;
     ImguiInitializationGuard initializeGuard(*this);
 
@@ -113,12 +117,18 @@ void ImguiManager::Initialize(WinApp *winApp, DirectXCommon *dxCommon,
         }
 
         uint32_t index = manager->srvManager_->Allocate();
+        if (index == UINT32_MAX) {
+            return;
+        }
         ImguiDescriptorAllocationGuard allocationGuard(*manager->srvManager_,
                                                        index);
         const D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle =
             manager->srvManager_->GetCpuHandle(index);
         const D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle =
             manager->srvManager_->GetGpuHandle(index);
+        if (cpuHandle.ptr == 0 || gpuHandle.ptr == 0) {
+            return;
+        }
         manager->allocatedSrvIndices_.emplace(cpuHandle.ptr, index);
         *out_cpu = cpuHandle;
         *out_gpu = gpuHandle;
@@ -128,7 +138,13 @@ void ImguiManager::Initialize(WinApp *winApp, DirectXCommon *dxCommon,
     init_info.SrvDescriptorFreeFn = [](ImGui_ImplDX12_InitInfo *info,
                                        D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle,
                                        D3D12_GPU_DESCRIPTOR_HANDLE) {
+        if (info == nullptr || info->UserData == nullptr) {
+            return;
+        }
         auto *manager = static_cast<ImguiManager *>(info->UserData);
+        if (manager->srvManager_ == nullptr) {
+            return;
+        }
         auto it = manager->allocatedSrvIndices_.find(cpuHandle.ptr);
         if (it == manager->allocatedSrvIndices_.end()) {
             return;
@@ -144,7 +160,16 @@ void ImguiManager::Initialize(WinApp *winApp, DirectXCommon *dxCommon,
     initializeGuard.Commit();
 }
 
-void ImguiManager::Finalize() {
+bool ImguiManager::Finalize() { return Finalize(false); }
+
+bool ImguiManager::Finalize(bool allowFrameAbort) {
+    const bool hasGpuResources =
+        dx12Initialized_ || !allocatedSrvIndices_.empty();
+    if (!CanReleaseGpuResources(dxCommon_, hasGpuResources,
+                                allowFrameAbort)) {
+        return false;
+    }
+
     if (dx12Initialized_) {
         ImGui_ImplDX12_Shutdown();
         dx12Initialized_ = false;
@@ -165,7 +190,9 @@ void ImguiManager::Finalize() {
         }
     }
     allocatedSrvIndices_.clear();
+    dxCommon_ = nullptr;
     srvManager_ = nullptr;
+    return true;
 }
 
 bool ImguiManager::IsReady() const {

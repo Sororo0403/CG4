@@ -14,6 +14,9 @@ inline constexpr const wchar_t *PostProcessPS =
 inline constexpr const wchar_t *PostProcessCopyPS =
     L"engine/resources/shaders/postprocess/CopyPS.hlsl";
 
+inline constexpr const wchar_t *DepthPyramidCS =
+    L"engine/resources/shaders/depth/DepthPyramidCS.hlsl";
+
 inline constexpr const wchar_t *SkyboxVS =
     L"engine/resources/shaders/skybox/SkyboxVS.hlsl";
 inline constexpr const wchar_t *SkyboxPS =
@@ -31,6 +34,14 @@ inline constexpr const wchar_t *MeshShadowInstancedVS =
     L"engine/resources/shaders/mesh/MeshShadowInstancedVS.hlsl";
 inline constexpr const wchar_t *MeshShadowPS =
     L"engine/resources/shaders/mesh/MeshShadowPS.hlsl";
+inline constexpr const wchar_t *MeshGpuCullCS =
+    L"engine/resources/shaders/mesh/MeshGpuCullCS.hlsl";
+inline constexpr const wchar_t *MeshGpuCullArgsCS =
+    L"engine/resources/shaders/mesh/MeshGpuCullArgsCS.hlsl";
+inline constexpr const wchar_t *MeshGpuLodCullCS =
+    L"engine/resources/shaders/mesh/MeshGpuLodCullCS.hlsl";
+inline constexpr const wchar_t *MeshGpuLodCullArgsCS =
+    L"engine/resources/shaders/mesh/MeshGpuLodCullArgsCS.hlsl";
 
 inline constexpr const wchar_t *ModelVS =
     L"engine/resources/shaders/model/ModelVS.hlsl";

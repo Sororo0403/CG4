@@ -25,18 +25,25 @@ class UploadPassScope {
         }
     }
 
-    void Finish() {
+    bool Finish() {
         if (!active_) {
-            return;
+            return true;
         }
-        dxCommon_->EndUpload();
-        if (textureManager_ != nullptr) {
+        const DirectXCommon::UploadPassResult result =
+            dxCommon_->EndUploadPass();
+        if (result == DirectXCommon::UploadPassResult::Failed) {
+            return false;
+        }
+        if (result == DirectXCommon::UploadPassResult::Completed &&
+            textureManager_ != nullptr) {
             textureManager_->ReleaseUploadBuffers();
         }
-        if (meshManager_ != nullptr) {
+        if (result == DirectXCommon::UploadPassResult::Completed &&
+            meshManager_ != nullptr) {
             meshManager_->ReleaseUploadBuffers();
         }
         active_ = false;
+        return true;
     }
 
   private:
@@ -111,23 +118,25 @@ void SceneManager::ApplySceneChange(std::unique_ptr<BaseScene> nextScene) {
     TextureManager *textureManager = ctx_->rendering.texture;
     MeshManager *meshManager = ctx_->rendering.mesh;
 
-    if (dxCommon != nullptr) {
-        dxCommon->WaitForGpu();
+    if (dxCommon != nullptr && !dxCommon->WaitForGpu()) {
+        return;
     }
 
     nextScene->SetSceneManager(this);
 
     const bool ownsUploadPass =
         dxCommon != nullptr && !dxCommon->IsCommandListRecording();
-    if (ownsUploadPass) {
-        dxCommon->BeginUpload();
+    if (ownsUploadPass && !dxCommon->BeginUpload()) {
+        return;
     }
 
     UploadPassScope uploadPass(dxCommon, textureManager, meshManager,
                                ownsUploadPass);
     nextScene->Initialize(*ctx_);
 
-    uploadPass.Finish();
+    if (!uploadPass.Finish()) {
+        return;
+    }
 
     currentScene_.reset();
     currentScene_ = std::move(nextScene);

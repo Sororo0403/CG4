@@ -10,7 +10,7 @@ class WinApp {
     /// <summary>
     /// Win32ウィンドウ管理オブジェクトを破棄する
     /// </summary>
-    ~WinApp() = default;
+    ~WinApp();
 
     /// <summary>
     /// ウィンドウおよびWin32アプリケーションの初期化を行う

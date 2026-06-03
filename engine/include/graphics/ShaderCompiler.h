@@ -15,6 +15,8 @@ namespace ShaderCompiler {
 /// <param name="path">探索対象の相対または絶対パス</param>
 /// <returns>解決済みのシェーダーパス</returns>
 inline std::wstring ResolveShaderPath(const std::wstring &path) {
+    // Shader files are fixed engine/app resources, so allow parent-directory
+    // search when the executable is launched from a generated output folder.
     return AssetManager::ResolvePath(std::filesystem::path(path)).wstring();
 }
 

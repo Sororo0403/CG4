@@ -1,31 +1,31 @@
 #include "model/AssimpMeshLoader.h"
+#include "core/Numeric.h"
 #include "model/Material.h"
 #include "model/MaterialManager.h"
 #include "model/MeshManager.h"
+#include "model/ModelLimits.h"
 #include "model/Vertex.h"
 #include "texture/TextureManager.h"
+#include "texture/TextureLimits.h"
 #include <DirectXMath.h>
 #include <algorithm>
 #include <assimp/GltfMaterial.h>
 #include <charconv>
 #include <cmath>
 #include <filesystem>
-#include <functional>
 #include <limits>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 using namespace DirectX;
 
 namespace {
+using Numeric::ClampFinite;
+using Numeric::FiniteOr;
+
 constexpr float kEpsilon = 0.000001f;
-
-float FiniteOr(float value, float fallback) {
-    return std::isfinite(value) ? value : fallback;
-}
-
-float ClampFinite(float value, float minimum, float maximum, float fallback) {
-    return std::clamp(FiniteOr(value, fallback), minimum, maximum);
-}
+constexpr size_t kMaxAssimpNodeTraversal = 65536u;
 
 XMFLOAT3 SanitizeFloat3(const aiVector3D &value,
                         const XMFLOAT3 &fallback) {
@@ -93,6 +93,53 @@ bool TryParseEmbeddedTextureIndex(const std::string &name, unsigned int &index) 
     return true;
 }
 
+bool BuildNodeMap(const aiNode *root,
+                  std::unordered_map<std::string, const aiNode *> &nodes) {
+    if (!root) {
+        return false;
+    }
+
+    std::vector<const aiNode *> stack;
+    try {
+        stack.reserve(256u);
+        nodes.reserve(256u);
+        stack.push_back(root);
+    } catch (...) {
+        return false;
+    }
+
+    size_t visited = 0;
+    while (!stack.empty()) {
+        const aiNode *node = stack.back();
+        stack.pop_back();
+        if (!node) {
+            continue;
+        }
+        if (++visited > kMaxAssimpNodeTraversal) {
+            return false;
+        }
+
+        try {
+            nodes.emplace(node->mName.C_Str(), node);
+        } catch (...) {
+            return false;
+        }
+
+        if (node->mNumChildren > 0 && node->mChildren == nullptr) {
+            return false;
+        }
+        for (unsigned int i = node->mNumChildren; i > 0; --i) {
+            try {
+                stack.push_back(node->mChildren[i - 1u]);
+            } catch (...) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 } // namespace
 
 void AssimpMeshLoader::Initialize(TextureManager *textureManager,
@@ -123,6 +170,24 @@ void AssimpMeshLoader::LoadMeshes(const aiScene *scene, const std::string &path,
         return;
     }
 
+    if (scene->mNumMeshes > ModelLimits::kMaxMeshes ||
+        scene->mNumMaterials > ModelLimits::kMaxMaterials ||
+        scene->mNumTextures > ModelLimits::kMaxEmbeddedTextures) {
+        return;
+    }
+    if ((scene->mNumMeshes > 0 && scene->mMeshes == nullptr) ||
+        (scene->mNumMaterials > 0 && scene->mMaterials == nullptr) ||
+        (scene->mNumTextures > 0 && scene->mTextures == nullptr)) {
+        return;
+    }
+    try {
+        model.subMeshes.reserve(scene->mNumMeshes);
+    } catch (...) {
+        return;
+    }
+
+    std::size_t loadedVertices = 0;
+    std::size_t loadedFaces = 0;
     for (unsigned int meshIndex = 0; meshIndex < scene->mNumMeshes;
          meshIndex++) {
         aiMesh *mesh = scene->mMeshes[meshIndex];
@@ -136,16 +201,30 @@ void AssimpMeshLoader::LoadMeshes(const aiScene *scene, const std::string &path,
         if (mesh->mNumFaces > 0 && !mesh->mFaces) {
             continue;
         }
+        if (mesh->mNumBones > 0 && !mesh->mBones) {
+            continue;
+        }
+        if (mesh->mNumVertices > ModelLimits::kMaxVerticesPerMesh ||
+            mesh->mNumFaces > ModelLimits::kMaxFacesPerMesh ||
+            mesh->mNumBones > ModelLimits::kMaxBonesPerMesh ||
+            mesh->mNumVertices > ModelLimits::kMaxTotalVertices - loadedVertices ||
+            mesh->mNumFaces > ModelLimits::kMaxTotalFaces - loadedFaces) {
+            continue;
+        }
 
         std::vector<Vertex> vertices;
         std::vector<uint32_t> indices;
 
-        vertices.reserve(mesh->mNumVertices);
         if (static_cast<size_t>(mesh->mNumFaces) >
             (std::numeric_limits<size_t>::max)() / 3u) {
             continue;
         }
-        indices.reserve(static_cast<size_t>(mesh->mNumFaces) * 3u);
+        try {
+            vertices.reserve(mesh->mNumVertices);
+            indices.reserve(static_cast<size_t>(mesh->mNumFaces) * 3u);
+        } catch (...) {
+            continue;
+        }
 
         for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
             Vertex v{};
@@ -206,173 +285,229 @@ void AssimpMeshLoader::LoadMeshes(const aiScene *scene, const std::string &path,
             continue;
         }
         subMesh.vertexCount = static_cast<uint32_t>(vertices.size());
-        subMesh.sourcePositions.reserve(vertices.size());
-        subMesh.sourceBoundsMin = vertices.front().position;
-        subMesh.sourceBoundsMax = vertices.front().position;
-        for (const Vertex &vertex : vertices) {
-            subMesh.sourcePositions.push_back(vertex.position);
-            subMesh.sourceBoundsMin.x =
-                (std::min)(subMesh.sourceBoundsMin.x, vertex.position.x);
-            subMesh.sourceBoundsMin.y =
-                (std::min)(subMesh.sourceBoundsMin.y, vertex.position.y);
-            subMesh.sourceBoundsMin.z =
-                (std::min)(subMesh.sourceBoundsMin.z, vertex.position.z);
-            subMesh.sourceBoundsMax.x =
-                (std::max)(subMesh.sourceBoundsMax.x, vertex.position.x);
-            subMesh.sourceBoundsMax.y =
-                (std::max)(subMesh.sourceBoundsMax.y, vertex.position.y);
-            subMesh.sourceBoundsMax.z =
-                (std::max)(subMesh.sourceBoundsMax.z, vertex.position.z);
+        try {
+            subMesh.sourcePositions.reserve(vertices.size());
+            subMesh.sourceBoundsMin = vertices.front().position;
+            subMesh.sourceBoundsMax = vertices.front().position;
+            for (const Vertex &vertex : vertices) {
+                subMesh.sourcePositions.push_back(vertex.position);
+                subMesh.sourceBoundsMin.x =
+                    (std::min)(subMesh.sourceBoundsMin.x, vertex.position.x);
+                subMesh.sourceBoundsMin.y =
+                    (std::min)(subMesh.sourceBoundsMin.y, vertex.position.y);
+                subMesh.sourceBoundsMin.z =
+                    (std::min)(subMesh.sourceBoundsMin.z, vertex.position.z);
+                subMesh.sourceBoundsMax.x =
+                    (std::max)(subMesh.sourceBoundsMax.x, vertex.position.x);
+                subMesh.sourceBoundsMax.y =
+                    (std::max)(subMesh.sourceBoundsMax.y, vertex.position.y);
+                subMesh.sourceBoundsMax.z =
+                    (std::max)(subMesh.sourceBoundsMax.z, vertex.position.z);
+            }
+        } catch (...) {
+            continue;
         }
 
+        const size_t boneRollbackSize = model.bones.size();
+        std::vector<std::string> addedBoneNames;
+        auto rollbackAddedBones = [&]() {
+            for (const std::string &name : addedBoneNames) {
+                model.boneMap.erase(name);
+            }
+            model.bones.resize(boneRollbackSize);
+        };
+
         if (mesh->HasBones()) {
-            for (unsigned int i = 0; i < mesh->mNumBones; i++) {
-                aiBone *bone = mesh->mBones[i];
+            try {
+                addedBoneNames.reserve(mesh->mNumBones);
+                for (unsigned int i = 0; i < mesh->mNumBones; i++) {
+                    aiBone *bone = mesh->mBones[i];
 
-                if (!bone) {
-                    continue;
-                }
-
-                std::string boneName = bone->mName.C_Str();
-                uint32_t boneIndex = 0;
-
-                auto it = model.boneMap.find(boneName);
-
-                if (it == model.boneMap.end()) {
-                    boneIndex =
-                        CheckedUint32Size(model.bones.size(),
-                                          "AssimpMeshLoader bone count overflow");
-                    if (boneIndex == UINT32_MAX) {
+                    if (!bone) {
                         continue;
                     }
-                    if (boneIndex >
-                        static_cast<uint32_t>((std::numeric_limits<int>::max)())) {
+                    if (bone->mNumWeights > 0 && !bone->mWeights) {
                         continue;
                     }
 
-                    model.boneMap[boneName] = boneIndex;
+                    std::string boneName = bone->mName.C_Str();
+                    uint32_t boneIndex = 0;
 
-                    BoneInfo info{};
-                    info.name = boneName;
+                    auto it = model.boneMap.find(boneName);
 
-                    info.offsetMatrix = ToMatrix(bone->mOffsetMatrix);
+                    if (it == model.boneMap.end()) {
+                        boneIndex = CheckedUint32Size(
+                            model.bones.size(),
+                            "AssimpMeshLoader bone count overflow");
+                        if (boneIndex == UINT32_MAX) {
+                            continue;
+                        }
+                        if (boneIndex > static_cast<uint32_t>(
+                                            (std::numeric_limits<int>::max)())) {
+                            continue;
+                        }
 
-                    model.bones.push_back(info);
-                } else {
-                    boneIndex = it->second;
-                }
+                        BoneInfo info{};
+                        info.name = boneName;
+                        info.offsetMatrix = ToMatrix(bone->mOffsetMatrix);
 
-                JointWeightData &jointWeightData =
-                    subMesh.skinClusterData[boneName];
-                jointWeightData.inverseBindPoseMatrix =
-                    model.bones[boneIndex].offsetMatrix;
-
-                for (unsigned int w = 0; w < bone->mNumWeights; w++) {
-                    uint32_t vertexId = bone->mWeights[w].mVertexId;
-                    const float weight =
-                        ClampFinite(bone->mWeights[w].mWeight, 0.0f, 1.0f,
-                                    0.0f);
-
-                    if (vertexId >= vertices.size() || weight <= 0.0f) {
-                        continue;
+                        addedBoneNames.push_back(boneName);
+                        model.bones.push_back(info);
+                        model.boneMap.emplace(boneName, boneIndex);
+                    } else {
+                        boneIndex = it->second;
                     }
 
-                    jointWeightData.vertexWeights.push_back({weight, vertexId});
+                    JointWeightData &jointWeightData =
+                        subMesh.skinClusterData[boneName];
+                    jointWeightData.inverseBindPoseMatrix =
+                        model.bones[boneIndex].offsetMatrix;
+
+                    for (unsigned int w = 0; w < bone->mNumWeights; w++) {
+                        uint32_t vertexId = bone->mWeights[w].mVertexId;
+                        const float weight =
+                            ClampFinite(bone->mWeights[w].mWeight, 0.0f, 1.0f,
+                                        0.0f);
+
+                        if (vertexId >= vertices.size() || weight <= 0.0f) {
+                            continue;
+                        }
+
+                        jointWeightData.vertexWeights.push_back(
+                            {weight, vertexId});
+                    }
                 }
+            } catch (...) {
+                rollbackAddedBones();
+                continue;
             }
         }
 
         aiMaterial *mat = nullptr;
-        uint32_t textureId = 0;
+        uint32_t textureId = textureManager_->GetWhiteTextureId();
         uint32_t normalTextureId = UINT32_MAX;
         bool hasTexture = false;
         bool hasNormalTexture = false;
 
-        if (scene->HasMaterials() &&
-            mesh->mMaterialIndex < scene->mNumMaterials) {
-            mat = scene->mMaterials[mesh->mMaterialIndex];
+        try {
+            if (scene->HasMaterials() &&
+                mesh->mMaterialIndex < scene->mNumMaterials) {
+                mat = scene->mMaterials[mesh->mMaterialIndex];
 
-            auto tryLoadTexture = [&](aiTextureType textureType,
-                                      uint32_t &outTextureId) -> bool {
-                aiString texPath;
-                if (!mat ||
-                    mat->GetTexture(textureType, 0, &texPath) != AI_SUCCESS) {
-                    return false;
-                }
+                auto isLoadedTexture = [this](uint32_t textureId) {
+                    return textureManager_->IsValidTextureId(textureId) &&
+                           textureId != textureManager_->GetWhiteTextureId();
+                };
 
-                std::string texName = texPath.C_Str();
-
-                if (!texName.empty() && texName[0] == '*') {
-                    unsigned int texIndex = 0;
-                    if (!TryParseEmbeddedTextureIndex(texName, texIndex) ||
-                        texIndex >= scene->mNumTextures) {
+                auto tryLoadTexture = [&](aiTextureType textureType,
+                                          uint32_t &outTextureId) -> bool {
+                    aiString texPath;
+                    if (!mat || mat->GetTexture(textureType, 0, &texPath) !=
+                                    AI_SUCCESS) {
                         return false;
                     }
 
-                    aiTexture *tex = scene->mTextures[texIndex];
-                    if (!tex) {
-                        return false;
-                    }
+                    std::string texName = texPath.C_Str();
 
-                    if (tex->mHeight == 0) {
-                        if (tex->mWidth == 0 || tex->pcData == nullptr) {
+                    if (!texName.empty() && texName[0] == '*') {
+                        unsigned int texIndex = 0;
+                        if (!TryParseEmbeddedTextureIndex(texName, texIndex) ||
+                            texIndex >= scene->mNumTextures) {
                             return false;
                         }
-                        outTextureId = textureManager_->LoadFromMemory(
-                            reinterpret_cast<const uint8_t *>(tex->pcData),
-                            tex->mWidth);
-                        return true;
+                        if (scene->mTextures == nullptr) {
+                            return false;
+                        }
+
+                        aiTexture *tex = scene->mTextures[texIndex];
+                        if (!tex) {
+                            return false;
+                        }
+
+                        if (tex->mHeight == 0) {
+                            if (tex->mWidth == 0 || tex->pcData == nullptr) {
+                                return false;
+                            }
+                            if (tex->mWidth >
+                                ModelLimits::kMaxEmbeddedTextureBytes) {
+                                return false;
+                            }
+                            outTextureId = textureManager_->LoadFromMemory(
+                                reinterpret_cast<const uint8_t *>(tex->pcData),
+                                tex->mWidth);
+                            return isLoadedTexture(outTextureId);
+                        }
+
+                        if (tex->mWidth == 0 || tex->mHeight == 0 ||
+                            tex->pcData == nullptr) {
+                            return false;
+                        }
+                        if (tex->mWidth > TextureLimits::kMaxDimension ||
+                            tex->mHeight > TextureLimits::kMaxDimension) {
+                            return false;
+                        }
+                        if (static_cast<size_t>(tex->mWidth) >
+                            (std::numeric_limits<size_t>::max)() /
+                                static_cast<size_t>(tex->mHeight)) {
+                            return false;
+                        }
+                        const size_t pixelCount =
+                            static_cast<size_t>(tex->mWidth) *
+                            static_cast<size_t>(tex->mHeight);
+                        if (pixelCount >
+                                ModelLimits::kMaxEmbeddedTexturePixels ||
+                            pixelCount >
+                                (std::numeric_limits<size_t>::max)() / 4u) {
+                            return false;
+                        }
+                        if (pixelCount >
+                            ModelLimits::kMaxEmbeddedTextureBytes / 4u) {
+                            return false;
+                        }
+
+                        std::vector<uint8_t> pixels;
+                        try {
+                            pixels.resize(pixelCount * 4u);
+                        } catch (...) {
+                            return false;
+                        }
+                        for (size_t pixelIndex = 0; pixelIndex < pixelCount;
+                             ++pixelIndex) {
+                            const aiTexel &src = tex->pcData[pixelIndex];
+                            const size_t dst = pixelIndex * 4u;
+                            pixels[dst + 0u] = src.r;
+                            pixels[dst + 1u] = src.g;
+                            pixels[dst + 2u] = src.b;
+                            pixels[dst + 3u] = src.a;
+                        }
+                        outTextureId = textureManager_->CreateFromRgbaPixels(
+                            tex->mWidth, tex->mHeight, pixels.data());
+                        return isLoadedTexture(outTextureId);
                     }
 
-                    if (tex->mWidth == 0 || tex->mHeight == 0 ||
-                        tex->pcData == nullptr) {
-                        return false;
-                    }
-                    if (static_cast<size_t>(tex->mWidth) >
-                        (std::numeric_limits<size_t>::max)() /
-                            static_cast<size_t>(tex->mHeight)) {
-                        return false;
-                    }
-                    const size_t pixelCount =
-                        static_cast<size_t>(tex->mWidth) *
-                        static_cast<size_t>(tex->mHeight);
-                    if (pixelCount >
-                        (std::numeric_limits<size_t>::max)() / 4u) {
-                        return false;
-                    }
+                    std::filesystem::path modelPath(path);
+                    auto fullPath = modelPath.parent_path() / texName;
+                    outTextureId = textureManager_->Load(fullPath.wstring());
+                    return isLoadedTexture(outTextureId);
+                };
 
-                    std::vector<uint8_t> pixels(pixelCount * 4u);
-                    for (size_t pixelIndex = 0; pixelIndex < pixelCount;
-                         ++pixelIndex) {
-                        const aiTexel &src = tex->pcData[pixelIndex];
-                        const size_t dst = pixelIndex * 4u;
-                        pixels[dst + 0u] = src.r;
-                        pixels[dst + 1u] = src.g;
-                        pixels[dst + 2u] = src.b;
-                        pixels[dst + 3u] = src.a;
-                    }
-                    outTextureId = textureManager_->CreateFromRgbaPixels(
-                        tex->mWidth, tex->mHeight, pixels.data());
-                    return true;
-                }
-
-                std::filesystem::path modelPath(path);
-                auto fullPath = modelPath.parent_path() / texName;
-                outTextureId = textureManager_->Load(fullPath.wstring());
-                return true;
-            };
-
-            hasTexture = tryLoadTexture(aiTextureType_BASE_COLOR, textureId) ||
-                         tryLoadTexture(aiTextureType_DIFFUSE, textureId);
-            hasNormalTexture =
-                tryLoadTexture(aiTextureType_NORMALS, normalTextureId) ||
-                tryLoadTexture(aiTextureType_HEIGHT, normalTextureId);
+                hasTexture =
+                    tryLoadTexture(aiTextureType_BASE_COLOR, textureId) ||
+                    tryLoadTexture(aiTextureType_DIFFUSE, textureId);
+                hasNormalTexture =
+                    tryLoadTexture(aiTextureType_NORMALS, normalTextureId) ||
+                    tryLoadTexture(aiTextureType_HEIGHT, normalTextureId);
+            }
+        } catch (...) {
+            rollbackAddedBones();
+            continue;
         }
 
         uint32_t meshId = meshManager_->CreateMesh(
             vertices.data(), sizeof(Vertex), subMesh.vertexCount,
             indices.data(), static_cast<uint32_t>(indices.size()));
         if (meshId == UINT32_MAX) {
+            rollbackAddedBones();
             continue;
         }
 
@@ -408,9 +543,29 @@ void AssimpMeshLoader::LoadMeshes(const aiScene *scene, const std::string &path,
         subMesh.meshId = meshId;
         subMesh.textureId = textureId;
         subMesh.normalTextureId = normalTextureId;
-        subMesh.materialId = materialManager_->CreateMaterial(material);
+        try {
+            subMesh.materialId = materialManager_->CreateMaterial(material);
+        } catch (...) {
+            rollbackAddedBones();
+            meshManager_->DestroyMesh(meshId);
+            continue;
+        }
+        if (subMesh.materialId == UINT32_MAX) {
+            rollbackAddedBones();
+            meshManager_->DestroyMesh(meshId);
+            continue;
+        }
 
-        model.subMeshes.push_back(subMesh);
+        try {
+            model.subMeshes.push_back(std::move(subMesh));
+        } catch (...) {
+            rollbackAddedBones();
+            materialManager_->DestroyMaterial(subMesh.materialId);
+            meshManager_->DestroyMesh(meshId);
+            continue;
+        }
+        loadedVertices += mesh->mNumVertices;
+        loadedFaces += mesh->mNumFaces;
     }
 
     if (model.subMeshes.empty()) {
@@ -432,14 +587,37 @@ const aiNode *AssimpMeshLoader::FindNodeByName(const aiNode *node,
         return nullptr;
     }
 
-    if (name == node->mName.C_Str()) {
-        return node;
+    std::vector<const aiNode *> stack;
+    try {
+        stack.reserve(256u);
+        stack.push_back(node);
+    } catch (...) {
+        return nullptr;
     }
 
-    for (unsigned int i = 0; i < node->mNumChildren; i++) {
-        const aiNode *found = FindNodeByName(node->mChildren[i], name);
-        if (found) {
-            return found;
+    size_t visited = 0;
+    while (!stack.empty()) {
+        const aiNode *current = stack.back();
+        stack.pop_back();
+        if (!current) {
+            continue;
+        }
+        if (++visited > kMaxAssimpNodeTraversal) {
+            return nullptr;
+        }
+        if (name == current->mName.C_Str()) {
+            return current;
+        }
+
+        if (current->mNumChildren > 0 && current->mChildren == nullptr) {
+            return nullptr;
+        }
+        for (unsigned int i = current->mNumChildren; i > 0; --i) {
+            try {
+                stack.push_back(current->mChildren[i - 1u]);
+            } catch (...) {
+                return nullptr;
+            }
         }
     }
 
@@ -452,10 +630,16 @@ void AssimpMeshLoader::BuildBoneHierarchy(const aiScene *scene,
         return;
     }
 
+    std::unordered_map<std::string, const aiNode *> nodes;
+    if (!BuildNodeMap(scene->mRootNode, nodes)) {
+        return;
+    }
+
     for (size_t i = 0; i < model.bones.size(); i++) {
         const std::string &boneName = model.bones[i].name;
 
-        const aiNode *node = FindNodeByName(scene->mRootNode, boneName);
+        const auto nodeIt = nodes.find(boneName);
+        const aiNode *node = nodeIt != nodes.end() ? nodeIt->second : nullptr;
         if (!node) {
             model.bones[i].parentIndex = -1;
             model.bones[i].localBindMatrix = ToMatrix(aiMatrix4x4());
@@ -466,8 +650,13 @@ void AssimpMeshLoader::BuildBoneHierarchy(const aiScene *scene,
         aiMatrix4x4 adjustment{};
         int parentIndex = -1;
         const aiNode *parent = node->mParent;
+        size_t parentDepth = 0;
 
         while (parent) {
+            if (++parentDepth > kMaxAssimpNodeTraversal) {
+                parentIndex = -1;
+                break;
+            }
             auto it = model.boneMap.find(parent->mName.C_Str());
             if (it != model.boneMap.end()) {
                 parentIndex = static_cast<int>(it->second);
@@ -496,57 +685,110 @@ void AssimpMeshLoader::ReorderBonesParentFirst(Model &model) const {
         return;
     }
 
-    std::vector<std::vector<size_t>> children(boneCount);
+    std::vector<std::vector<size_t>> children;
     std::vector<size_t> roots;
-    roots.reserve(boneCount);
+    try {
+        children.resize(boneCount);
+        roots.reserve(boneCount);
+    } catch (...) {
+        return;
+    }
 
     for (size_t boneIndex = 0; boneIndex < boneCount; ++boneIndex) {
         const int parentIndex = model.bones[boneIndex].parentIndex;
-        if (parentIndex >= 0 && static_cast<size_t>(parentIndex) < boneCount) {
-            children[static_cast<size_t>(parentIndex)].push_back(boneIndex);
-        } else {
-            roots.push_back(boneIndex);
+        try {
+            if (parentIndex >= 0 &&
+                static_cast<size_t>(parentIndex) < boneCount) {
+                children[static_cast<size_t>(parentIndex)].push_back(boneIndex);
+            } else {
+                roots.push_back(boneIndex);
+            }
+        } catch (...) {
+            return;
         }
     }
 
     std::vector<BoneInfo> orderedBones;
-    std::vector<int> oldToNew(boneCount, -1);
-    orderedBones.reserve(boneCount);
+    std::vector<int> oldToNew;
+    try {
+        oldToNew.assign(boneCount, -1);
+        orderedBones.reserve(boneCount);
+    } catch (...) {
+        return;
+    }
 
-    std::function<void(size_t, int)> visit = [&](size_t oldIndex,
-                                                 int newParentIndex) {
-        if (oldToNew[oldIndex] >= 0) {
-            return;
+    auto visit = [&](size_t rootIndex, int rootParentIndex) {
+        std::vector<std::pair<size_t, int>> stack;
+        try {
+            stack.reserve(64u);
+            stack.push_back({rootIndex, rootParentIndex});
+        } catch (...) {
+            return false;
         }
 
-        BoneInfo bone = model.bones[oldIndex];
-        bone.parentIndex = newParentIndex;
-        const int newIndex =
-            CheckedIntSize(orderedBones.size(),
-                           "AssimpMeshLoader reordered bone count overflow");
-        oldToNew[oldIndex] = newIndex;
-        orderedBones.push_back(bone);
+        while (!stack.empty()) {
+            const auto entry = stack.back();
+            stack.pop_back();
+            const size_t oldIndex = entry.first;
+            const int newParentIndex = entry.second;
 
-        for (size_t childIndex : children[oldIndex]) {
-            visit(childIndex, newIndex);
+            if (oldIndex >= boneCount || oldToNew[oldIndex] >= 0) {
+                continue;
+            }
+
+            const int newIndex = CheckedIntSize(
+                orderedBones.size(),
+                "AssimpMeshLoader reordered bone count overflow");
+            try {
+                BoneInfo bone = model.bones[oldIndex];
+                bone.parentIndex = newParentIndex;
+                orderedBones.push_back(std::move(bone));
+            } catch (...) {
+                return false;
+            }
+            oldToNew[oldIndex] = newIndex;
+
+            const std::vector<size_t> &childList = children[oldIndex];
+            for (size_t i = childList.size(); i > 0; --i) {
+                try {
+                    stack.push_back({childList[i - 1u], newIndex});
+                } catch (...) {
+                    return false;
+                }
+            }
         }
+        return true;
     };
 
     for (size_t rootIndex : roots) {
-        visit(rootIndex, -1);
+        if (!visit(rootIndex, -1)) {
+            return;
+        }
     }
 
     for (size_t boneIndex = 0; boneIndex < boneCount; ++boneIndex) {
         if (oldToNew[boneIndex] < 0) {
-            visit(boneIndex, -1);
+            if (!visit(boneIndex, -1)) {
+                return;
+            }
         }
     }
 
-    model.bones = std::move(orderedBones);
-    model.boneMap.clear();
-    for (size_t boneIndex = 0; boneIndex < model.bones.size(); ++boneIndex) {
-        model.boneMap[model.bones[boneIndex].name] =
-            CheckedUint32Size(boneIndex,
-                              "AssimpMeshLoader reordered bone count overflow");
+    std::unordered_map<std::string, uint32_t> reorderedBoneMap;
+    try {
+        reorderedBoneMap.reserve(orderedBones.size());
+        for (size_t boneIndex = 0; boneIndex < orderedBones.size();
+             ++boneIndex) {
+            reorderedBoneMap.emplace(
+                orderedBones[boneIndex].name,
+                CheckedUint32Size(
+                    boneIndex,
+                    "AssimpMeshLoader reordered bone count overflow"));
+        }
+    } catch (...) {
+        return;
     }
+
+    model.bones = std::move(orderedBones);
+    model.boneMap = std::move(reorderedBoneMap);
 }

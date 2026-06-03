@@ -44,7 +44,13 @@ class ModelManager {
     /// <summary>
     /// 管理中のモデルリソースとキャッシュを明示的に解放する
     /// </summary>
-    void Finalize();
+    bool Finalize();
+    bool Finalize(bool allowFrameAbort);
+
+    /// <summary>
+    /// GPU転送完了後にモデル内部メッシュの一時UploadBufferを解放する
+    /// </summary>
+    void ReleaseUploadBuffers();
 
     /// <summary>
     /// モデルを読み込む
@@ -283,6 +289,10 @@ class ModelManager {
 
     MeshManager *GetMeshManager() { return &meshManager_; }
     const MeshManager *GetMeshManager() const { return &meshManager_; }
+    bool IsReady() const {
+        return dxCommon_ != nullptr && srvManager_ != nullptr &&
+               textureManager_ != nullptr && modelRenderer_.IsReady();
+    }
 
   private:
     DirectXCommon *dxCommon_ = nullptr;

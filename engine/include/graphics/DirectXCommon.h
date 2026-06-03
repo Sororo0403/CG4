@@ -1,11 +1,15 @@
 #pragma once
 #include <Windows.h>
 #include <DirectXMath.h>
+#include "graphics/FrameRollbackRegistry.h"
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <d3d12.h>
 #include <dxgi1_6.h>
+#include <functional>
 #include <string>
+#include <vector>
 #include <wrl.h>
 
 class SrvManager;
@@ -15,6 +19,12 @@ class SrvManager;
 /// </summary>
 class DirectXCommon {
   public:
+    enum class UploadPassResult {
+        Failed,
+        Submitted,
+        Completed,
+    };
+
     static constexpr DXGI_FORMAT kBackBufferFormat =
         DXGI_FORMAT_R8G8B8A8_UNORM;
     static constexpr DXGI_FORMAT kSceneColorFormat =
@@ -43,7 +53,7 @@ class DirectXCommon {
     /// <summary>
     /// 必要なリソースを初期化する
     /// </summary>
-    void Initialize(HWND hwnd, int width, int height);
+    bool Initialize(HWND hwnd, int width, int height);
 
     /// <summary>
     /// フレーム描画用コマンドリストの記録を開始する
@@ -53,12 +63,18 @@ class DirectXCommon {
     /// <summary>
     /// フレーム描画コマンドを実行して画面へ表示する
     /// </summary>
-    void EndFrame();
+    bool EndFrame();
 
     /// <summary>
     /// 例外などでフレームを完了できない場合に記録状態を破棄する
     /// </summary>
     void AbortFrame() noexcept;
+
+    bool ReserveFrameRollbacks(size_t additional);
+    bool RegisterFrameRollback(std::function<void()> rollback);
+    bool RegisterFrameRollback(const void *owner,
+                               std::function<void()> rollback);
+    void UnregisterFrameRollbacks(const void *owner) noexcept;
 
     /// <summary>
     /// シーンカラー用レンダーターゲットへの描画状態に切り替える
@@ -142,22 +158,23 @@ class DirectXCommon {
     /// </summary>
     /// <param name="width">クライアント領域の幅</param>
     /// <param name="height">クライアント領域の高さ</param>
-    void Resize(int width, int height);
+    bool Resize(int width, int height);
 
     /// <summary>
     /// リソースアップロード用コマンドリストの記録を開始する
     /// </summary>
-    void BeginUpload();
+    bool BeginUpload();
 
     /// <summary>
     /// リソースアップロード用コマンドを実行して完了を待つ
     /// </summary>
-    void EndUpload();
+    UploadPassResult EndUploadPass();
+    bool EndUpload();
 
     /// <summary>
     /// コマンドキューへFenceを送信し、GPU処理の完了を待機する
     /// </summary>
-    void WaitForGpu();
+    bool WaitForGpu();
     bool WaitForGpuIfPossible();
 
     /// <summary>
@@ -165,6 +182,11 @@ class DirectXCommon {
     /// </summary>
     bool IsInitialized() const {
         return commandQueue_ && fence_ && fenceEvent_ != nullptr;
+    }
+
+    bool IsReadyForRendering() const {
+        return IsInitialized() && commandList_ && swapChain_ &&
+               HasFrameResources();
     }
 
     /// <summary>
@@ -191,6 +213,7 @@ class DirectXCommon {
     /// コマンドリストが記録中かを取得する
     /// </summary>
     bool IsCommandListRecording() const { return isCommandListRecording_; }
+    bool IsUploadPassActive() const { return uploadPassActive_; }
 
     /// <summary>
     /// スワップチェーンのバッファ数を取得する
@@ -361,6 +384,12 @@ class DirectXCommon {
     void WaitForFrame(UINT frameIndex);
 
     void TrackGpuPhase(const char *phase);
+    bool HasFrameResources() const;
+    void SnapshotFrameResourceStates();
+    void RestoreFrameResourceStates() noexcept;
+    void ClearFrameResourceStateSnapshot() noexcept;
+    void RestoreFrameRollbacks() noexcept;
+    void ClearFrameRollbacks() noexcept;
 
   private:
     static constexpr UINT kSwapChainBufferCount = 2;
@@ -385,8 +414,12 @@ class DirectXCommon {
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap_;
     Microsoft::WRL::ComPtr<ID3D12Resource> backBuffers_[kSwapChainBufferCount];
     D3D12_RESOURCE_STATES backBufferStates_[kSwapChainBufferCount]{};
+    D3D12_RESOURCE_STATES
+        frameBackBufferStates_[kSwapChainBufferCount]{};
     Microsoft::WRL::ComPtr<ID3D12Resource> sceneColorBuffer_;
     D3D12_RESOURCE_STATES sceneColorState_ =
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    D3D12_RESOURCE_STATES frameSceneColorState_ =
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     UINT sceneSrvIndex_ = UINT_MAX;
     UINT rtvDescriptorSize_ = 0;
@@ -410,4 +443,8 @@ class DirectXCommon {
     UINT depthSrvIndex_ = UINT_MAX;
     D3D12_GPU_DESCRIPTOR_HANDLE depthSrvGpuHandle_{};
     D3D12_RESOURCE_STATES depthState_ = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+    D3D12_RESOURCE_STATES frameDepthState_ =
+        D3D12_RESOURCE_STATE_DEPTH_WRITE;
+    bool hasFrameStateSnapshot_ = false;
+    FrameRollbackRegistry frameRollbacks_;
 };

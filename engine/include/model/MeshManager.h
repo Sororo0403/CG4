@@ -18,6 +18,8 @@ struct Mesh {
 
     uint32_t indexCount = 0;
     uint32_t vertexStride = 0;
+    uint64_t vertexBytes = 0;
+    uint64_t indexBytes = 0;
     D3D12_PRIMITIVE_TOPOLOGY primitiveTopology =
         D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 };
@@ -38,7 +40,8 @@ class MeshManager {
     /// <summary>
     /// 管理中のメッシュGPUリソースを解放する
     /// </summary>
-    void Finalize();
+    bool Finalize();
+    bool Finalize(bool allowFrameAbort);
 
     /// <summary>
     /// GPU転送完了後にメッシュ作成用の一時UploadBufferを解放する
@@ -61,6 +64,11 @@ class MeshManager {
                             D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     /// <summary>
+    /// 登録済みメッシュを破棄してIDを無効化する
+    /// </summary>
+    void DestroyMesh(uint32_t meshId);
+
+    /// <summary>
     /// メッシュ情報を取得する
     /// </summary>
     /// <param name="meshId">メッシュID</param>
@@ -71,9 +79,14 @@ class MeshManager {
     /// 指定IDが有効なメッシュを指しているかを取得する
     /// </summary>
     bool IsValidMeshId(uint32_t meshId) const;
+    size_t GetActiveMeshCount() const;
+    uint64_t GetActiveGpuBytes() const;
+    uint64_t GetDeferredGpuBytes() const;
+    uint64_t GetUploadBytes() const;
 
   private:
     DirectXCommon *dxCommon_ = nullptr;
     std::vector<Mesh> meshes_;
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> uploadBuffers_;
+    std::vector<Mesh> deferredDestroyedMeshes_;
 };

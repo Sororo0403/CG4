@@ -1,11 +1,13 @@
 #include "model/ModelRenderer.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
+#include "graphics/GpuResourceHelpers.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
 #include "model/MaterialManager.h"
 #include "model/MeshManager.h"
+#include "model/RendererMath.h"
 #include "model/Vertex.h"
 #include "texture/TextureManager.h"
 #include <algorithm>
@@ -17,6 +19,8 @@
 
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
+using GpuResourceHelpers::CreateCommittedResourceChecked;
+using GpuResourceHelpers::MapResourceChecked;
 
 namespace {
 
@@ -70,7 +74,12 @@ class ScopedSrvAllocations {
         if (index == UINT_MAX) {
             return UINT_MAX;
         }
-        indices_.push_back(index);
+        try {
+            indices_.push_back(index);
+        } catch (...) {
+            srvManager_->FreeIfAllocated(index);
+            return UINT_MAX;
+        }
         return index;
     }
 
@@ -98,10 +107,11 @@ class SkinClusterMapGuard {
                 skinCluster.influenceResource->Unmap(0, nullptr);
                 skinCluster.mappedInfluence = nullptr;
             }
-            if (skinCluster.paletteResource &&
-                skinCluster.mappedPalette != nullptr) {
-                skinCluster.paletteResource->Unmap(0, nullptr);
-                skinCluster.mappedPalette = nullptr;
+            for (SkinPaletteFrame &frame : skinCluster.paletteFrames) {
+                if (frame.resource && frame.mappedPalette != nullptr) {
+                    frame.resource->Unmap(0, nullptr);
+                    frame.mappedPalette = nullptr;
+                }
             }
         }
     }
@@ -173,66 +183,71 @@ uint32_t ResolveNormalTextureId(TextureManager *textureManager,
 
 }
 
-static XMFLOAT4X4 StoreMatrix(const XMMATRIX &matrix) {
-    XMFLOAT4X4 result{};
-    XMStoreFloat4x4(&result, matrix);
-    return result;
-}
-
-static XMMATRIX MakeSafeInverseTranspose(const XMMATRIX &matrix) {
-    const XMVECTOR determinant = XMMatrixDeterminant(matrix);
-    const float determinantValue = XMVectorGetX(determinant);
-    if (!std::isfinite(determinantValue) ||
-        std::abs(determinantValue) <= 0.000001f) {
-        return XMMatrixIdentity();
-    }
-
-    return XMMatrixTranspose(XMMatrixInverse(nullptr, matrix));
-}
-
-static void NormalizeInfluence(VertexInfluence &influence) {
-    float totalWeight = 0.0f;
-    for (float weight : influence.weights) {
-        totalWeight += weight;
-    }
-
-    if (totalWeight <= 0.00001f) {
-        return;
-    }
-
-    for (float &weight : influence.weights) {
-        weight /= totalWeight;
-    }
-}
-
 static bool HasSkinningDescriptors(const SkinCluster &skinCluster) {
     return skinCluster.inputVertexSrvGpuHandle.ptr != 0 &&
            skinCluster.influenceSrvGpuHandle.ptr != 0 &&
-           skinCluster.paletteSrvGpuHandle.ptr != 0 &&
            skinCluster.skinnedVertexUavGpuHandle.ptr != 0;
 }
 
-static bool CreateCommittedResourceChecked(
-    ID3D12Device *device, const D3D12_HEAP_PROPERTIES *heapProperties,
-    D3D12_HEAP_FLAGS heapFlags, const D3D12_RESOURCE_DESC *resourceDesc,
-    D3D12_RESOURCE_STATES initialState, ID3D12Resource **resource) {
-    if (device == nullptr || heapProperties == nullptr ||
-        resourceDesc == nullptr || resource == nullptr) {
-        return false;
+static size_t CurrentPaletteFrameIndex(DirectXCommon *dxCommon,
+                                       const SkinCluster &skinCluster) {
+    const size_t frameCount = skinCluster.paletteFrames.size();
+    if (frameCount == 0) {
+        return 0;
     }
-    *resource = nullptr;
-    return SUCCEEDED(device->CreateCommittedResource(
-        heapProperties, heapFlags, resourceDesc, initialState, nullptr,
-        IID_PPV_ARGS(resource))) &&
-           *resource != nullptr;
+    return dxCommon != nullptr ? dxCommon->GetBackBufferIndex() % frameCount
+                               : 0;
 }
 
-static bool MapResourceChecked(ID3D12Resource *resource, void **mapped) {
-    if (resource == nullptr || mapped == nullptr) {
+static const SkinPaletteFrame *
+GetCurrentPaletteFrame(const SkinCluster &skinCluster,
+                       DirectXCommon *dxCommon) {
+    const size_t frameIndex = CurrentPaletteFrameIndex(dxCommon, skinCluster);
+    if (frameIndex >= skinCluster.paletteFrames.size()) {
+        return nullptr;
+    }
+    return &skinCluster.paletteFrames[frameIndex];
+}
+
+static D3D12_GPU_VIRTUAL_ADDRESS
+GetCurrentPaletteAddress(const SkinCluster &skinCluster,
+                         DirectXCommon *dxCommon) {
+    const SkinPaletteFrame *frame =
+        GetCurrentPaletteFrame(skinCluster, dxCommon);
+    if (frame == nullptr || !frame->resource) {
+        return 0;
+    }
+    return frame->resource->GetGPUVirtualAddress();
+}
+
+static void MarkAllPaletteFramesDirty(SkinCluster &skinCluster) {
+    for (size_t frameIndex = 0;
+         frameIndex < skinCluster.paletteDirtyFrames.size(); ++frameIndex) {
+        skinCluster.paletteDirtyFrames[frameIndex] = true;
+    }
+}
+
+static bool UploadCurrentPaletteIfDirty(const SkinCluster &skinCluster,
+                                        DirectXCommon *dxCommon) {
+    if (skinCluster.paletteCount == 0 || skinCluster.paletteCpuData.empty()) {
         return false;
     }
-    *mapped = nullptr;
-    return SUCCEEDED(resource->Map(0, nullptr, mapped)) && *mapped != nullptr;
+    const size_t frameIndex = CurrentPaletteFrameIndex(dxCommon, skinCluster);
+    if (frameIndex >= skinCluster.paletteFrames.size()) {
+        return false;
+    }
+    const SkinPaletteFrame &frame = skinCluster.paletteFrames[frameIndex];
+    if (!frame.resource || frame.mappedPalette == nullptr) {
+        return false;
+    }
+    if (frameIndex < skinCluster.paletteDirtyFrames.size() &&
+        skinCluster.paletteDirtyFrames[frameIndex]) {
+        std::memcpy(frame.mappedPalette, skinCluster.paletteCpuData.data(),
+                    static_cast<size_t>(skinCluster.paletteCount) *
+                        sizeof(WellForGPU));
+        skinCluster.paletteDirtyFrames[frameIndex] = false;
+    }
+    return frame.resource->GetGPUVirtualAddress() != 0;
 }
 
 struct PerObjectConstBufferData {
@@ -241,36 +256,13 @@ struct PerObjectConstBufferData {
     XMFLOAT4X4 matWorldInverseTranspose;
 };
 
-struct SceneConstBufferData {
-    struct PointLightData {
-        XMFLOAT4 positionRange;
-        XMFLOAT4 colorIntensity;
-    };
-
-    XMFLOAT4 cameraPos;
-    XMFLOAT4 keyLightDirection;
-    XMFLOAT4 keyLightColor;
-    XMFLOAT4 fillLightDirection;
-    XMFLOAT4 fillLightColor;
-    XMFLOAT4 ambientColor;
-    PointLightData pointLights[2];
-    XMFLOAT4 lightingParams;
-    XMFLOAT4 lightingModeParams;
-    XMFLOAT4 fogColor;
-    XMFLOAT4 fogParams;
-    XMFLOAT4X4 viewProjection;
-    XMFLOAT4X4 lightViewProjection;
-    XMFLOAT4 shadowParams;
-    XMFLOAT4 shadowFilterParams;
-};
-
-void ModelRenderer::CreateSkinClusters(Model &model) {
+bool ModelRenderer::CreateSkinClusters(Model &model) {
     if (!dxCommon_ || !srvManager_ || !meshManager_) {
-        return;
+        return false;
     }
     auto *device = dxCommon_->GetDevice();
     if (device == nullptr) {
-        return;
+        return false;
     }
     ScopedSrvAllocations srvAllocations(srvManager_);
     SkinClusterMapGuard mapGuard(model);
@@ -288,18 +280,19 @@ void ModelRenderer::CreateSkinClusters(Model &model) {
                                       model.bones.size(),
                                       "ModelRenderer bone count overflow"));
         if (jointCount == UINT32_MAX) {
-            continue;
+            return false;
         }
 
         const bool needsSkinnedBuffers =
             subMesh.vertexCount > 0 && !subMesh.skinClusterData.empty();
-        const UINT requiredSrvCount = needsSkinnedBuffers ? 4u : 1u;
-        if (!srvManager_->CanAllocate(requiredSrvCount)) {
-            return;
+        const UINT requiredSrvCount = needsSkinnedBuffers ? 3u : 0u;
+        if (requiredSrvCount > 0 &&
+            !srvManager_->CanAllocateDescriptors(requiredSrvCount)) {
+            return false;
         }
 
         skinCluster.inverseBindPoseMatrices.assign(
-            jointCount, StoreMatrix(XMMatrixIdentity()));
+            jointCount, RendererMath::StoreMatrix(XMMatrixIdentity()));
 
         if (needsSkinnedBuffers) {
             const Mesh &mesh = meshManager_->GetMesh(subMesh.meshId);
@@ -307,7 +300,7 @@ void ModelRenderer::CreateSkinClusters(Model &model) {
                 CheckedBufferSize(sizeof(VertexInfluence), subMesh.vertexCount,
                                   "ModelRenderer influence buffer size overflow");
             if (influenceBufferSize == 0) {
-                continue;
+                return false;
             }
 
             CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
@@ -318,13 +311,12 @@ void ModelRenderer::CreateSkinClusters(Model &model) {
                     device, &uploadHeap, D3D12_HEAP_FLAG_NONE, &influenceDesc,
                     D3D12_RESOURCE_STATE_GENERIC_READ,
                     skinCluster.influenceResource.GetAddressOf())) {
-                return;
+                return false;
             }
 
-            if (!MapResourceChecked(
-                    skinCluster.influenceResource.Get(),
-                    reinterpret_cast<void **>(&skinCluster.mappedInfluence))) {
-                return;
+            if (!MapResourceChecked(skinCluster.influenceResource.Get(),
+                                    &skinCluster.mappedInfluence)) {
+                return false;
             }
 
             skinCluster.influenceCount = subMesh.vertexCount;
@@ -333,7 +325,7 @@ void ModelRenderer::CreateSkinClusters(Model &model) {
 
             const UINT inputVertexSrvIndex = srvAllocations.Allocate();
             if (inputVertexSrvIndex == UINT_MAX) {
-                return;
+                return false;
             }
             skinCluster.inputVertexSrvIndex = inputVertexSrvIndex;
             skinCluster.inputVertexSrvCpuHandle =
@@ -342,7 +334,7 @@ void ModelRenderer::CreateSkinClusters(Model &model) {
                 srvManager_->GetGpuHandle(inputVertexSrvIndex);
             if (skinCluster.inputVertexSrvCpuHandle.ptr == 0 ||
                 skinCluster.inputVertexSrvGpuHandle.ptr == 0) {
-                return;
+                return false;
             }
 
             D3D12_SHADER_RESOURCE_VIEW_DESC vertexSrvDesc{};
@@ -360,7 +352,7 @@ void ModelRenderer::CreateSkinClusters(Model &model) {
 
             const UINT influenceSrvIndex = srvAllocations.Allocate();
             if (influenceSrvIndex == UINT_MAX) {
-                return;
+                return false;
             }
             skinCluster.influenceSrvIndex = influenceSrvIndex;
             skinCluster.influenceSrvCpuHandle =
@@ -369,7 +361,7 @@ void ModelRenderer::CreateSkinClusters(Model &model) {
                 srvManager_->GetGpuHandle(influenceSrvIndex);
             if (skinCluster.influenceSrvCpuHandle.ptr == 0 ||
                 skinCluster.influenceSrvGpuHandle.ptr == 0) {
-                return;
+                return false;
             }
 
             D3D12_SHADER_RESOURCE_VIEW_DESC influenceSrvDesc{};
@@ -390,7 +382,7 @@ void ModelRenderer::CreateSkinClusters(Model &model) {
                 CheckedBufferSize(sizeof(Vertex), subMesh.vertexCount,
                                   "ModelRenderer skinned vertex buffer size overflow");
             if (skinnedVertexBufferSize == 0) {
-                continue;
+                return false;
             }
             CD3DX12_HEAP_PROPERTIES defaultHeap(D3D12_HEAP_TYPE_DEFAULT);
             auto skinnedVertexDesc = CD3DX12_RESOURCE_DESC::Buffer(
@@ -402,7 +394,7 @@ void ModelRenderer::CreateSkinClusters(Model &model) {
                     &skinnedVertexDesc,
                     D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
                     skinCluster.skinnedVertexResource.GetAddressOf())) {
-                return;
+                return false;
             }
 
             skinCluster.skinnedVertexBufferView.BufferLocation =
@@ -417,7 +409,7 @@ void ModelRenderer::CreateSkinClusters(Model &model) {
 
             const UINT skinnedVertexUavIndex = srvAllocations.Allocate();
             if (skinnedVertexUavIndex == UINT_MAX) {
-                return;
+                return false;
             }
             skinCluster.skinnedVertexUavIndex = skinnedVertexUavIndex;
             skinCluster.skinnedVertexUavCpuHandle =
@@ -426,7 +418,7 @@ void ModelRenderer::CreateSkinClusters(Model &model) {
                 srvManager_->GetGpuHandle(skinnedVertexUavIndex);
             if (skinCluster.skinnedVertexUavCpuHandle.ptr == 0 ||
                 skinCluster.skinnedVertexUavGpuHandle.ptr == 0) {
-                return;
+                return false;
             }
 
             D3D12_UNORDERED_ACCESS_VIEW_DESC skinnedVertexUavDesc{};
@@ -439,6 +431,13 @@ void ModelRenderer::CreateSkinClusters(Model &model) {
             device->CreateUnorderedAccessView(
                 skinCluster.skinnedVertexResource.Get(), nullptr,
                 &skinnedVertexUavDesc, skinCluster.skinnedVertexUavCpuHandle);
+        }
+        if (!needsSkinnedBuffers) {
+            skinCluster.paletteCount = 0;
+            skinCluster.paletteCpuData.clear();
+            skinCluster.paletteFrames.clear();
+            skinCluster.paletteDirtyFrames.clear();
+            continue;
         }
 
         for (const auto &[jointName, jointWeightData] :
@@ -479,87 +478,74 @@ void ModelRenderer::CreateSkinClusters(Model &model) {
 
         for (uint32_t vertexIndex = 0; vertexIndex < skinCluster.influenceCount;
              ++vertexIndex) {
-            NormalizeInfluence(skinCluster.mappedInfluence[vertexIndex]);
+            RendererMath::NormalizeInfluence(
+                skinCluster.mappedInfluence[vertexIndex]);
         }
 
         const UINT paletteBufferSize =
             CheckedBufferSize(sizeof(WellForGPU), jointCount,
                               "ModelRenderer palette buffer size overflow");
         if (paletteBufferSize == 0) {
-            continue;
+            return false;
         }
 
         CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
         auto paletteDesc = CD3DX12_RESOURCE_DESC::Buffer(paletteBufferSize);
 
-        if (!CreateCommittedResourceChecked(
-                device, &uploadHeap, D3D12_HEAP_FLAG_NONE, &paletteDesc,
-                D3D12_RESOURCE_STATE_GENERIC_READ,
-                skinCluster.paletteResource.GetAddressOf())) {
-            return;
-        }
-
-        if (!MapResourceChecked(
-                skinCluster.paletteResource.Get(),
-                reinterpret_cast<void **>(&skinCluster.mappedPalette))) {
-            return;
-        }
-
         skinCluster.paletteCount = jointCount;
+        skinCluster.paletteCpuData.assign(jointCount, WellForGPU{});
         for (uint32_t jointIndex = 0; jointIndex < jointCount; ++jointIndex) {
-            skinCluster.mappedPalette[jointIndex].skeletonSpaceMatrix =
-                StoreMatrix(XMMatrixTranspose(XMMatrixIdentity()));
-            skinCluster.mappedPalette[jointIndex]
+            skinCluster.paletteCpuData[jointIndex].skeletonSpaceMatrix =
+                RendererMath::StoreMatrix(XMMatrixTranspose(XMMatrixIdentity()));
+            skinCluster.paletteCpuData[jointIndex]
                 .skeletonSpaceInverseTransposeMatrix =
-                StoreMatrix(XMMatrixTranspose(XMMatrixIdentity()));
+                RendererMath::StoreMatrix(XMMatrixTranspose(XMMatrixIdentity()));
         }
 
-        const UINT srvIndex = srvAllocations.Allocate();
-        if (srvIndex == UINT_MAX) {
-            return;
-        }
-        skinCluster.paletteSrvIndex = srvIndex;
-        skinCluster.paletteSrvCpuHandle = srvManager_->GetCpuHandle(srvIndex);
-        skinCluster.paletteSrvGpuHandle = srvManager_->GetGpuHandle(srvIndex);
-        if (skinCluster.paletteSrvCpuHandle.ptr == 0 ||
-            skinCluster.paletteSrvGpuHandle.ptr == 0) {
-            return;
-        }
+        const UINT frameCount =
+            (std::max)(1u, dxCommon_->GetSwapChainBufferCount());
+        skinCluster.paletteFrames.resize(frameCount);
+        skinCluster.paletteDirtyFrames.assign(frameCount, false);
+        for (SkinPaletteFrame &frame : skinCluster.paletteFrames) {
+            if (!CreateCommittedResourceChecked(
+                    device, &uploadHeap, D3D12_HEAP_FLAG_NONE, &paletteDesc,
+                    D3D12_RESOURCE_STATE_GENERIC_READ,
+                    frame.resource.GetAddressOf())) {
+                return false;
+            }
 
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
-        srvDesc.Shader4ComponentMapping =
-            D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-        srvDesc.Buffer.FirstElement = 0;
-        srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-        srvDesc.Buffer.NumElements = jointCount;
-        srvDesc.Buffer.StructureByteStride = sizeof(WellForGPU);
+            if (!MapResourceChecked(frame.resource.Get(),
+                                    &frame.mappedPalette)) {
+                return false;
+            }
 
-        device->CreateShaderResourceView(skinCluster.paletteResource.Get(),
-                                         &srvDesc,
-                                         skinCluster.paletteSrvCpuHandle);
+            std::memcpy(frame.mappedPalette, skinCluster.paletteCpuData.data(),
+                        static_cast<size_t>(jointCount) * sizeof(WellForGPU));
+        }
     }
 
     UpdateSkinClusters(model);
     mapGuard.Commit();
     srvAllocations.Commit();
+    return true;
 }
 
 void ModelRenderer::UpdateSkinClusters(Model &model) {
     for (auto &subMesh : model.subMeshes) {
         SkinCluster &skinCluster = subMesh.skinCluster;
-        if (!skinCluster.mappedPalette || skinCluster.paletteCount == 0) {
+        if (skinCluster.paletteCpuData.empty() ||
+            skinCluster.paletteCount == 0) {
             continue;
         }
 
         skinCluster.skinningValid = false;
 
         if (model.bones.empty() || model.skeletonSpaceMatrices.empty()) {
-            skinCluster.mappedPalette[0].skeletonSpaceMatrix =
-                StoreMatrix(XMMatrixTranspose(XMMatrixIdentity()));
-            skinCluster.mappedPalette[0].skeletonSpaceInverseTransposeMatrix =
-                StoreMatrix(XMMatrixTranspose(XMMatrixIdentity()));
+            skinCluster.paletteCpuData[0].skeletonSpaceMatrix =
+                RendererMath::StoreMatrix(XMMatrixTranspose(XMMatrixIdentity()));
+            skinCluster.paletteCpuData[0].skeletonSpaceInverseTransposeMatrix =
+                RendererMath::StoreMatrix(XMMatrixTranspose(XMMatrixIdentity()));
+            MarkAllPaletteFramesDirty(skinCluster);
             continue;
         }
 
@@ -577,15 +563,16 @@ void ModelRenderer::UpdateSkinClusters(Model &model) {
                 XMLoadFloat4x4(&model.skeletonSpaceMatrices[jointIndex]);
             XMMATRIX skinningMatrix = inverseBindPose * skeletonSpace;
             XMMATRIX skinningInverseTranspose =
-                MakeSafeInverseTranspose(skinningMatrix);
+                RendererMath::MakeSafeInverseTranspose(skinningMatrix);
 
             XMStoreFloat4x4(
-                &skinCluster.mappedPalette[jointIndex].skeletonSpaceMatrix,
+                &skinCluster.paletteCpuData[jointIndex].skeletonSpaceMatrix,
                 XMMatrixTranspose(skinningMatrix));
-            XMStoreFloat4x4(&skinCluster.mappedPalette[jointIndex]
+            XMStoreFloat4x4(&skinCluster.paletteCpuData[jointIndex]
                                  .skeletonSpaceInverseTransposeMatrix,
                             XMMatrixTranspose(skinningInverseTranspose));
         }
+        MarkAllPaletteFramesDirty(skinCluster);
     }
 }
 void ModelRenderer::CreateSkinningRootSignature() {
@@ -604,9 +591,7 @@ void ModelRenderer::CreateSkinningRootSignature() {
     influenceRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
     params[2].InitAsDescriptorTable(1, &influenceRange);
 
-    CD3DX12_DESCRIPTOR_RANGE matrixPaletteRange{};
-    matrixPaletteRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
-    params[3].InitAsDescriptorTable(1, &matrixPaletteRange);
+    params[3].InitAsShaderResourceView(2);
 
     CD3DX12_DESCRIPTOR_RANGE skinnedVertexRange{};
     skinnedVertexRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
@@ -668,11 +653,19 @@ void ModelRenderer::PrepareSkinning(
 
 void ModelRenderer::DispatchSkinningBatch(const Model &model) {
     std::vector<const ModelSubMesh *> jobs;
-    jobs.reserve(model.subMeshes.size());
+    try {
+        jobs.reserve(model.subMeshes.size());
+    } catch (...) {
+        return;
+    }
 
     for (const auto &subMesh : model.subMeshes) {
         if (NeedsSkinningDispatch(subMesh)) {
-            jobs.push_back(&subMesh);
+            try {
+                jobs.push_back(&subMesh);
+            } catch (...) {
+                return;
+            }
         }
     }
 
@@ -686,10 +679,18 @@ void ModelRenderer::DispatchSkinningBatch(
         if (!model) {
             continue;
         }
-        jobs.reserve(jobs.size() + model->subMeshes.size());
+        try {
+            jobs.reserve(jobs.size() + model->subMeshes.size());
+        } catch (...) {
+            return;
+        }
         for (const auto &subMesh : model->subMeshes) {
             if (NeedsSkinningDispatch(subMesh)) {
-                jobs.push_back(&subMesh);
+                try {
+                    jobs.push_back(&subMesh);
+                } catch (...) {
+                    return;
+                }
             }
         }
     }
@@ -719,8 +720,35 @@ void ModelRenderer::DispatchSkinning(const ModelSubMesh &subMesh) {
     if (cmd == nullptr || heap == nullptr) {
         return;
     }
+    if (!UploadCurrentPaletteIfDirty(skinCluster, dxCommon_)) {
+        return;
+    }
+    const D3D12_GPU_VIRTUAL_ADDRESS paletteAddress =
+        GetCurrentPaletteAddress(skinCluster, dxCommon_);
+    if (paletteAddress == 0) {
+        return;
+    }
     ID3D12DescriptorHeap *heaps[] = {heap};
     cmd->SetDescriptorHeaps(1, heaps);
+
+    const SkinCluster *trackedSkinCluster = &skinCluster;
+    const D3D12_RESOURCE_STATES previousSkinnedVertexState =
+        skinCluster.skinnedVertexState;
+    const uint64_t previousLastSkinningFrame =
+        skinCluster.lastSkinningFrame;
+    const bool previousSkinningValid = skinCluster.skinningValid;
+    if (!dxCommon_->RegisterFrameRollback(
+        trackedSkinCluster,
+        [trackedSkinCluster, previousSkinnedVertexState,
+         previousLastSkinningFrame, previousSkinningValid]() {
+            trackedSkinCluster->skinnedVertexState =
+                previousSkinnedVertexState;
+            trackedSkinCluster->lastSkinningFrame =
+                previousLastSkinningFrame;
+            trackedSkinCluster->skinningValid = previousSkinningValid;
+        })) {
+        return;
+    }
 
     if (skinCluster.skinnedVertexState !=
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
@@ -739,7 +767,7 @@ void ModelRenderer::DispatchSkinning(const ModelSubMesh &subMesh) {
     cmd->SetComputeRoot32BitConstant(0, subMesh.vertexCount, 0);
     cmd->SetComputeRootDescriptorTable(1, skinCluster.inputVertexSrvGpuHandle);
     cmd->SetComputeRootDescriptorTable(2, skinCluster.influenceSrvGpuHandle);
-    cmd->SetComputeRootDescriptorTable(3, skinCluster.paletteSrvGpuHandle);
+    cmd->SetComputeRootShaderResourceView(3, paletteAddress);
     cmd->SetComputeRootDescriptorTable(
         4, skinCluster.skinnedVertexUavGpuHandle);
 

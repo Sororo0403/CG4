@@ -1,6 +1,9 @@
 #include "graphics/PostProcessSystem.h"
+#include "core/Numeric.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
+#include "graphics/GpuResourceHelpers.h"
+#include "graphics/GpuResourceLifetime.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
@@ -9,23 +12,11 @@
 #include <limits>
 
 namespace {
-float FiniteOr(float value, float fallback) {
-    return std::isfinite(value) ? value : fallback;
-}
-
-float AtLeastFinite(float value, float fallback, float minimum) {
-    if (!std::isfinite(value)) {
-        return fallback;
-    }
-    return (std::max)(value, minimum);
-}
-
-float ClampFinite(float value, float fallback, float minimum, float maximum) {
-    if (!std::isfinite(value)) {
-        return fallback;
-    }
-    return std::clamp(value, minimum, maximum);
-}
+using GpuResourceHelpers::CreateCommittedResourceChecked;
+using GpuResourceHelpers::MapResourceChecked;
+using Numeric::AtLeastFinite;
+using Numeric::ClampFinite;
+using Numeric::FiniteOr;
 
 template <typename Enum>
 int32_t ValidModeOrNone(Enum mode, int32_t minValue, int32_t maxValue) {
@@ -68,32 +59,10 @@ UINT Align256(size_t size) {
     return static_cast<UINT>((size + 0xFFu) & ~size_t{0xFFu});
 }
 
-bool CreateCommittedResourceChecked(
-    ID3D12Device *device, const D3D12_HEAP_PROPERTIES *heapProperties,
-    D3D12_HEAP_FLAGS heapFlags, const D3D12_RESOURCE_DESC *resourceDesc,
-    D3D12_RESOURCE_STATES initialState, ID3D12Resource **resource) {
-    if (device == nullptr || heapProperties == nullptr ||
-        resourceDesc == nullptr || resource == nullptr) {
-        return false;
-    }
-    *resource = nullptr;
-    return SUCCEEDED(device->CreateCommittedResource(
-        heapProperties, heapFlags, resourceDesc, initialState, nullptr,
-        IID_PPV_ARGS(resource))) &&
-           *resource != nullptr;
-}
-
-bool MapResourceChecked(ID3D12Resource *resource, void **mapped) {
-    if (resource == nullptr || mapped == nullptr) {
-        return false;
-    }
-    *mapped = nullptr;
-    return SUCCEEDED(resource->Map(0, nullptr, mapped)) && *mapped != nullptr;
-}
 } // namespace
 
 PostProcessSystem::~PostProcessSystem() {
-    Finalize();
+    Finalize(true);
 }
 
 void PostProcessSystem::Initialize(DirectXCommon *dxCommon,
@@ -104,7 +73,9 @@ void PostProcessSystem::Initialize(DirectXCommon *dxCommon,
         return;
     }
 
-    Finalize();
+    if (!Finalize()) {
+        return;
+    }
 
     dxCommon_ = dxCommon;
     srvManager_ = srvManager;
@@ -114,28 +85,33 @@ void PostProcessSystem::Initialize(DirectXCommon *dxCommon,
     CreateConstantBuffer();
     Resize(width, height);
     if (!rootSignature_ || !pipelineState_ || !copyPipelineState_ ||
-        !constBuffer_ || mappedConstBuffer_ == nullptr) {
+        !HasConstantBuffers()) {
         Finalize();
     }
 }
 
-void PostProcessSystem::Finalize() {
-    if (constBuffer_ && dxCommon_ != nullptr && !dxCommon_->IsDeviceRemoved() &&
-        !dxCommon_->IsCommandListRecording()) {
-        dxCommon_->WaitForGpuIfPossible();
+bool PostProcessSystem::Finalize() { return Finalize(false); }
+
+bool PostProcessSystem::Finalize(bool allowFrameAbort) {
+    const bool hasGpuResources =
+        !constantFrames_.empty() || pipelineState_ || copyPipelineState_ ||
+        rootSignature_;
+    if (!CanReleaseGpuResources(dxCommon_, hasGpuResources,
+                                allowFrameAbort)) {
+        return false;
     }
 
-    if (constBuffer_ && mappedConstBuffer_ != nullptr) {
-        constBuffer_->Unmap(0, nullptr);
-        mappedConstBuffer_ = nullptr;
+    for (ConstantFrame &frame : constantFrames_) {
+        frame.Reset();
     }
+    constantFrames_.clear();
 
-    constBuffer_.Reset();
     pipelineState_.Reset();
     copyPipelineState_.Reset();
     rootSignature_.Reset();
     dxCommon_ = nullptr;
     srvManager_ = nullptr;
+    return true;
 }
 
 void PostProcessSystem::Resize(int width, int height) {
@@ -182,7 +158,7 @@ bool PostProcessSystem::RequiresPostProcess() const {
 void PostProcessSystem::Draw(D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
                               D3D12_GPU_DESCRIPTOR_HANDLE depthHandle) {
     if (!dxCommon_ || !srvManager_ || !rootSignature_ || !pipelineState_ ||
-        !copyPipelineState_ || !constBuffer_) {
+        !copyPipelineState_ || !HasConstantBuffers()) {
         return;
     }
     if (textureHandle.ptr == 0 || depthHandle.ptr == 0) {
@@ -191,10 +167,14 @@ void PostProcessSystem::Draw(D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
 
     auto commandList = dxCommon_->GetCommandList();
     ID3D12DescriptorHeap *heap = srvManager_->GetHeap();
+    ConstantFrame *constantFrame = GetCurrentConstantFrame();
     if (commandList == nullptr || heap == nullptr ||
-        constBuffer_->GetGPUVirtualAddress() == 0) {
+        constantFrame == nullptr || !constantFrame->resource ||
+        constantFrame->mapped == nullptr ||
+        constantFrame->resource->GetGPUVirtualAddress() == 0) {
         return;
     }
+    *constantFrame->mapped = constants_;
 
     ID3D12DescriptorHeap *heaps[] = {heap};
     commandList->SetDescriptorHeaps(1, heaps);
@@ -207,7 +187,7 @@ void PostProcessSystem::Draw(D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
     commandList->SetGraphicsRootDescriptorTable(0, textureHandle);
     commandList->SetGraphicsRootDescriptorTable(1, depthHandle);
     commandList->SetGraphicsRootConstantBufferView(
-        2, constBuffer_->GetGPUVirtualAddress());
+        2, constantFrame->resource->GetGPUVirtualAddress());
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->DrawInstanced(3, 1, 0, 0);
 }
@@ -311,24 +291,62 @@ void PostProcessSystem::CreateConstantBuffer() {
     CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
     auto desc = CD3DX12_RESOURCE_DESC::Buffer(size);
 
-    if (!CreateCommittedResourceChecked(
-            dxCommon_->GetDevice(), &heap, D3D12_HEAP_FLAG_NONE, &desc,
-            D3D12_RESOURCE_STATE_GENERIC_READ, constBuffer_.GetAddressOf())) {
-        return;
-    }
+    const UINT frameCount = (std::max)(1u, dxCommon_->GetSwapChainBufferCount());
+    constantFrames_.resize(frameCount);
+    for (ConstantFrame &frame : constantFrames_) {
+        if (!CreateCommittedResourceChecked(
+                dxCommon_->GetDevice(), &heap, D3D12_HEAP_FLAG_NONE, &desc,
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                frame.resource.GetAddressOf())) {
+            return;
+        }
 
-    if (!MapResourceChecked(constBuffer_.Get(),
-                            reinterpret_cast<void **>(&mappedConstBuffer_))) {
-        return;
+        if (!MapResourceChecked(frame.resource.Get(), &frame.mapped)) {
+            return;
+        }
     }
 
     UpdateConstantBuffer();
 }
 
-void PostProcessSystem::UpdateConstantBuffer() {
-    if (!mappedConstBuffer_) {
-        return;
+PostProcessSystem::ConstantFrame *
+PostProcessSystem::GetCurrentConstantFrame() {
+    if (constantFrames_.empty()) {
+        return nullptr;
     }
+    const size_t frameIndex =
+        dxCommon_ != nullptr
+            ? dxCommon_->GetBackBufferIndex() % constantFrames_.size()
+            : 0;
+    return &constantFrames_[frameIndex];
+}
+
+const PostProcessSystem::ConstantFrame *
+PostProcessSystem::GetCurrentConstantFrame() const {
+    if (constantFrames_.empty()) {
+        return nullptr;
+    }
+    const size_t frameIndex =
+        dxCommon_ != nullptr
+            ? dxCommon_->GetBackBufferIndex() % constantFrames_.size()
+            : 0;
+    return &constantFrames_[frameIndex];
+}
+
+bool PostProcessSystem::HasConstantBuffers() const {
+    if (constantFrames_.empty()) {
+        return false;
+    }
+    for (const ConstantFrame &frame : constantFrames_) {
+        if (!frame.resource || frame.mapped == nullptr) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void PostProcessSystem::UpdateConstantBuffer() {
+    PostProcessConstants *mappedConstBuffer_ = &constants_;
 
     const auto &color = profile_.colorGrade;
     const auto &filter = profile_.filter;
@@ -346,8 +364,8 @@ void PostProcessSystem::UpdateConstantBuffer() {
     const auto &lensFlare = profile_.lensFlare;
     const PostProcessProfile defaults{};
 
-    float nearZ = AtLeastFinite(edge.nearZ, defaults.edge.nearZ, 0.0001f);
-    float farZ = AtLeastFinite(edge.farZ, defaults.edge.farZ, 0.0002f);
+    float nearZ = AtLeastFinite(edge.nearZ, 0.0001f, defaults.edge.nearZ);
+    float farZ = AtLeastFinite(edge.farZ, 0.0002f, defaults.edge.farZ);
     if (farZ <= nearZ) {
         farZ = (std::max)(defaults.edge.farZ, nearZ + 0.0001f);
     }
@@ -361,49 +379,53 @@ void PostProcessSystem::UpdateConstantBuffer() {
     mappedConstBuffer_->edgeMode =
         ValidModeOrNone(edge.mode, 0, static_cast<int32_t>(PostProcessEdgeMode::Depth));
     mappedConstBuffer_->luminanceEdgeThreshold =
-        AtLeastFinite(edge.luminanceThreshold,
-                      defaults.edge.luminanceThreshold, 0.0f);
+        AtLeastFinite(edge.luminanceThreshold, 0.0f,
+                      defaults.edge.luminanceThreshold);
     mappedConstBuffer_->depthEdgeThreshold =
-        AtLeastFinite(edge.depthThreshold, defaults.edge.depthThreshold, 0.0f);
+        AtLeastFinite(edge.depthThreshold, 0.0f,
+                      defaults.edge.depthThreshold);
     mappedConstBuffer_->nearZ = nearZ;
     mappedConstBuffer_->farZ = farZ;
     CopyFinite(mappedConstBuffer_->grayscaleWeights, color.grayscaleWeights,
                defaults.colorGrade.grayscaleWeights);
     mappedConstBuffer_->tonemapEnabled = tonemap.enabled ? 1 : 0;
     mappedConstBuffer_->exposure =
-        AtLeastFinite(tonemap.exposure, defaults.tonemap.exposure, 0.0f);
+        AtLeastFinite(tonemap.exposure, 0.0f, defaults.tonemap.exposure);
     mappedConstBuffer_->gamma =
-        AtLeastFinite(tonemap.gamma, defaults.tonemap.gamma, 0.0001f);
+        AtLeastFinite(tonemap.gamma, 0.0001f, defaults.tonemap.gamma);
     mappedConstBuffer_->bloomEnabled = bloom.enabled ? 1 : 0;
     mappedConstBuffer_->bloomThreshold =
-        AtLeastFinite(bloom.threshold, defaults.bloom.threshold, 0.0f);
+        AtLeastFinite(bloom.threshold, 0.0f, defaults.bloom.threshold);
     mappedConstBuffer_->bloomIntensity =
-        AtLeastFinite(bloom.intensity, defaults.bloom.intensity, 0.0f);
+        AtLeastFinite(bloom.intensity, 0.0f, defaults.bloom.intensity);
     mappedConstBuffer_->bloomRadius =
-        AtLeastFinite(bloom.radius, defaults.bloom.radius, 0.0f);
+        AtLeastFinite(bloom.radius, 0.0f, defaults.bloom.radius);
     mappedConstBuffer_->noiseEnabled = noise.enabled ? 1 : 0;
     mappedConstBuffer_->noiseStrength =
-        AtLeastFinite(noise.strength, defaults.noise.strength, 0.0f);
+        AtLeastFinite(noise.strength, 0.0f, defaults.noise.strength);
     mappedConstBuffer_->noiseScale = FiniteOr(noise.scale, defaults.noise.scale);
     mappedConstBuffer_->noiseTime = FiniteOr(noise.time, defaults.noise.time);
     mappedConstBuffer_->specialMode =
         ValidModeOrNone(special.mode, 0, static_cast<int32_t>(PostProcessSpecialMode::Dissolve));
     mappedConstBuffer_->vignetteStrength =
-        AtLeastFinite(vignette.strength, defaults.vignette.strength, 0.0f);
+        AtLeastFinite(vignette.strength, 0.0f, defaults.vignette.strength);
     mappedConstBuffer_->vignetteRadius =
         FiniteOr(vignette.radius, defaults.vignette.radius);
     mappedConstBuffer_->radialBlurStrength =
-        AtLeastFinite(radialBlur.strength, defaults.radialBlur.strength, 0.0f);
+        AtLeastFinite(radialBlur.strength, 0.0f,
+                      defaults.radialBlur.strength);
     mappedConstBuffer_->dissolveAmount =
-        ClampFinite(dissolve.amount, defaults.dissolve.amount, 0.0f, 1.0f);
+        ClampFinite(dissolve.amount, 0.0f, 1.0f,
+                    defaults.dissolve.amount);
     mappedConstBuffer_->dissolveSoftness =
-        AtLeastFinite(dissolve.softness, defaults.dissolve.softness, 0.0001f);
+        AtLeastFinite(dissolve.softness, 0.0001f,
+                      defaults.dissolve.softness);
     mappedConstBuffer_->dissolveScale =
         FiniteOr(dissolve.scale, defaults.dissolve.scale);
     mappedConstBuffer_->lensFlareEnabled = lensFlare.enabled ? 1 : 0;
     mappedConstBuffer_->lensFlareVisibility =
-        ClampFinite(lensFlare.visibility, defaults.lensFlare.visibility,
-                    0.0f, 1.0f);
+        ClampFinite(lensFlare.visibility, 0.0f, 1.0f,
+                    defaults.lensFlare.visibility);
     mappedConstBuffer_->lensFlareSunUv[0] =
         FiniteOr(lensFlare.sunUv[0], defaults.lensFlare.sunUv[0]);
     mappedConstBuffer_->lensFlareSunUv[1] =
@@ -413,20 +435,20 @@ void PostProcessSystem::UpdateConstantBuffer() {
     mappedConstBuffer_->lensFlareOcclusionBias =
         FiniteOr(lensFlare.occlusionBias, defaults.lensFlare.occlusionBias);
     mappedConstBuffer_->lensFlareGlareRadius =
-        AtLeastFinite(lensFlare.glareRadius,
-                      defaults.lensFlare.glareRadius, 0.0001f);
+        AtLeastFinite(lensFlare.glareRadius, 0.0001f,
+                      defaults.lensFlare.glareRadius);
     mappedConstBuffer_->lensFlareGlareIntensity =
-        AtLeastFinite(lensFlare.glareIntensity,
-                      defaults.lensFlare.glareIntensity, 0.0f);
+        AtLeastFinite(lensFlare.glareIntensity, 0.0f,
+                      defaults.lensFlare.glareIntensity);
     mappedConstBuffer_->lensFlareGhostIntensity =
-        AtLeastFinite(lensFlare.ghostIntensity,
-                      defaults.lensFlare.ghostIntensity, 0.0f);
+        AtLeastFinite(lensFlare.ghostIntensity, 0.0f,
+                      defaults.lensFlare.ghostIntensity);
     mappedConstBuffer_->lensFlareStreakIntensity =
-        AtLeastFinite(lensFlare.streakIntensity,
-                      defaults.lensFlare.streakIntensity, 0.0f);
+        AtLeastFinite(lensFlare.streakIntensity, 0.0f,
+                      defaults.lensFlare.streakIntensity);
     mappedConstBuffer_->lensFlareStreakWidth =
-        AtLeastFinite(lensFlare.streakWidth,
-                      defaults.lensFlare.streakWidth, 0.0001f);
+        AtLeastFinite(lensFlare.streakWidth, 0.0001f,
+                      defaults.lensFlare.streakWidth);
     mappedConstBuffer_->lensFlarePadding0 = 0.0f;
     mappedConstBuffer_->lensFlarePadding0b = 0.0f;
     CopyFinite(mappedConstBuffer_->lensFlareGlareColor,
@@ -438,14 +460,14 @@ void PostProcessSystem::UpdateConstantBuffer() {
     CopyFinite(mappedConstBuffer_->lensFlareStreakColor,
                lensFlare.streakColor, defaults.lensFlare.streakColor);
     mappedConstBuffer_->lensFlareGlareAlpha =
-        ClampFinite(lensFlare.glareAlpha, defaults.lensFlare.glareAlpha,
-                    0.0f, 1.0f);
+        ClampFinite(lensFlare.glareAlpha, 0.0f, 1.0f,
+                    defaults.lensFlare.glareAlpha);
     mappedConstBuffer_->lensFlareGhostAlpha =
-        ClampFinite(lensFlare.ghostAlpha, defaults.lensFlare.ghostAlpha,
-                    0.0f, 1.0f);
+        ClampFinite(lensFlare.ghostAlpha, 0.0f, 1.0f,
+                    defaults.lensFlare.ghostAlpha);
     mappedConstBuffer_->lensFlareStreakAlpha =
-        ClampFinite(lensFlare.streakAlpha, defaults.lensFlare.streakAlpha,
-                    0.0f, 1.0f);
+        ClampFinite(lensFlare.streakAlpha, 0.0f, 1.0f,
+                    defaults.lensFlare.streakAlpha);
     mappedConstBuffer_->lensFlarePadding1 = 0.0f;
     mappedConstBuffer_->enableVignetting = vignette.enabled ? 1 : 0;
     mappedConstBuffer_->randomMode =
@@ -453,16 +475,16 @@ void PostProcessSystem::UpdateConstantBuffer() {
     mappedConstBuffer_->radialBlurSampleCount =
         std::clamp(radialBlur.sampleCount, 0, 32);
     mappedConstBuffer_->vignettingScale =
-        AtLeastFinite(vignette.scale, defaults.vignette.scale, 0.0f);
+        AtLeastFinite(vignette.scale, 0.0f, defaults.vignette.scale);
     mappedConstBuffer_->vignettingPower =
-        AtLeastFinite(vignette.power, defaults.vignette.power, 0.0001f);
+        AtLeastFinite(vignette.power, 0.0001f, defaults.vignette.power);
     mappedConstBuffer_->radialBlurCenter[0] =
         FiniteOr(radialBlur.center[0], defaults.radialBlur.center[0]);
     mappedConstBuffer_->radialBlurCenter[1] =
         FiniteOr(radialBlur.center[1], defaults.radialBlur.center[1]);
     mappedConstBuffer_->randomStrength =
-        AtLeastFinite(randomNoise.strength, defaults.randomNoise.strength,
-                      0.0f);
+        AtLeastFinite(randomNoise.strength, 0.0f,
+                      defaults.randomNoise.strength);
     mappedConstBuffer_->randomScale =
         FiniteOr(randomNoise.scale, defaults.randomNoise.scale);
     mappedConstBuffer_->randomTime =
@@ -470,15 +492,15 @@ void PostProcessSystem::UpdateConstantBuffer() {
     mappedConstBuffer_->randomSeed =
         FiniteOr(randomNoise.seed, defaults.randomNoise.seed);
     mappedConstBuffer_->sceneDimStrength =
-        AtLeastFinite(sceneDim.strength, defaults.sceneDim.strength, 0.0f);
+        AtLeastFinite(sceneDim.strength, 0.0f, defaults.sceneDim.strength);
     CopyFinite(mappedConstBuffer_->sepiaTone, color.sepiaTone,
                defaults.colorGrade.sepiaTone);
     mappedConstBuffer_->primaryVignetteTintStrength =
-        ClampFinite(vignette.primaryTintStrength,
-                    defaults.vignette.primaryTintStrength, 0.0f, 1.0f);
+        ClampFinite(vignette.primaryTintStrength, 0.0f, 1.0f,
+                    defaults.vignette.primaryTintStrength);
     mappedConstBuffer_->secondaryVignetteTintStrength =
-        ClampFinite(vignette.secondaryTintStrength,
-                    defaults.vignette.secondaryTintStrength, 0.0f, 1.0f);
+        ClampFinite(vignette.secondaryTintStrength, 0.0f, 1.0f,
+                    defaults.vignette.secondaryTintStrength);
     CopyFinite(mappedConstBuffer_->primaryVignetteTintColor,
                vignette.primaryTintColor,
                defaults.vignette.primaryTintColor);
@@ -487,11 +509,11 @@ void PostProcessSystem::UpdateConstantBuffer() {
                defaults.vignette.secondaryTintColor);
     mappedConstBuffer_->toonEnabled = toon.enabled ? 1 : 0;
     mappedConstBuffer_->toonStrength =
-        AtLeastFinite(toon.strength, defaults.toon.strength, 0.0f);
+        AtLeastFinite(toon.strength, 0.0f, defaults.toon.strength);
     mappedConstBuffer_->toonColorSteps =
-        AtLeastFinite(toon.colorSteps, defaults.toon.colorSteps, 2.0f);
+        AtLeastFinite(toon.colorSteps, 2.0f, defaults.toon.colorSteps);
     mappedConstBuffer_->toonEdgeStrength =
-        AtLeastFinite(toon.edgeStrength, defaults.toon.edgeStrength, 0.0f);
+        AtLeastFinite(toon.edgeStrength, 0.0f, defaults.toon.edgeStrength);
     mappedConstBuffer_->toonPaddingAlign = 0.0f;
     mappedConstBuffer_->toonPadding[0] = 0.0f;
     mappedConstBuffer_->toonPadding[1] = 0.0f;

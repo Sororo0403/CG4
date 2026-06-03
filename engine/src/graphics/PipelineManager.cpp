@@ -1,13 +1,24 @@
 #include "graphics/PipelineManager.h"
 #include "graphics/DirectXCommon.h"
+#include "graphics/GpuResourceLifetime.h"
 #include "graphics/ShaderCompiler.h"
 #include <cstdint>
 
+PipelineManager::~PipelineManager() {
+    Clear(true);
+}
+
 void PipelineManager::Initialize(DirectXCommon *dxCommon) {
     if (!dxCommon) {
-        dxCommon_ = nullptr;
-        Clear();
+        if (Clear()) {
+            dxCommon_ = nullptr;
+        }
         return;
+    }
+    if (dxCommon_ != dxCommon) {
+        if (!Clear()) {
+            return;
+        }
     }
     dxCommon_ = dxCommon;
 }
@@ -54,9 +65,17 @@ PipelineManager::GetGraphicsPipeline(const std::string &name) const {
     return it == graphicsPipelines_.end() ? nullptr : it->second.Get();
 }
 
-void PipelineManager::Clear() {
+bool PipelineManager::Clear() { return Clear(false); }
+
+bool PipelineManager::Clear(bool allowFrameAbort) {
+    if (!CanReleaseGpuResources(dxCommon_, !graphicsPipelines_.empty(),
+                                allowFrameAbort)) {
+        return false;
+    }
+
     graphicsPipelines_.clear();
     shaderCache_.clear();
+    return true;
 }
 
 std::string PipelineManager::MakeShaderKey(const std::wstring &path,

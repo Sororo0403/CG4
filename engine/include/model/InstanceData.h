@@ -1,7 +1,7 @@
 #pragma once
+#include "core/Numeric.h"
 #include <DirectXMath.h>
 #include <algorithm>
-#include <cmath>
 #include <cstdint>
 
 /// <summary>
@@ -16,14 +16,12 @@ struct InstanceData {
 };
 
 namespace InstanceDataDetail {
-inline float FiniteOr(float value, float fallback) {
-    return std::isfinite(value) ? value : fallback;
-}
-
 inline DirectX::XMFLOAT4 FiniteFloat4(const DirectX::XMFLOAT4 &value,
                                       const DirectX::XMFLOAT4 &fallback) {
-    return {FiniteOr(value.x, fallback.x), FiniteOr(value.y, fallback.y),
-            FiniteOr(value.z, fallback.z), FiniteOr(value.w, fallback.w)};
+    return {Numeric::FiniteOr(value.x, fallback.x),
+            Numeric::FiniteOr(value.y, fallback.y),
+            Numeric::FiniteOr(value.z, fallback.z),
+            Numeric::FiniteOr(value.w, fallback.w)};
 }
 
 inline DirectX::XMFLOAT4X4 IdentityMatrix() {
@@ -38,7 +36,8 @@ inline DirectX::XMFLOAT4X4 SanitizeMatrix(DirectX::XMFLOAT4X4 value) {
     for (int row = 0; row < 4; ++row) {
         for (int column = 0; column < 4; ++column) {
             value.m[row][column] =
-                FiniteOr(value.m[row][column], fallback.m[row][column]);
+                Numeric::FiniteOr(value.m[row][column],
+                                  fallback.m[row][column]);
         }
     }
     return value;
@@ -51,10 +50,10 @@ inline InstanceData SanitizeInstanceDataForDraw(InstanceData instance) {
     instance.color =
         InstanceDataDetail::FiniteFloat4(instance.color, fallback.color);
     instance.color.w = std::clamp(
-        InstanceDataDetail::FiniteOr(instance.color.w, fallback.color.w),
+        Numeric::FiniteOr(instance.color.w, fallback.color.w),
         0.0f, 1.0f);
     instance.fade = std::clamp(
-        InstanceDataDetail::FiniteOr(instance.fade, fallback.fade), 0.0f,
+        Numeric::FiniteOr(instance.fade, fallback.fade), 0.0f,
         1.0f);
     instance.padding.x = 0.0f;
     instance.padding.y = 0.0f;

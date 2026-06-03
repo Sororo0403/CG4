@@ -9,6 +9,8 @@ struct MeshVSInput
     float4 color : COLOR;
     float4 tangent : TANGENT;
     float custom0 : CUSTOM0;
+    float3 bindPos : BINDPOS;
+    float4 custom1 : CUSTOM1;
 };
 
 struct MeshInstanceInput
@@ -19,6 +21,8 @@ struct MeshInstanceInput
     float4 color : COLOR;
     float4 tangent : TANGENT;
     float custom0 : CUSTOM0;
+    float3 bindPos : BINDPOS;
+    float4 custom1 : CUSTOM1;
     float4 world0 : WORLD0;
     float4 world1 : WORLD1;
     float4 world2 : WORLD2;

@@ -24,7 +24,14 @@ class SrvManager {
     /// <returns>割り当てられたSRVインデックス</returns>
     UINT Allocate();
     UINT AllocateRange(UINT count);
-    bool CanAllocate(UINT count = 1) const;
+    // Total free descriptors, not necessarily contiguous.
+    bool CanAllocate(UINT count = 1) const {
+        return CanAllocateDescriptors(count);
+    }
+    // Total free descriptors for callers that allocate slots one by one.
+    bool CanAllocateDescriptors(UINT count = 1) const;
+    // Contiguous free descriptors for AllocateRange callers.
+    bool CanAllocateRange(UINT count) const;
 
     /// <summary>
     /// SRVを1つ割り当て、型付きハンドルで返す
@@ -87,6 +94,7 @@ class SrvManager {
     UINT GetDescriptorSize() const { return descriptorSize_; }
 
   private:
+    UINT FindAvailableRange(UINT count) const;
     void ValidateAllocatedIndex(UINT index, const char *operation) const;
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> heap_;
