@@ -35,11 +35,6 @@ float Dot(XMFLOAT3 a, XMFLOAT3 b) {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
-XMFLOAT3 Cross(XMFLOAT3 a, XMFLOAT3 b) {
-    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z,
-            a.x * b.y - a.y * b.x};
-}
-
 float Length(XMFLOAT3 value) {
     return std::sqrt((std::max)(0.0f, Dot(value, value)));
 }
@@ -89,18 +84,6 @@ GPUParticleExplicitSpawn MakeParticle(
     particle.shapeParams = shapeParams;
     particle.atlas = {2u, 2u, 1u, 0u};
     return particle;
-}
-
-XMFLOAT3 FlameDirection(XMFLOAT3 normal, XMFLOAT3 side, XMFLOAT3 across,
-                        uint32_t index, float upwardBias) {
-    const float r0 = Hash01(index * 41u + 17u);
-    const float r1 = Hash01(index * 67u + 23u);
-    const float angle = r0 * kTwoPi;
-    const float radius = std::sqrt(r1);
-    return NormalizeOr(Add(Mul(normal, upwardBias),
-                           Add(Mul(side, std::cos(angle) * radius),
-                               Mul(across, std::sin(angle) * radius))),
-                       normal);
 }
 
 void AddRadialBurstLines(std::vector<GPUParticleExplicitSpawn> &particles,
@@ -284,7 +267,7 @@ void ParticleDemoScene::Update() {
     if (ctx_ != nullptr && ctx_->systems.input != nullptr) {
         const bool spaceDown = ctx_->systems.input->IsKeyPress(DIK_SPACE);
         if (spaceDown && !spaceWasDown_) {
-            SpawnFlameSpread();
+            SpawnFlameSpread(kEffectCenter);
         }
         spaceWasDown_ = spaceDown;
     } else {
@@ -333,17 +316,19 @@ void ParticleDemoScene::DrawTransparent() {
 
 void ParticleDemoScene::DrawPostProcessOverlay() {}
 
-void ParticleDemoScene::SpawnFlameSpread() {
+void ParticleDemoScene::SpawnFlameSpread(XMFLOAT3 position) {
     if (!initializedAdditiveParticles_ || !initializedTrailParticles_) {
         return;
     }
 
     const FlameSpreadParticles particles =
-        CreateFlameSpread(kEffectCenter, 1.15f);
+        CreateFlameSpread(position, 1.15f);
     const size_t emittedAdditive =
         additiveParticles_.EmitParticles(particles.additive);
     const size_t emittedTrails = trailParticles_.EmitParticles(particles.trails);
+    lastEffectPosition_ = position;
     effectTime_ = 0.0f;
+    // 二段目の光る線は、基本リングが広がりきった頃に一度だけ出す。
     spawnedSecondaryFlame_ = false;
     UpdateImpactPostEffect(0.0f);
     LogDebug("ParticleDemoScene spawn flame: additive=" +
@@ -358,7 +343,7 @@ void ParticleDemoScene::SpawnSecondaryFlame(float elapsed) {
         return;
     }
     const FlameSpreadParticles particles =
-        CreateSecondaryFlame(kEffectCenter, 0.95f, elapsed);
+        CreateSecondaryFlame(lastEffectPosition_, 0.95f, elapsed);
     additiveParticles_.EmitParticles(particles.additive);
     trailParticles_.EmitParticles(particles.trails);
     spawnedSecondaryFlame_ = true;
