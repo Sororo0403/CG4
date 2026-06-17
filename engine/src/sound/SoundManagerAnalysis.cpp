@@ -1,7 +1,9 @@
 #include "sound/SoundManager.h"
 
+#include "core/MathUtils.h"
 #include "core/Numeric.h"
 #include "SoundFormatUtils.h"
+#include "SoundManagerInternal.h"
 
 #include <algorithm>
 #include <cmath>
@@ -9,26 +11,27 @@
 
 float SoundManager::GetAmplitudeAt(uint32_t soundId, float playbackSeconds,
                                    float windowSeconds) const {
-    if (soundId >= sounds_.size()) {
+    if (soundId >= state_->sounds.size()) {
         return 0.0f;
     }
 
-    const AudioFileLoader::SoundData &sound = sounds_[soundId].data;
-    const WAVEFORMATEX *format = sound.GetFormat();
-    if (!format || !SoundFormatUtils::IsSupportedPcmReadFormat(*format) ||
+    const AudioFileLoader::SoundData &sound = state_->sounds[soundId].data;
+    WAVEFORMATEX format{};
+    if (!sound.CopyFormat(format) ||
+        !SoundFormatUtils::IsSupportedPcmReadFormat(format) ||
         sound.decodedPcm.empty()) {
         return 0.0f;
     }
 
     const size_t frameCount =
-        sound.decodedPcm.size() / static_cast<size_t>(format->nBlockAlign);
+        sound.decodedPcm.size() / static_cast<size_t>(format.nBlockAlign);
     if (frameCount == 0) {
         return 0.0f;
     }
 
     const float duration =
         static_cast<float>(frameCount) /
-        static_cast<float>(format->nSamplesPerSec);
+        static_cast<float>(format.nSamplesPerSec);
     if (!std::isfinite(duration) || duration <= 0.0f) {
         return 0.0f;
     }
@@ -49,17 +52,17 @@ float SoundManager::GetAmplitudeAt(uint32_t soundId, float playbackSeconds,
                              (std::min)(0.045f, maxWindowSeconds));
     const double halfWindowFramesDouble =
         static_cast<double>(safeWindowSeconds) *
-        static_cast<double>(format->nSamplesPerSec) * 0.5;
+        static_cast<double>(format.nSamplesPerSec) * 0.5;
 
     const size_t centerFrame =
-        static_cast<size_t>(sampleTime * format->nSamplesPerSec) % frameCount;
+        static_cast<size_t>(sampleTime * format.nSamplesPerSec) % frameCount;
     const size_t halfWindowFrames = (std::max<size_t>)(
         1, (std::min)(frameCount,
                       static_cast<size_t>(halfWindowFramesDouble)));
     const size_t sampleFrames =
         (std::min)(frameCount, halfWindowFrames * 2 + 1);
-    const uint16_t channels = (std::max<uint16_t>)(format->nChannels, 1);
-    const uint16_t bits = format->wBitsPerSample;
+    const uint16_t channels = (std::max<uint16_t>)(format.nChannels, 1);
+    const uint16_t bits = format.wBitsPerSample;
     const size_t bytesPerSample = static_cast<size_t>(bits) / 8u;
 
     double sumSquares = 0.0;
@@ -68,11 +71,11 @@ float SoundManager::GetAmplitudeAt(uint32_t soundId, float playbackSeconds,
         const size_t frame =
             (centerFrame + frameCount + i - halfWindowFrames) % frameCount;
         const BYTE *base =
-            sound.decodedPcm.data() + frame * format->nBlockAlign;
+            sound.decodedPcm.data() + frame * format.nBlockAlign;
         for (uint16_t ch = 0; ch < channels; ++ch) {
             const size_t byteOffset =
                 static_cast<size_t>(ch) * bytesPerSample;
-            if (byteOffset + bytesPerSample > format->nBlockAlign) {
+            if (byteOffset + bytesPerSample > format.nBlockAlign) {
                 continue;
             }
 
@@ -108,26 +111,27 @@ void SoundManager::FillSpectrumBands(uint32_t soundId, float playbackSeconds,
     }
     std::fill(outBands, outBands + bandCount, 0.0f);
 
-    if (soundId >= sounds_.size()) {
+    if (soundId >= state_->sounds.size()) {
         return;
     }
 
-    const AudioFileLoader::SoundData &sound = sounds_[soundId].data;
-    const WAVEFORMATEX *format = sound.GetFormat();
-    if (!format || !SoundFormatUtils::IsSupportedPcmReadFormat(*format) ||
+    const AudioFileLoader::SoundData &sound = state_->sounds[soundId].data;
+    WAVEFORMATEX format{};
+    if (!sound.CopyFormat(format) ||
+        !SoundFormatUtils::IsSupportedPcmReadFormat(format) ||
         sound.decodedPcm.empty()) {
         return;
     }
 
     const size_t frameCount =
-        sound.decodedPcm.size() / static_cast<size_t>(format->nBlockAlign);
+        sound.decodedPcm.size() / static_cast<size_t>(format.nBlockAlign);
     if (frameCount == 0) {
         return;
     }
 
     const float duration =
         static_cast<float>(frameCount) /
-        static_cast<float>(format->nSamplesPerSec);
+        static_cast<float>(format.nSamplesPerSec);
     if (!std::isfinite(duration) || duration <= 0.0f) {
         return;
     }
@@ -144,21 +148,21 @@ void SoundManager::FillSpectrumBands(uint32_t soundId, float playbackSeconds,
 
     constexpr size_t kWindowFrames = 768;
     const size_t centerFrame =
-        static_cast<size_t>(sampleTime * format->nSamplesPerSec) % frameCount;
-    const uint16_t channels = (std::max<uint16_t>)(format->nChannels, 1);
-    const uint16_t bits = format->wBitsPerSample;
+        static_cast<size_t>(sampleTime * format.nSamplesPerSec) % frameCount;
+    const uint16_t channels = (std::max<uint16_t>)(format.nChannels, 1);
+    const uint16_t bits = format.wBitsPerSample;
     const size_t bytesPerSample = static_cast<size_t>(bits) / 8u;
-    const float sampleRate = static_cast<float>(format->nSamplesPerSec);
+    const float sampleRate = static_cast<float>(format.nSamplesPerSec);
 
     auto readFrame = [&](size_t frame) {
         const BYTE *base =
-            sound.decodedPcm.data() + frame * format->nBlockAlign;
+            sound.decodedPcm.data() + frame * format.nBlockAlign;
         float total = 0.0f;
         size_t count = 0;
         for (uint16_t ch = 0; ch < channels; ++ch) {
             const size_t byteOffset =
                 static_cast<size_t>(ch) * bytesPerSample;
-            if (byteOffset + bytesPerSample > format->nBlockAlign) {
+            if (byteOffset + bytesPerSample > format.nBlockAlign) {
                 continue;
             }
 
@@ -182,7 +186,7 @@ void SoundManager::FillSpectrumBands(uint32_t soundId, float playbackSeconds,
                                   static_cast<float>(bandCount - 1)
                             : 0.0f;
         const float frequency = 45.0f * std::pow(12000.0f / 45.0f, t);
-        const float omega = 2.0f * 3.1415926535f * frequency / sampleRate;
+        const float omega = MathUtils::kTwoPi * frequency / sampleRate;
         double real = 0.0;
         double imag = 0.0;
 
@@ -193,7 +197,7 @@ void SoundManager::FillSpectrumBands(uint32_t soundId, float playbackSeconds,
                 frameCount;
             const float window =
                 0.5f - 0.5f *
-                           std::cos(2.0f * 3.1415926535f *
+                           std::cos(MathUtils::kTwoPi *
                                     static_cast<float>(i) /
                                     static_cast<float>(kWindowFrames - 1));
             const float sample = readFrame(frame) * window;

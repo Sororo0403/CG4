@@ -1,12 +1,24 @@
 #include "graphics/RenderGraph.h"
 
 #include <algorithm>
-#include <queue>
+#include <iterator>
 #include <limits>
+#include <queue>
 
 uint32_t RenderGraph::AddPass(std::string name, PassCallback callback) {
     const uint32_t index = static_cast<uint32_t>(passes_.size());
-    passes_.push_back(Pass{std::move(name), std::move(callback), {}});
+    passes_.push_back(
+        Pass{std::move(name), std::move(callback), nullptr, {}});
+    compiledOrder_.clear();
+    executionOrder_.clear();
+    return index;
+}
+
+uint32_t RenderGraph::AddPass(std::string name,
+                              ContextPassCallback callback) {
+    const uint32_t index = static_cast<uint32_t>(passes_.size());
+    passes_.push_back(
+        Pass{std::move(name), nullptr, std::move(callback), {}});
     compiledOrder_.clear();
     executionOrder_.clear();
     return index;
@@ -128,11 +140,13 @@ bool RenderGraph::Compile() {
                                           &incoming)) {
                     return false;
                 }
-                for (uint32_t reader : readersSinceWrite[resource]) {
-                    if (!AddDependencyByIndex(reader, pass, &outgoing,
-                                              &incoming)) {
-                        return false;
-                    }
+                if (!std::all_of(readersSinceWrite[resource].begin(),
+                                 readersSinceWrite[resource].end(),
+                                 [&](uint32_t reader) {
+                                     return AddDependencyByIndex(
+                                         reader, pass, &outgoing, &incoming);
+                                 })) {
+                    return false;
                 }
                 readersSinceWrite[resource].clear();
                 lastWriter[resource] = pass;
@@ -182,6 +196,10 @@ bool RenderGraph::Compile() {
 }
 
 bool RenderGraph::Execute() {
+    return Execute(RenderGraphContext{});
+}
+
+bool RenderGraph::Execute(RenderGraphContext context) {
     if (compiledOrder_.empty() && !Compile()) {
         return false;
     }
@@ -189,26 +207,31 @@ bool RenderGraph::Execute() {
         if (passes_[pass].callback) {
             passes_[pass].callback();
         }
+        if (passes_[pass].contextCallback) {
+            passes_[pass].contextCallback(context);
+        }
     }
     return true;
 }
 
 int RenderGraph::FindPass(std::string_view name) const {
-    for (size_t index = 0u; index < passes_.size(); ++index) {
-        if (passes_[index].name == name) {
-            return static_cast<int>(index);
-        }
-    }
-    return -1;
+    const auto it = std::find_if(passes_.begin(), passes_.end(),
+                                 [name](const Pass &pass) {
+                                     return pass.name == name;
+                                 });
+    return it != passes_.end()
+               ? static_cast<int>(std::distance(passes_.begin(), it))
+               : -1;
 }
 
 int RenderGraph::FindResource(std::string_view name) const {
-    for (size_t index = 0u; index < resources_.size(); ++index) {
-        if (resources_[index].name == name) {
-            return static_cast<int>(index);
-        }
-    }
-    return -1;
+    const auto it = std::find_if(resources_.begin(), resources_.end(),
+                                 [name](const auto &resource) {
+                                     return resource.name == name;
+                                 });
+    return it != resources_.end()
+               ? static_cast<int>(std::distance(resources_.begin(), it))
+               : -1;
 }
 
 bool RenderGraph::AddResourceAccess(std::string_view pass,

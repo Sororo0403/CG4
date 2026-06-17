@@ -1,5 +1,6 @@
 #include "GPUParticleEmitterUtils.h"
 
+#include "core/ResourceHandle.h"
 #include "texture/TextureManager.h"
 
 #include <algorithm>
@@ -48,16 +49,16 @@ DirectX::XMFLOAT4 ClampColor(DirectX::XMFLOAT4 value,
     return value;
 }
 
-uint32_t ResolveTextureId(TextureManager *textureManager, uint32_t textureId,
+uint32_t ResolveTextureId(const TextureManager *textureManager, uint32_t textureId,
                           uint32_t fallbackTextureId) {
     if (textureManager == nullptr) {
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
-    if (textureId != UINT32_MAX &&
+    if (IsValidResourceId(textureId) &&
         textureManager->IsValidTextureId(textureId)) {
         return textureId;
     }
-    if (fallbackTextureId != UINT32_MAX &&
+    if (IsValidResourceId(fallbackTextureId) &&
         textureManager->IsValidTextureId(fallbackTextureId)) {
         return fallbackTextureId;
     }

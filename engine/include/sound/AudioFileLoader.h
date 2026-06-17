@@ -2,6 +2,7 @@
 #include <Windows.h>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 #include <xaudio2.h>
@@ -20,11 +21,13 @@ struct SoundData {
         size_t decodedBytes = 0;
     } info{};
 
-    const WAVEFORMATEX *GetFormat() const {
+    bool CopyFormat(WAVEFORMATEX &outFormat) const {
         if (waveFormat.size() < sizeof(WAVEFORMATEX)) {
-            return nullptr;
+            outFormat = {};
+            return false;
         }
-        return reinterpret_cast<const WAVEFORMATEX *>(waveFormat.data());
+        std::memcpy(&outFormat, waveFormat.data(), sizeof(outFormat));
+        return true;
     }
 };
 

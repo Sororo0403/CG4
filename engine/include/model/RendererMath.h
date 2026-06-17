@@ -2,10 +2,12 @@
 
 #include "core/MathUtils.h"
 #include "model/Transform.h"
-#include "model/Vertex.h"
+#include "model/VertexInfluence.h"
 
+#include <algorithm>
 #include <DirectXMath.h>
 #include <cmath>
+#include <numeric>
 
 namespace RendererMath {
 
@@ -40,18 +42,19 @@ MakeSafeInverseTranspose(const DirectX::XMMATRIX &matrix) {
 }
 
 inline void NormalizeInfluence(VertexInfluence &influence) {
-    float totalWeight = 0.0f;
-    for (float weight : influence.weights) {
-        totalWeight += weight;
-    }
+    const float totalWeight =
+        std::accumulate(influence.weights.begin(), influence.weights.end(),
+                        0.0f);
 
     if (totalWeight <= 0.00001f) {
         return;
     }
 
-    for (float &weight : influence.weights) {
-        weight /= totalWeight;
-    }
+    std::transform(influence.weights.begin(), influence.weights.end(),
+                   influence.weights.begin(),
+                   [totalWeight](float weight) {
+                       return weight / totalWeight;
+                   });
 }
 
 } // namespace RendererMath

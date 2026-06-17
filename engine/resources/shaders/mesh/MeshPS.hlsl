@@ -1,10 +1,16 @@
 #include "Mesh.hlsli"
-#include "../common/ShadowSampling.hlsli"
+#include "MeshLighting.hlsli"
+#include "../common/PbrLighting.hlsli"
 
 Texture2D tex0 : register(t0);
+TextureCube<float4> gEnvironmentTexture : register(t2);
 Texture2D<float> gShadowMap : register(t3);
 Texture2D normalMap : register(t4);
+Texture2D<float> gSpotLightShadowMap : register(t6);
+Texture2D roughnessMap : register(t7);
+Texture2D metallicMap : register(t8);
 SamplerState samp0 : register(s0);
+SamplerState shadowSamp : register(s1);
 
 cbuffer ObjectTransform : register(b0)
 {
@@ -32,6 +38,9 @@ cbuffer SceneParams : register(b1)
     float4 customSceneParams0;
     float4 customSceneParams1;
     SpotLight spotLight;
+    float4x4 spotLightViewProjection;
+    float4 spotShadowParams;
+    float4 spotShadowFilterParams;
 };
 
 cbuffer Material : register(b2)
@@ -51,31 +60,10 @@ cbuffer Material : register(b2)
     float normalStrength;
     int enableNormalMap;
     float4 customParams;
+    float4 customParams2;
+    float4 customParams3;
+    float4 pbrTextureParams;
 };
-
-float3 ApplyNormalMap(float3 vertexNormal, float4 vertexTangent, float2 uv)
-{
-    float3 normal = normalize(vertexNormal);
-    if (enableNormalMap == 0)
-    {
-        return normal;
-    }
-
-    float3 tangent = normalize(vertexTangent.xyz - normal * dot(normal, vertexTangent.xyz));
-    float tangentLength = length(tangent);
-    if (tangentLength < 0.0001f)
-    {
-        return normal;
-    }
-
-    float3 bitangent = normalize(cross(normal, tangent) * vertexTangent.w);
-    float3 sampledNormal = normalMap.Sample(samp0, uv).xyz * 2.0f - 1.0f;
-    sampledNormal.xy *= max(normalStrength, 0.0f);
-    sampledNormal = normalize(sampledNormal);
-    return normalize(sampledNormal.x * tangent +
-                     sampledNormal.y * bitangent +
-                     sampledNormal.z * normal);
-}
 
 float4 main(MeshVSOutput input) : SV_TARGET
 {
@@ -95,7 +83,7 @@ float4 main(MeshVSOutput input) : SV_TARGET
         finalColor.a = texColor.a * color.a * input.color.a;
     }
     float fadeAlpha = saturate(input.color.a);
-    if (blendMode != 2 && fadeAlpha < Dither01(input.worldPos, uv))
+    if (blendMode != 2 && fadeAlpha < Dither01(input.ditherPos, uv))
     {
         discard;
     }
@@ -111,129 +99,106 @@ float4 main(MeshVSOutput input) : SV_TARGET
         finalColor.rgb = lerp(color.rgb * input.color.rgb, finalColor.rgb, 0.72f);
     }
 
-    float3 viewDir = normalize(cameraPos.xyz - input.worldPos);
-    float3 normal = ApplyNormalMap(input.worldNormal, input.worldTangent, uv);
+    float3 viewDir = PbrNormalizeOrDefault(
+        cameraPos.xyz - input.worldPos, float3(0.0f, 0.0f, 1.0f));
+    float3 shadowNormal = PbrNormalizeOrDefault(input.worldNormal,
+                                                float3(0.0f, 1.0f, 0.0f));
+    if (cullMode == 0 && dot(shadowNormal, viewDir) < 0.0f)
+    {
+        shadowNormal = -shadowNormal;
+    }
+    float3 normal = ApplyNormalMap(normalMap, samp0, enableNormalMap,
+                                   normalStrength, input.worldNormal,
+                                   input.worldTangent, uv);
     if (cullMode == 0 && dot(normal, viewDir) < 0.0f)
     {
         normal = -normal;
     }
-    float3 keyDir = normalize(-keyLightDirection.xyz);
-    float3 fillDir = normalize(-fillLightDirection.xyz);
-
-    float keyDiffuse = saturate(dot(normal, keyDir));
-    float fillDiffuse = saturate(dot(normal, fillDir));
+    PbrMaterialValues pbrMaterial =
+        PbrSampleMaterial(roughnessMap, metallicMap, samp0, uv, roughness,
+                          metallic, pbrTextureParams);
+    float materialAo = pbrMaterial.ambientOcclusion;
+    float materialRoughness = pbrMaterial.roughness;
+    float materialMetallic = pbrMaterial.metallic;
+    float3 albedo = saturate(finalColor.rgb);
+    float3 keyDir = PbrNormalizeOrDefault(
+        -keyLightDirection.xyz, float3(0.45f, 0.78f, 0.34f));
+    float3 fillDir = PbrNormalizeOrDefault(
+        -fillLightDirection.xyz, float3(-0.42f, 0.62f, -0.36f));
     float wrap = saturate(lightingParams.w);
-    keyDiffuse = saturate((keyDiffuse + wrap) / (1.0f + wrap));
-    fillDiffuse = saturate((fillDiffuse + wrap * 0.5f) / (1.0f + wrap * 0.5f));
+    float hazeArea = saturate(lightingParams.y);
+    float keyLightArea = lerp(0.010f, 0.062f, hazeArea);
+    float fillLightArea = lerp(0.145f, 0.235f, hazeArea);
 
-    float3 halfVector = normalize(keyDir + viewDir);
-    float specularPower = max(lightingParams.x, 1.0f);
-    float specularStrength = saturate(lightingParams.y);
-    float keySpecular = pow(saturate(dot(normal, halfVector)), specularPower) * specularStrength;
-
-    float rimPower = max(lightingParams.z, 0.5f);
-    float rim = pow(saturate(1.0f - dot(normal, viewDir)), rimPower);
-
-    float3 pointAccum = float3(0.0f, 0.0f, 0.0f);
-
-    float3 point0Vector = pointLights[0].positionRange.xyz - input.worldPos;
-    float point0Distance = length(point0Vector);
-    if (point0Distance > 0.0001f)
+    float3 directLighting =
+        PbrEvaluateDirectArea(albedo, normal, viewDir, keyDir,
+                              keyLightColor.rgb, materialRoughness,
+                              materialMetallic, wrap, keyLightArea) +
+        PbrEvaluateDirectArea(albedo, normal, viewDir, fillDir,
+                              fillLightColor.rgb * fillLightColor.a,
+                              materialRoughness, materialMetallic,
+                              wrap * 0.5f, fillLightArea);
+    float3 pointAccum = PbrAccumulatePointLights(
+        pointLights[0], pointLights[1], albedo, input.worldPos, normal,
+        viewDir, materialRoughness, materialMetallic, wrap);
+    float3 spotAccum =
+        PbrAccumulateSpotLight(spotLight, albedo, input.worldPos, normal,
+                               viewDir, materialRoughness, materialMetallic,
+                               wrap);
+    if (spotShadowParams.x > 0.5f)
     {
-        float3 point0Dir = point0Vector / point0Distance;
-        float attenuation = saturate(1.0f - point0Distance / max(pointLights[0].positionRange.w, 0.001f));
-        attenuation *= attenuation;
-        pointAccum += pointLights[0].colorIntensity.rgb *
-                      saturate(dot(normal, point0Dir)) * attenuation *
-                      pointLights[0].colorIntensity.w;
-    }
-
-    float3 point1Vector = pointLights[1].positionRange.xyz - input.worldPos;
-    float point1Distance = length(point1Vector);
-    if (point1Distance > 0.0001f)
-    {
-        float3 point1Dir = point1Vector / point1Distance;
-        float attenuation = saturate(1.0f - point1Distance / max(pointLights[1].positionRange.w, 0.001f));
-        attenuation *= attenuation;
-        pointAccum += pointLights[1].colorIntensity.rgb *
-                      saturate(dot(normal, point1Dir)) * attenuation *
-                      pointLights[1].colorIntensity.w;
-    }
-
-    float3 spotAccum = float3(0.0f, 0.0f, 0.0f);
-    if (spotLight.angleParams.w > 0.5f)
-    {
-        float3 spotVector = spotLight.positionRange.xyz - input.worldPos;
-        float spotDistance = length(spotVector);
-        if (spotDistance > 0.0001f)
+        float materialSpotShadowStrength = saturate(spotShadowParams.z);
+        if (blendMode == 1)
         {
-            float3 toLightDir = spotVector / spotDistance;
-            float3 fromLightDir = -toLightDir;
-            float coneCos = dot(fromLightDir, normalize(spotLight.direction.xyz));
-            float cone = saturate((coneCos - spotLight.angleParams.y) /
-                                  max(spotLight.angleParams.x - spotLight.angleParams.y, 0.0001f));
-            cone = pow(cone, max(spotLight.angleParams.z, 0.0001f));
-            float rangeAttenuation =
-                saturate(1.0f - spotDistance / max(spotLight.positionRange.w, 0.001f));
-            rangeAttenuation *= rangeAttenuation;
-            float spotDiffuse =
-                saturate((dot(normal, toLightDir) + 0.32f) / 1.32f);
-            float spotSpecular =
-                pow(saturate(dot(normal, normalize(toLightDir + viewDir))),
-                    specularPower) * specularStrength;
-            spotAccum += spotLight.colorIntensity.rgb *
-                         (spotDiffuse + spotSpecular * 0.72f) *
-                         cone * rangeAttenuation * spotLight.colorIntensity.w;
+            materialSpotShadowStrength *= 0.40f;
         }
+        spotAccum *= SampleSpotShadowVisibility(
+            gSpotLightShadowMap, shadowSamp, input.worldPos, shadowNormal,
+            spotLightViewProjection, spotShadowParams, spotShadowFilterParams,
+            materialSpotShadowStrength, 1.0f);
     }
-
-    float3 lighting =
-        ambientColor.rgb +
-        keyLightColor.rgb * keyDiffuse +
-        fillLightColor.rgb * fillDiffuse +
-        pointAccum +
-        spotAccum +
-        keyLightColor.rgb * keySpecular +
-        fillLightColor.rgb * rim * fillLightColor.a;
+    directLighting += pointAccum + spotAccum;
 
     float directShadowVisibility = 1.0f;
     if (shadowParams.x > 0.5f)
     {
-        float3 shadowWorldPos = input.worldPos + normal * shadowParams.w;
-        float4 shadowClip = mul(float4(shadowWorldPos, 1.0f), lightViewProjection);
-        shadowClip.xyz /= max(shadowClip.w, 0.0001f);
-        float2 shadowUv = shadowClip.xy * float2(0.5f, -0.5f) + 0.5f;
-        if (all(shadowUv >= 0.0f) && all(shadowUv <= 1.0f) &&
-            shadowClip.z >= 0.0f && shadowClip.z <= 1.0f)
+        float materialShadowStrength = saturate(shadowParams.z);
+        if (blendMode == 1)
         {
-            float receiverDepth = shadowClip.z - shadowParams.y;
-            float materialShadowStrength = saturate(shadowParams.z);
-            if (blendMode == 1)
-            {
-                materialShadowStrength *= 0.35f;
-            }
-
-            ShadowSampleSettings sampleSettings;
-            sampleSettings.filterRadius = shadowFilterParams.x;
-            sampleSettings.depthSoftness = shadowFilterParams.y;
-            sampleSettings.edgeFade = shadowFilterParams.z;
-            sampleSettings.materialStrength = materialShadowStrength;
-            directShadowVisibility = SampleShadowVisibility(
-                gShadowMap, samp0, shadowUv, receiverDepth, sampleSettings);
-            lighting = ambientColor.rgb + (lighting - ambientColor.rgb) * directShadowVisibility;
+            materialShadowStrength *= 0.35f;
         }
+        directShadowVisibility = SampleDirectShadowVisibility(
+            gShadowMap, shadowSamp, input.worldPos, shadowNormal, lightViewProjection,
+            shadowParams, shadowFilterParams, materialShadowStrength, 1.0f);
     }
 
-    finalColor.rgb *= lighting;
-
-    if (fogParams.x > 0.5f)
+    float3 ambientLighting =
+        PbrEvaluateAmbientDiffuse(albedo, ambientColor.rgb, materialAo);
+    float ambientSpecularScale =
+        saturate(reflectionStrength + reflectionFresnelStrength * 0.55f);
+    float3 ambientSpecular = float3(0.0f, 0.0f, 0.0f);
+    if (ambientSpecularScale > 0.0001f)
     {
-        float viewDistance = distance(cameraPos.xyz, input.worldPos);
-        float fogRange = max(fogParams.z - fogParams.y, 0.0001f);
-        float fogAmount = saturate((viewDistance - fogParams.y) / fogRange);
-        fogAmount = pow(fogAmount, max(fogParams.w, 0.0001f));
-        finalColor.rgb = lerp(finalColor.rgb, fogColor.rgb, fogAmount * fogColor.a);
+        float3 reflectedVector =
+            PbrNormalizeOrDefault(reflect(-viewDir, normal), normal);
+        float environmentRoughness =
+            saturate(max(materialRoughness, reflectionRoughness));
+        float3 environmentRadiance =
+            PbrSampleEnvironment(gEnvironmentTexture, samp0, reflectedVector,
+                                 environmentRoughness);
+        environmentRadiance = lerp(ambientColor.rgb, environmentRadiance, 0.74f);
+        ambientSpecular =
+            PbrEvaluateAmbientSpecular(albedo, normal, viewDir,
+                                       environmentRadiance, materialRoughness,
+                                       materialMetallic, materialAo,
+                                       ambientSpecularScale);
     }
+    finalColor.rgb =
+        ambientLighting + ambientSpecular + directLighting * directShadowVisibility;
+
+    finalColor.rgb = ApplyAerialPerspectiveFog(
+        finalColor.rgb, input.worldPos, cameraPos.xyz, -keyLightDirection.xyz,
+        keyLightColor.rgb, ambientColor.rgb, fogColor, fogParams);
 
     return finalColor;
 }

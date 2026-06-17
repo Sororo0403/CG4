@@ -1,14 +1,14 @@
 #pragma once
 #include <d3d12.h>
 #include <dxcapi.h>
+#include <memory>
 #include <string>
-#include <unordered_map>
-#include <wrl.h>
 
 class DirectXCommon;
 
 class PipelineManager {
   public:
+    PipelineManager();
     ~PipelineManager();
 
     /// <summary>
@@ -22,6 +22,9 @@ class PipelineManager {
     ID3D12PipelineState *
     CreateGraphicsPipeline(const std::string &name,
                            const D3D12_GRAPHICS_PIPELINE_STATE_DESC &desc);
+    ID3D12PipelineState *
+    CreatePipelineStateStream(const std::string &name,
+                              const D3D12_PIPELINE_STATE_STREAM_DESC &desc);
 
     ID3D12PipelineState *GetGraphicsPipeline(const std::string &name) const;
 
@@ -32,13 +35,12 @@ class PipelineManager {
     bool Clear(bool allowFrameAbort);
 
   private:
+    struct State;
+
     static std::string MakeShaderKey(const std::wstring &path,
                                      const std::string &entry,
                                      const std::string &target);
 
     DirectXCommon *dxCommon_ = nullptr;
-    std::unordered_map<std::string, Microsoft::WRL::ComPtr<IDxcBlob>>
-        shaderCache_;
-    std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3D12PipelineState>>
-        graphicsPipelines_;
+    std::unique_ptr<State> state_;
 };

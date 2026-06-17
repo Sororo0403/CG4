@@ -20,7 +20,7 @@ class ImguiManager {
     /// <param name="winApp">WinAppインスタンス</param>
     /// <param name="dxCommon">DirectXCommonインスタンス</param>
     /// <param name="srvManager">SrvManagerインスタンス</param>
-    void Initialize(WinApp *winApp, DirectXCommon *dxCommon,
+    void Initialize(const WinApp *winApp, DirectXCommon *dxCommon,
                     SrvManager *srvManager);
 
     /// <summary>

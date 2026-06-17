@@ -65,7 +65,7 @@ void SkeletonPoseBuilder::BuildBindPoseLocals(
 }
 
 void SkeletonPoseBuilder::BuildAnimatedLocals(
-    Model &model, const AnimationClip &clip, float time,
+    const Model &model, const AnimationClip &clip, float time,
     std::vector<XMMATRIX> &localMatrices) {
     const size_t boneCount = model.bones.size();
     localMatrices.resize(boneCount);

@@ -1,4 +1,6 @@
 #include "graphics/ShadowMapRenderer.h"
+#include "ShadowMapRendererInternal.h"
+#include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/GpuResourceHelpers.h"
@@ -32,8 +34,32 @@ class ShadowMapInitializationGuard {
 };
 } // namespace
 
+ShadowMapRenderer::ShadowMapRenderer()
+    : resources_(std::make_unique<State>()) {}
+
 ShadowMapRenderer::~ShadowMapRenderer() {
     Release(true);
+}
+
+const DirectX::XMFLOAT4X4 &
+ShadowMapRenderer::GetLightViewProjection() const {
+    return resources_->lightViewProjection;
+}
+
+void ShadowMapRenderer::SetLightViewProjection(
+    const DirectX::XMFLOAT4X4 &matrix) {
+    resources_->lightViewProjection = matrix;
+}
+
+uint32_t ShadowMapRenderer::GetWidth() const { return resources_->width; }
+
+uint32_t ShadowMapRenderer::GetHeight() const { return resources_->height; }
+
+bool ShadowMapRenderer::IsReady() const {
+    return dxCommon_ != nullptr && srvManager_ != nullptr &&
+           resources_->depthTexture && resources_->dsvHeap &&
+           IsValidResourceId(resources_->srvIndex) &&
+           resources_->srvGpuHandle.ptr != 0;
 }
 
 void ShadowMapRenderer::Initialize(DirectXCommon *dxCommon,
@@ -54,8 +80,8 @@ void ShadowMapRenderer::Initialize(DirectXCommon *dxCommon,
     if (!srvManager_->CanAllocate()) {
         return;
     }
-    srvIndex_ = srvManager_->Allocate();
-    if (srvIndex_ == UINT32_MAX) {
+    resources_->srvIndex = srvManager_->Allocate();
+    if (!IsValidResourceId(resources_->srvIndex)) {
         return;
     }
     if (!Resize(width, height)) {
@@ -74,20 +100,21 @@ bool ShadowMapRenderer::Release(bool allowFrameAbort) {
         dxCommon_->UnregisterFrameRollbacks(this);
     }
 
-    if (srvManager_ != nullptr && srvIndex_ != UINT32_MAX) {
-        srvManager_->FreeIfAllocated(srvIndex_);
+    if (srvManager_ != nullptr && IsValidResourceId(resources_->srvIndex)) {
+        srvManager_->FreeIfAllocated(resources_->srvIndex);
     }
 
     dxCommon_ = nullptr;
     srvManager_ = nullptr;
-    srvIndex_ = UINT32_MAX;
-    srvGpuHandle_ = {};
-    state_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    resources_->srvIndex = kInvalidResourceId;
+    resources_->srvGpuHandle = {};
+    resources_->resourceState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     return true;
 }
 
 bool ShadowMapRenderer::Resize(uint32_t width, uint32_t height) {
-    if (!dxCommon_ || !srvManager_ || srvIndex_ == UINT32_MAX) {
+    if (!dxCommon_ || !srvManager_ ||
+        !IsValidResourceId(resources_->srvIndex)) {
         return false;
     }
 
@@ -95,40 +122,40 @@ bool ShadowMapRenderer::Resize(uint32_t width, uint32_t height) {
         static_cast<uint32_t>((std::numeric_limits<LONG>::max)());
     const uint32_t newWidth = std::clamp(width, 1u, kMaxShadowMapSize);
     const uint32_t newHeight = std::clamp(height, 1u, kMaxShadowMapSize);
-    if (newWidth == width_ && newHeight == height_ && depthTexture_ &&
-        dsvHeap_ && srvGpuHandle_.ptr != 0) {
+    if (newWidth == resources_->width && newHeight == resources_->height && resources_->depthTexture &&
+        resources_->dsvHeap && resources_->srvGpuHandle.ptr != 0) {
         return true;
     }
     if (dxCommon_->IsCommandListRecording()) {
         return false;
     }
 
-    const uint32_t oldWidth = width_;
-    const uint32_t oldHeight = height_;
-    const D3D12_VIEWPORT oldViewport = viewport_;
-    const D3D12_RECT oldScissor = scissor_;
-    const D3D12_RESOURCE_STATES oldState = state_;
-    const D3D12_GPU_DESCRIPTOR_HANDLE oldSrvGpuHandle = srvGpuHandle_;
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> oldDsvHeap = dsvHeap_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> oldDepthTexture = depthTexture_;
+    const uint32_t oldWidth = resources_->width;
+    const uint32_t oldHeight = resources_->height;
+    const D3D12_VIEWPORT oldViewport = resources_->viewport;
+    const D3D12_RECT oldScissor = resources_->scissor;
+    const D3D12_RESOURCE_STATES oldState = resources_->resourceState;
+    const D3D12_GPU_DESCRIPTOR_HANDLE oldSrvGpuHandle = resources_->srvGpuHandle;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> oldDsvHeap = resources_->dsvHeap;
+    Microsoft::WRL::ComPtr<ID3D12Resource> oldDepthTexture = resources_->depthTexture;
 
     if (!ReleaseDepthResources()) {
         return false;
     }
-    width_ = newWidth;
-    height_ = newHeight;
+    resources_->width = newWidth;
+    resources_->height = newHeight;
 
-    viewport_.TopLeftX = 0.0f;
-    viewport_.TopLeftY = 0.0f;
-    viewport_.Width = static_cast<float>(width_);
-    viewport_.Height = static_cast<float>(height_);
-    viewport_.MinDepth = 0.0f;
-    viewport_.MaxDepth = 1.0f;
+    resources_->viewport.TopLeftX = 0.0f;
+    resources_->viewport.TopLeftY = 0.0f;
+    resources_->viewport.Width = static_cast<float>(resources_->width);
+    resources_->viewport.Height = static_cast<float>(resources_->height);
+    resources_->viewport.MinDepth = 0.0f;
+    resources_->viewport.MaxDepth = 1.0f;
 
-    scissor_.left = 0;
-    scissor_.top = 0;
-    scissor_.right = static_cast<LONG>(width_);
-    scissor_.bottom = static_cast<LONG>(height_);
+    resources_->scissor.left = 0;
+    resources_->scissor.top = 0;
+    resources_->scissor.right = static_cast<LONG>(resources_->width);
+    resources_->scissor.bottom = static_cast<LONG>(resources_->height);
 
     if (CreateResources() && UpdateSrv()) {
         return true;
@@ -137,19 +164,19 @@ bool ShadowMapRenderer::Resize(uint32_t width, uint32_t height) {
     if (!ReleaseDepthResources()) {
         return false;
     }
-    depthTexture_ = std::move(oldDepthTexture);
-    dsvHeap_ = std::move(oldDsvHeap);
-    srvGpuHandle_ = oldSrvGpuHandle;
-    state_ = oldState;
-    width_ = oldWidth;
-    height_ = oldHeight;
-    viewport_ = oldViewport;
-    scissor_ = oldScissor;
+    resources_->depthTexture = std::move(oldDepthTexture);
+    resources_->dsvHeap = std::move(oldDsvHeap);
+    resources_->srvGpuHandle = oldSrvGpuHandle;
+    resources_->resourceState = oldState;
+    resources_->width = oldWidth;
+    resources_->height = oldHeight;
+    resources_->viewport = oldViewport;
+    resources_->scissor = oldScissor;
     return false;
 }
 
 void ShadowMapRenderer::Begin() {
-    if (!dxCommon_ || !depthTexture_ || !dsvHeap_) {
+    if (!dxCommon_ || !resources_->depthTexture || !resources_->dsvHeap) {
         return;
     }
 
@@ -158,28 +185,28 @@ void ShadowMapRenderer::Begin() {
         return;
     }
 
-    if (state_ != D3D12_RESOURCE_STATE_DEPTH_WRITE) {
-        const D3D12_RESOURCE_STATES previousState = state_;
+    if (resources_->resourceState != D3D12_RESOURCE_STATE_DEPTH_WRITE) {
+        const D3D12_RESOURCE_STATES previousState = resources_->resourceState;
         if (!dxCommon_->RegisterFrameRollback(
-                this, [this, previousState]() { state_ = previousState; })) {
+                this, [this, previousState]() { resources_->resourceState = previousState; })) {
             return;
         }
         auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-            depthTexture_.Get(), state_, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+            resources_->depthTexture.Get(), resources_->resourceState, D3D12_RESOURCE_STATE_DEPTH_WRITE);
         commandList->ResourceBarrier(1, &barrier);
-        state_ = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+        resources_->resourceState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
     }
 
     const D3D12_CPU_DESCRIPTOR_HANDLE dsv = GetDsvHandle();
-    commandList->RSSetViewports(1, &viewport_);
-    commandList->RSSetScissorRects(1, &scissor_);
+    commandList->RSSetViewports(1, &resources_->viewport);
+    commandList->RSSetScissorRects(1, &resources_->scissor);
     commandList->OMSetRenderTargets(0, nullptr, FALSE, &dsv);
     commandList->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0,
                                        nullptr);
 }
 
 void ShadowMapRenderer::End() {
-    if (!dxCommon_ || !depthTexture_) {
+    if (!dxCommon_ || !resources_->depthTexture) {
         return;
     }
 
@@ -188,34 +215,36 @@ void ShadowMapRenderer::End() {
         return;
     }
 
-    if (state_ != D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) {
-        const D3D12_RESOURCE_STATES previousState = state_;
+    if (resources_->resourceState != D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) {
+        const D3D12_RESOURCE_STATES previousState = resources_->resourceState;
         if (!dxCommon_->RegisterFrameRollback(
-                this, [this, previousState]() { state_ = previousState; })) {
+                this, [this, previousState]() { resources_->resourceState = previousState; })) {
             return;
         }
         auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-            depthTexture_.Get(), state_,
+            resources_->depthTexture.Get(), resources_->resourceState,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         commandList->ResourceBarrier(1, &barrier);
-        state_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        resources_->resourceState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     }
 }
 
 D3D12_GPU_DESCRIPTOR_HANDLE ShadowMapRenderer::GetGpuHandle() const {
-    if (!depthTexture_ || srvIndex_ == UINT32_MAX || srvGpuHandle_.ptr == 0) {
+    if (!resources_->depthTexture ||
+        !IsValidResourceId(resources_->srvIndex) ||
+        resources_->srvGpuHandle.ptr == 0) {
         return {};
     }
 
-    return srvGpuHandle_;
+    return resources_->srvGpuHandle;
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE ShadowMapRenderer::GetDsvHandle() const {
-    if (!dsvHeap_) {
+    if (!resources_->dsvHeap) {
         return {};
     }
 
-    return dsvHeap_->GetCPUDescriptorHandleForHeapStart();
+    return resources_->dsvHeap->GetCPUDescriptorHandleForHeapStart();
 }
 
 bool ShadowMapRenderer::ReleaseDepthResources() {
@@ -223,17 +252,18 @@ bool ShadowMapRenderer::ReleaseDepthResources() {
 }
 
 bool ShadowMapRenderer::ReleaseDepthResources(bool allowFrameAbort) {
-    if (!CanReleaseGpuResources(dxCommon_, depthTexture_ != nullptr ||
-                                               dsvHeap_ ||
-                                               srvIndex_ != UINT32_MAX,
+    if (!CanReleaseGpuResources(dxCommon_, resources_->depthTexture != nullptr ||
+                                               resources_->dsvHeap ||
+                                               IsValidResourceId(
+                                                   resources_->srvIndex),
                                 allowFrameAbort)) {
         return false;
     }
 
-    depthTexture_.Reset();
-    dsvHeap_.Reset();
-    srvGpuHandle_ = {};
-    state_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    resources_->depthTexture.Reset();
+    resources_->dsvHeap.Reset();
+    resources_->srvGpuHandle = {};
+    resources_->resourceState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     return true;
 }
 
@@ -247,15 +277,15 @@ bool ShadowMapRenderer::CreateResources() {
     dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
     dsvHeapDesc.NumDescriptors = 1;
     if (FAILED(device->CreateDescriptorHeap(&dsvHeapDesc,
-                                            IID_PPV_ARGS(&dsvHeap_))) ||
-        !dsvHeap_) {
+                                            IID_PPV_ARGS(&resources_->dsvHeap))) ||
+        !resources_->dsvHeap) {
         return false;
     }
 
     D3D12_RESOURCE_DESC desc{};
     desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-    desc.Width = width_;
-    desc.Height = height_;
+    desc.Width = resources_->width;
+    desc.Height = resources_->height;
     desc.DepthOrArraySize = 1;
     desc.MipLevels = 1;
     desc.Format = DXGI_FORMAT_R32_TYPELESS;
@@ -271,29 +301,29 @@ bool ShadowMapRenderer::CreateResources() {
     if (!CreateCommittedResourceChecked(
             device, &heapProps, D3D12_HEAP_FLAG_NONE, &desc,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &clearValue,
-            depthTexture_.GetAddressOf())) {
-        dsvHeap_.Reset();
+            resources_->depthTexture.GetAddressOf())) {
+        resources_->dsvHeap.Reset();
         return false;
     }
-    state_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    resources_->resourceState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
     D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc{};
     dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
     dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
     const D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = GetDsvHandle();
     if (dsvHandle.ptr == 0) {
-        depthTexture_.Reset();
-        dsvHeap_.Reset();
+        resources_->depthTexture.Reset();
+        resources_->dsvHeap.Reset();
         return false;
     }
-    device->CreateDepthStencilView(depthTexture_.Get(), &dsvDesc, dsvHandle);
+    device->CreateDepthStencilView(resources_->depthTexture.Get(), &dsvDesc, dsvHandle);
     return true;
 }
 
 bool ShadowMapRenderer::UpdateSrv() {
     if (!dxCommon_ || !dxCommon_->GetDevice() || !srvManager_ ||
-        srvIndex_ == UINT32_MAX || !depthTexture_) {
-        srvGpuHandle_ = {};
+        !IsValidResourceId(resources_->srvIndex) || !resources_->depthTexture) {
+        resources_->srvGpuHandle = {};
         return false;
     }
 
@@ -304,15 +334,15 @@ bool ShadowMapRenderer::UpdateSrv() {
     srvDesc.Texture2D.MipLevels = 1;
 
     const D3D12_CPU_DESCRIPTOR_HANDLE srvHandle =
-        srvManager_->GetCpuHandle(srvIndex_);
+        srvManager_->GetCpuHandle(resources_->srvIndex);
     const D3D12_GPU_DESCRIPTOR_HANDLE srvGpuHandle =
-        srvManager_->GetGpuHandle(srvIndex_);
+        srvManager_->GetGpuHandle(resources_->srvIndex);
     if (srvHandle.ptr == 0 || srvGpuHandle.ptr == 0) {
-        srvGpuHandle_ = {};
+        resources_->srvGpuHandle = {};
         return false;
     }
-    dxCommon_->GetDevice()->CreateShaderResourceView(depthTexture_.Get(),
+    dxCommon_->GetDevice()->CreateShaderResourceView(resources_->depthTexture.Get(),
                                                      &srvDesc, srvHandle);
-    srvGpuHandle_ = srvGpuHandle;
+    resources_->srvGpuHandle = srvGpuHandle;
     return true;
 }

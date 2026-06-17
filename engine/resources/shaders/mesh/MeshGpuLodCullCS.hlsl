@@ -6,7 +6,7 @@ struct InstanceData
     float4 world3;
     float4 color;
     float fade;
-    uint seed;
+    uint customId;
     float2 padding;
 };
 

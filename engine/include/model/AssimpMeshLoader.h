@@ -37,25 +37,16 @@ class AssimpMeshLoader {
 
   private:
     /// <summary>
-    /// 指定した名前のノードを検索する
-    /// </summary>
-    /// <param name="node">検索開始ノード</param>
-    /// <param name="name">探すノード名</param>
-    /// <returns>見つかったノード。未検出時はnullptr</returns>
-    const aiNode *FindNodeByName(const aiNode *node,
-                                 const std::string &name) const;
-
-    /// <summary>
     /// ボーンの親子関係とバインド行列を構築する
     /// </summary>
     /// <param name="scene">Assimpのシーンデータ</param>
     /// <param name="model">書き込み先モデル</param>
-    void BuildBoneHierarchy(const aiScene *scene, Model &model) const;
+    static void BuildBoneHierarchy(const aiScene *scene, Model &model);
 
     /// <summary>
     /// Skeleton更新しやすいように親Jointが子Jointより若いIndexになるよう並べる
     /// </summary>
-    void ReorderBonesParentFirst(Model &model) const;
+    static void ReorderBonesParentFirst(Model &model);
 
   private:
     TextureManager *textureManager_ = nullptr;

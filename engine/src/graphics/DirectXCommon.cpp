@@ -1,25 +1,119 @@
 #include "graphics/DirectXCommon.h"
+#include "DirectXCommonDiagnostics.h"
 #include "DirectXCommonInternal.h"
-#include "core/Numeric.h"
-#include "graphics/DxHelpers.h"
+#include "DirectXCommonState.h"
 #include "graphics/SrvManager.h"
+
 #include <algorithm>
-#include <cmath>
-#include <utility>
+#include <iterator>
 
 namespace {
 using DirectXCommonInternal::LogIfFailed;
-using Numeric::ClampFinite;
 
 constexpr size_t kDefaultFrameRollbackReserve = 32;
 } // namespace
 
+DirectXCommon::DirectXCommon() : state_(std::make_unique<State>()) {}
+
 DirectXCommon::~DirectXCommon() {
     WaitForGpuIfPossible();
-    if (fenceEvent_) {
-        CloseHandle(fenceEvent_);
-        fenceEvent_ = nullptr;
+    if (state_ && state_->fenceEvent) {
+        CloseHandle(state_->fenceEvent);
+        state_->fenceEvent = nullptr;
     }
+}
+
+bool DirectXCommon::IsInitialized() const {
+    return state_->commandQueue && state_->fence &&
+           state_->fenceEvent != nullptr;
+}
+
+bool DirectXCommon::IsReadyForRendering() const {
+    return IsInitialized() && state_->commandList && state_->swapChain &&
+           HasFrameResources();
+}
+
+ID3D12Device *DirectXCommon::GetDevice() const {
+    return state_->device.Get();
+}
+
+ID3D12CommandQueue *DirectXCommon::GetCommandQueue() const {
+    return state_->commandQueue.Get();
+}
+
+ID3D12GraphicsCommandList *DirectXCommon::GetCommandList() const {
+    return state_->isCommandListRecording ? state_->commandList.Get()
+                                          : nullptr;
+}
+
+const GpuFeatureCaps &DirectXCommon::GetGpuFeatureCaps() const {
+    return state_->featureCaps;
+}
+
+ID3D12Device5 *DirectXCommon::GetRaytracingDevice() const {
+    return state_->featureCaps.raytracingSupported
+               ? state_->raytracingDevice.Get()
+               : nullptr;
+}
+
+ID3D12GraphicsCommandList4 *
+DirectXCommon::GetRaytracingCommandList() const {
+    return state_->isCommandListRecording &&
+                   state_->featureCaps.raytracingSupported
+               ? state_->raytracingCommandList.Get()
+               : nullptr;
+}
+
+ID3D12GraphicsCommandList6 *
+DirectXCommon::GetMeshShaderCommandList() const {
+    return state_->isCommandListRecording &&
+                   state_->featureCaps.meshShaderSupported
+               ? state_->meshShaderCommandList.Get()
+               : nullptr;
+}
+
+bool DirectXCommon::IsCommandListRecording() const {
+    return state_->isCommandListRecording;
+}
+
+bool DirectXCommon::IsUploadPassActive() const {
+    return state_->uploadPassActive;
+}
+
+UINT DirectXCommon::GetBackBufferIndex() const {
+    return state_->backBufferIndex;
+}
+
+uint32_t DirectXCommon::GetSceneWidth() const {
+    return state_->sceneViewport.Width > 0.0f
+               ? static_cast<uint32_t>(state_->sceneViewport.Width)
+               : 0u;
+}
+
+uint32_t DirectXCommon::GetSceneHeight() const {
+    return state_->sceneViewport.Height > 0.0f
+               ? static_cast<uint32_t>(state_->sceneViewport.Height)
+               : 0u;
+}
+
+ID3D12Resource *DirectXCommon::GetSceneColorBuffer() const {
+    return state_->sceneColorBuffer.Get();
+}
+
+UINT DirectXCommon::GetSceneSrvIndex() const {
+    return state_->sceneSrvIndex;
+}
+
+UINT DirectXCommon::GetAdapterVendorId() const {
+    return state_->adapterDesc.VendorId;
+}
+
+bool DirectXCommon::IsIntelAdapter() const {
+    return state_->adapterDesc.VendorId == 0x8086;
+}
+
+std::wstring DirectXCommon::GetAdapterDescription() const {
+    return state_->adapterDesc.Description;
 }
 
 bool DirectXCommon::Initialize(HWND hwnd, int width, int height) {
@@ -27,29 +121,29 @@ bool DirectXCommon::Initialize(HWND hwnd, int width, int height) {
         return false;
     }
     CreateFactory();
-    if (!factory_) {
+    if (!state_->factory) {
         return false;
     }
     CreateDevice();
-    if (!device_) {
+    if (!state_->device) {
         return false;
     }
     CreateCommandQueue();
-    if (!commandQueue_) {
+    if (!state_->commandQueue) {
         return false;
     }
     CreateCommandAllocator();
-    for (const auto &allocator : commandAllocators_) {
-        if (!allocator) {
-            return false;
-        }
+    if (!std::all_of(std::begin(state_->commandAllocators),
+                     std::end(state_->commandAllocators),
+                     [](const auto &allocator) { return allocator != nullptr; })) {
+        return false;
     }
     CreateCommandList();
-    if (!commandList_) {
+    if (!state_->commandList) {
         return false;
     }
     CreateSwapChain(hwnd, width, height);
-    if (!swapChain_) {
+    if (!state_->swapChain) {
         return false;
     }
     CreateRTV();
@@ -65,14 +159,14 @@ bool DirectXCommon::Initialize(HWND hwnd, int width, int height) {
 }
 
 void DirectXCommon::BeginFrame() {
-    ++diagnosticFrameId_;
+    state_->diagnostics->BeginFrame();
     TrackGpuPhase("BeginFrame");
-    if (!IsInitialized() || !commandList_ || !HasFrameResources()) {
+    if (!IsInitialized() || !state_->commandList || !HasFrameResources()) {
         return;
     }
-    WaitForFrame(backBufferIndex_);
+    WaitForFrame(state_->backBufferIndex);
     ID3D12CommandAllocator* commandAllocator =
-        commandAllocators_[backBufferIndex_].Get();
+        state_->commandAllocators[state_->backBufferIndex].Get();
     if (commandAllocator == nullptr) {
         return;
     }
@@ -80,11 +174,11 @@ void DirectXCommon::BeginFrame() {
                     "commandAllocator_->Reset failed")) {
         return;
     }
-    if (LogIfFailed(commandList_->Reset(commandAllocator, nullptr),
-                    "commandList_->Reset failed")) {
+    if (LogIfFailed(state_->commandList->Reset(commandAllocator, nullptr),
+                    "state_->commandList->Reset failed")) {
         return;
     }
-    isCommandListRecording_ = true;
+    state_->isCommandListRecording = true;
     ClearFrameRollbacks();
     ReserveFrameRollbacks(kDefaultFrameRollbackReserve);
     SnapshotFrameResourceStates();
@@ -92,156 +186,83 @@ void DirectXCommon::BeginFrame() {
     ApplySceneViewportAndScissor();
     TrackGpuPhase("BeginFrame.ResetComplete");
 }
-void DirectXCommon::BeginScenePass() {
-    TrackGpuPhase("BeginScenePass");
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
-    if (!commandList || !dsvHeap_ || !depthBuffer_) {
-        return;
-    }
-    TransitionSceneColor(D3D12_RESOURCE_STATE_RENDER_TARGET);
-
-    auto sceneRtv = GetSceneRtvHandle();
-    if (sceneRtv.ptr == 0) {
-        return;
-    }
-    auto dsvHandle = dsvHeap_->GetCPUDescriptorHandleForHeapStart();
-
-    ApplySceneViewportAndScissor();
-    commandList->OMSetRenderTargets(1, &sceneRtv, FALSE, &dsvHandle);
-    commandList->ClearRenderTargetView(sceneRtv, clearColor_, 0, nullptr);
-    commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f,
-                                       0, 0, nullptr);
-}
-
-void DirectXCommon::RestoreSceneRenderState(bool clearDepth) {
-    TrackGpuPhase("RestoreSceneRenderState");
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
-    if (!commandList || !dsvHeap_ || !depthBuffer_) {
-        return;
-    }
-    TransitionSceneColor(D3D12_RESOURCE_STATE_RENDER_TARGET);
-
-    auto sceneRtv = GetSceneRtvHandle();
-    if (sceneRtv.ptr == 0) {
-        return;
-    }
-    auto dsvHandle = dsvHeap_->GetCPUDescriptorHandleForHeapStart();
-
-    ApplySceneViewportAndScissor();
-    commandList->OMSetRenderTargets(1, &sceneRtv, FALSE, &dsvHandle);
-    if (clearDepth) {
-        commandList->ClearDepthStencilView(
-            dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-    }
-}
-
-void DirectXCommon::ClearDepth() {
-    TrackGpuPhase("ClearDepth");
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
-    if (!commandList || !dsvHeap_ || !depthBuffer_) {
-        return;
-    }
-    auto dsvHandle = dsvHeap_->GetCPUDescriptorHandleForHeapStart();
-    commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH,
-                                       1.0f, 0, 0, nullptr);
-}
-
-void DirectXCommon::EndScenePass() {
-    TrackGpuPhase("EndScenePass");
-    if (!GetCommandList()) {
-        return;
-    }
-    TransitionSceneColor(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-}
-
-void DirectXCommon::BeginBackBufferPass(bool bindDepth) {
-    TrackGpuPhase("BeginBackBufferPass");
-    if (!GetCommandList()) {
-        return;
-    }
-    TransitionBackBuffer(backBufferIndex_,
-                         D3D12_RESOURCE_STATE_RENDER_TARGET);
-
-    SetBackBufferRenderTarget(true, bindDepth);
-}
-
 bool DirectXCommon::EndFrame() {
     TrackGpuPhase("EndFrame.Begin");
-    if (!isCommandListRecording_ || !commandList_ || !commandQueue_ || !device_ ||
-        !swapChain_ || !fence_) {
+    if (!state_->isCommandListRecording || !state_->commandList || !state_->commandQueue || !state_->device ||
+        !state_->swapChain || !state_->fence) {
         AbortFrame();
         return false;
     }
-    TransitionBackBuffer(backBufferIndex_, D3D12_RESOURCE_STATE_PRESENT);
+    TransitionBackBuffer(state_->backBufferIndex, D3D12_RESOURCE_STATE_PRESENT);
 
     TrackGpuPhase("EndFrame.CloseCommandList");
-    const HRESULT closeResult = commandList_->Close();
+    const HRESULT closeResult = state_->commandList->Close();
     if (FAILED(closeResult)) {
-        isCommandListRecording_ = false;
-        uploadPassActive_ = false;
-        uploadPassDepth_ = 0;
+        state_->isCommandListRecording = false;
+        state_->uploadPassActive = false;
+        state_->uploadPassDepth = 0;
         RestoreFrameRollbacks();
         RestoreFrameResourceStates();
-        LogIfFailed(closeResult, "commandList_->Close failed");
+        LogIfFailed(closeResult, "state_->commandList->Close failed");
         return false;
     }
-    isCommandListRecording_ = false;
+    state_->isCommandListRecording = false;
 
-    ID3D12CommandList *lists[] = {commandList_.Get()};
+    ID3D12CommandList *lists[] = {state_->commandList.Get()};
     TrackGpuPhase("EndFrame.ExecuteCommandLists");
-    commandQueue_->ExecuteCommandLists(1, lists);
+    state_->commandQueue->ExecuteCommandLists(1, lists);
     ClearFrameRollbacks();
     ClearFrameResourceStateSnapshot();
 
-    const UINT submittedBufferIndex = backBufferIndex_;
-    fenceValue_++;
+    const UINT submittedBufferIndex = state_->backBufferIndex;
+    state_->fenceValue++;
     TrackGpuPhase("EndFrame.SignalFence");
-    if (LogIfFailed(commandQueue_->Signal(fence_.Get(), fenceValue_),
-                    "commandQueue_->Signal failed")) {
+    if (LogIfFailed(state_->commandQueue->Signal(state_->fence.Get(), state_->fenceValue),
+                    "state_->commandQueue->Signal failed")) {
         return false;
     }
-    frameFenceValues_[submittedBufferIndex] = fenceValue_;
+    state_->frameFenceValues[submittedBufferIndex] = state_->fenceValue;
 
     TrackGpuPhase("EndFrame.Present");
-    HRESULT presentResult = swapChain_->Present(1, 0);
+    HRESULT presentResult = state_->swapChain->Present(1, 0);
     if (FAILED(presentResult)) {
-        OutputDebugStringA("DirectXCommon: swapChain_->Present failed\n");
-        HRESULT removedReason = device_->GetDeviceRemovedReason();
+        OutputDebugStringA("DirectXCommon: state_->swapChain->Present failed\n");
+        HRESULT removedReason = state_->device->GetDeviceRemovedReason();
         if (FAILED(removedReason)) {
             OutputDebugStringA("DirectXCommon: D3D12 device removed\n");
             LogIfFailed(removedReason, "D3D12 device removed");
         }
-        LogIfFailed(presentResult, "swapChain_->Present failed");
+        LogIfFailed(presentResult, "state_->swapChain->Present failed");
         return false;
     }
 
-    backBufferIndex_ = swapChain_->GetCurrentBackBufferIndex();
+    state_->backBufferIndex = state_->swapChain->GetCurrentBackBufferIndex();
     ClearFrameResourceStateSnapshot();
     return true;
 }
 void DirectXCommon::AbortFrame() noexcept {
-    if (!isCommandListRecording_) {
-        uploadPassActive_ = false;
-        uploadPassDepth_ = 0;
+    if (!state_->isCommandListRecording) {
+        state_->uploadPassActive = false;
+        state_->uploadPassDepth = 0;
         RestoreFrameRollbacks();
         RestoreFrameResourceStates();
         return;
     }
 
-    if (commandList_) {
-        commandList_->Close();
+    if (state_->commandList) {
+        state_->commandList->Close();
     }
 
-    isCommandListRecording_ = false;
-    uploadPassActive_ = false;
-    uploadPassDepth_ = 0;
+    state_->isCommandListRecording = false;
+    state_->uploadPassActive = false;
+    state_->uploadPassDepth = 0;
     RestoreFrameRollbacks();
     RestoreFrameResourceStates();
 }
 
 bool DirectXCommon::Resize(int width, int height) {
     TrackGpuPhase("Resize");
-    if (!IsInitialized() || !swapChain_ || width <= 0 || height <= 0) {
+    if (!IsInitialized() || !state_->swapChain || width <= 0 || height <= 0) {
         return false;
     }
 
@@ -251,40 +272,40 @@ bool DirectXCommon::Resize(int width, int height) {
     ClearFrameRollbacks();
     ClearFrameResourceStateSnapshot();
 
-    for (auto &backBuffer : backBuffers_) {
+    for (auto &backBuffer : state_->backBuffers) {
         backBuffer.Reset();
     }
-    sceneColorBuffer_.Reset();
-    depthBuffer_.Reset();
+    state_->sceneColorBuffer.Reset();
+    state_->depthBuffer.Reset();
 
-    if (LogIfFailed(swapChain_->ResizeBuffers(
+    if (LogIfFailed(state_->swapChain->ResizeBuffers(
                         kSwapChainBufferCount, static_cast<UINT>(width),
                         static_cast<UINT>(height), kBackBufferFormat, 0),
-                    "swapChain_->ResizeBuffers failed")) {
+                    "state_->swapChain->ResizeBuffers failed")) {
         return false;
     }
 
-    backBufferIndex_ = swapChain_->GetCurrentBackBufferIndex();
+    state_->backBufferIndex = state_->swapChain->GetCurrentBackBufferIndex();
 
     CreateRTV();
-    if (!rtvHeap_ || rtvDescriptorSize_ == 0) {
+    if (!state_->rtvHeap || state_->rtvDescriptorSize == 0) {
         return false;
     }
-    for (const auto &backBuffer : backBuffers_) {
-        if (!backBuffer) {
-            return false;
-        }
+    if (!std::all_of(std::begin(state_->backBuffers),
+                     std::end(state_->backBuffers),
+                     [](const auto &backBuffer) { return backBuffer != nullptr; })) {
+        return false;
     }
 
     CreateSceneRenderTarget(width, height);
-    if (!sceneColorBuffer_) {
+    if (!state_->sceneColorBuffer) {
         return false;
     }
     CreateViewport(width, height);
     CreateScissor(width, height);
     CreateDepthStencil(width, height);
-    if (!dsvHeap_ || !depthBuffer_) {
-        depthSrvGpuHandle_ = {};
+    if (!state_->dsvHeap || !state_->depthBuffer) {
+        state_->depthSrvGpuHandle = {};
         return false;
     }
     UpdateDepthStencilSrv();
@@ -294,20 +315,20 @@ bool DirectXCommon::Resize(int width, int height) {
 
 bool DirectXCommon::BeginUpload() {
     TrackGpuPhase("BeginUpload");
-    if (!IsInitialized() || !commandList_) {
+    if (!IsInitialized() || !state_->commandList) {
         return false;
     }
-    if (isCommandListRecording_) {
-        if (uploadPassActive_) {
-            ++uploadPassDepth_;
+    if (state_->isCommandListRecording) {
+        if (state_->uploadPassActive) {
+            ++state_->uploadPassDepth;
             return true;
         }
         return false;
     }
 
-    WaitForFrame(backBufferIndex_);
+    WaitForFrame(state_->backBufferIndex);
     ID3D12CommandAllocator* commandAllocator =
-        commandAllocators_[backBufferIndex_].Get();
+        state_->commandAllocators[state_->backBufferIndex].Get();
     if (commandAllocator == nullptr) {
         return false;
     }
@@ -316,13 +337,13 @@ bool DirectXCommon::BeginUpload() {
         return false;
     }
 
-    if (LogIfFailed(commandList_->Reset(commandAllocator, nullptr),
-                    "commandList_->Reset failed")) {
+    if (LogIfFailed(state_->commandList->Reset(commandAllocator, nullptr),
+                    "state_->commandList->Reset failed")) {
         return false;
     }
-    isCommandListRecording_ = true;
-    uploadPassActive_ = true;
-    uploadPassDepth_ = 1;
+    state_->isCommandListRecording = true;
+    state_->uploadPassActive = true;
+    state_->uploadPassDepth = 1;
     ClearFrameRollbacks();
     ReserveFrameRollbacks(kDefaultFrameRollbackReserve);
     return true;
@@ -330,34 +351,34 @@ bool DirectXCommon::BeginUpload() {
 
 DirectXCommon::UploadPassResult DirectXCommon::EndUploadPass() {
     TrackGpuPhase("EndUpload");
-    if (!uploadPassActive_) {
+    if (!state_->uploadPassActive) {
         return UploadPassResult::Failed;
     }
-    if (uploadPassDepth_ > 1) {
-        --uploadPassDepth_;
+    if (state_->uploadPassDepth > 1) {
+        --state_->uploadPassDepth;
         return UploadPassResult::Completed;
     }
 
-    const HRESULT closeResult = commandList_->Close();
+    const HRESULT closeResult = state_->commandList->Close();
     if (FAILED(closeResult)) {
-        isCommandListRecording_ = false;
-        uploadPassActive_ = false;
-        uploadPassDepth_ = 0;
+        state_->isCommandListRecording = false;
+        state_->uploadPassActive = false;
+        state_->uploadPassDepth = 0;
         RestoreFrameRollbacks();
-        LogIfFailed(closeResult, "commandList_->Close failed");
+        LogIfFailed(closeResult, "state_->commandList->Close failed");
         return UploadPassResult::Failed;
     }
-    isCommandListRecording_ = false;
-    uploadPassActive_ = false;
-    uploadPassDepth_ = 0;
+    state_->isCommandListRecording = false;
+    state_->uploadPassActive = false;
+    state_->uploadPassDepth = 0;
 
-    ID3D12CommandList *lists[] = {commandList_.Get()};
+    ID3D12CommandList *lists[] = {state_->commandList.Get()};
     TrackGpuPhase("EndUpload.ExecuteCommandLists");
-    if (!commandQueue_) {
+    if (!state_->commandQueue) {
         RestoreFrameRollbacks();
         return UploadPassResult::Failed;
     }
-    commandQueue_->ExecuteCommandLists(1, lists);
+    state_->commandQueue->ExecuteCommandLists(1, lists);
     ClearFrameRollbacks();
 
     if (!WaitForGpuIfPossible()) {
@@ -378,21 +399,21 @@ bool DirectXCommon::WaitForGpu() {
     }
 
     TrackGpuPhase("WaitForGpu");
-    fenceValue_++;
-    if (LogIfFailed(commandQueue_->Signal(fence_.Get(), fenceValue_),
-                    "commandQueue_->Signal failed")) {
+    state_->fenceValue++;
+    if (LogIfFailed(state_->commandQueue->Signal(state_->fence.Get(), state_->fenceValue),
+                    "state_->commandQueue->Signal failed")) {
         return false;
     }
 
-    if (fence_->GetCompletedValue() < fenceValue_) {
-        if (LogIfFailed(fence_->SetEventOnCompletion(fenceValue_, fenceEvent_),
-                        "fence_->SetEventOnCompletion failed")) {
+    if (state_->fence->GetCompletedValue() < state_->fenceValue) {
+        if (LogIfFailed(state_->fence->SetEventOnCompletion(state_->fenceValue, state_->fenceEvent),
+                        "state_->fence->SetEventOnCompletion failed")) {
             return false;
         }
-        WaitForSingleObject(fenceEvent_, INFINITE);
+        WaitForSingleObject(state_->fenceEvent, INFINITE);
     }
     for (UINT i = 0; i < kSwapChainBufferCount; ++i) {
-        frameFenceValues_[i] = fenceValue_;
+        state_->frameFenceValues[i] = state_->fenceValue;
     }
     return true;
 }
@@ -401,89 +422,21 @@ bool DirectXCommon::WaitForGpuIfPossible() {
     return WaitForGpu();
 }
 
-void DirectXCommon::SetBackBufferRenderTarget(bool clear, bool bindDepth) {
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
-    if (!commandList) {
-        return;
-    }
-    auto rtvHandle = GetBackBufferRtvHandle();
-    if (rtvHandle.ptr == 0) {
-        return;
-    }
-
-    D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle{};
-    D3D12_CPU_DESCRIPTOR_HANDLE *dsvHandlePtr = nullptr;
-    if (bindDepth) {
-        if (!dsvHeap_ || !depthBuffer_) {
-            return;
-        }
-        dsvHandle = dsvHeap_->GetCPUDescriptorHandleForHeapStart();
-        dsvHandlePtr = &dsvHandle;
-    }
-
-    ApplySceneViewportAndScissor();
-    commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, dsvHandlePtr);
-
-    if (clear) {
-        commandList->ClearRenderTargetView(rtvHandle, clearColor_, 0, nullptr);
-        if (bindDepth) {
-            commandList->ClearDepthStencilView(
-                dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-        }
-    }
-}
-
-void DirectXCommon::ApplySceneViewportAndScissor() {
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
-    if (!commandList) {
-        return;
-    }
-    commandList->RSSetViewports(1, &sceneViewport_);
-    commandList->RSSetScissorRects(1, &sceneScissorRect_);
-}
-
-void DirectXCommon::TransitionSceneColor(D3D12_RESOURCE_STATES afterState) {
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
-    if (!commandList || !sceneColorBuffer_ || sceneColorState_ == afterState) {
-        return;
-    }
-
-    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        sceneColorBuffer_.Get(), sceneColorState_, afterState);
-    TrackGpuPhase("TransitionSceneColor");
-    commandList->ResourceBarrier(1, &barrier);
-    sceneColorState_ = afterState;
-}
-
-void DirectXCommon::TransitionBackBuffer(
-    UINT index, D3D12_RESOURCE_STATES afterState) {
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
-    if (!commandList || index >= kSwapChainBufferCount || !backBuffers_[index] ||
-        backBufferStates_[index] == afterState) {
-        return;
-    }
-
-    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        backBuffers_[index].Get(), backBufferStates_[index], afterState);
-    TrackGpuPhase("TransitionBackBuffer");
-    commandList->ResourceBarrier(1, &barrier);
-    backBufferStates_[index] = afterState;
-}
 void DirectXCommon::CreateDepthStencilSrv(SrvManager *srvManager) {
     if (srvManager == nullptr) {
         return;
     }
 
-    srvManager_ = srvManager;
-    if (depthSrvIndex_ == UINT_MAX) {
-        if (!srvManager_->CanAllocate()) {
-            depthSrvGpuHandle_ = {};
+    state_->srvManager = srvManager;
+    if (state_->depthSrvIndex == UINT_MAX) {
+        if (!state_->srvManager->CanAllocate()) {
+            state_->depthSrvGpuHandle = {};
             return;
         }
-        depthSrvIndex_ = srvManager_->Allocate();
+        state_->depthSrvIndex = state_->srvManager->Allocate();
     }
-    if (depthSrvIndex_ == UINT_MAX) {
-        depthSrvGpuHandle_ = {};
+    if (state_->depthSrvIndex == UINT_MAX) {
+        state_->depthSrvGpuHandle = {};
         return;
     }
     UpdateDepthStencilSrv();
@@ -494,140 +447,36 @@ void DirectXCommon::RegisterSceneColorSRV(SrvManager *srvManager) {
         return;
     }
 
-    srvManager_ = srvManager;
-    if (sceneSrvIndex_ == UINT_MAX) {
-        if (!srvManager_->CanAllocate()) {
+    state_->srvManager = srvManager;
+    if (state_->sceneSrvIndex == UINT_MAX) {
+        if (!state_->srvManager->CanAllocate()) {
             return;
         }
-        sceneSrvIndex_ = srvManager_->Allocate();
+        state_->sceneSrvIndex = state_->srvManager->Allocate();
     }
-    if (sceneSrvIndex_ == UINT_MAX) {
+    if (state_->sceneSrvIndex == UINT_MAX) {
         return;
     }
     UpdateSceneColorSrv();
 }
 
 void DirectXCommon::ReleaseRegisteredSrvs() {
-    if (srvManager_ == nullptr) {
-        depthSrvIndex_ = UINT_MAX;
-        sceneSrvIndex_ = UINT_MAX;
-        depthSrvGpuHandle_ = {};
+    if (state_->srvManager == nullptr) {
+        state_->depthSrvIndex = UINT_MAX;
+        state_->sceneSrvIndex = UINT_MAX;
+        state_->depthSrvGpuHandle = {};
         return;
     }
 
-    if (depthSrvIndex_ != UINT_MAX) {
-        srvManager_->FreeIfAllocated(depthSrvIndex_);
-        depthSrvIndex_ = UINT_MAX;
+    if (state_->depthSrvIndex != UINT_MAX) {
+        state_->srvManager->FreeIfAllocated(state_->depthSrvIndex);
+        state_->depthSrvIndex = UINT_MAX;
     }
-    if (sceneSrvIndex_ != UINT_MAX) {
-        srvManager_->FreeIfAllocated(sceneSrvIndex_);
-        sceneSrvIndex_ = UINT_MAX;
-    }
-
-    depthSrvGpuHandle_ = {};
-    srvManager_ = nullptr;
-}
-
-void DirectXCommon::TransitionDepthToShaderResource() {
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
-    constexpr D3D12_RESOURCE_STATES shaderReadState =
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
-        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-    if (!commandList || !depthBuffer_ ||
-        depthState_ == shaderReadState) {
-        return;
+    if (state_->sceneSrvIndex != UINT_MAX) {
+        state_->srvManager->FreeIfAllocated(state_->sceneSrvIndex);
+        state_->sceneSrvIndex = UINT_MAX;
     }
 
-    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        depthBuffer_.Get(), depthState_, shaderReadState);
-    TrackGpuPhase("TransitionDepthToShaderResource");
-    commandList->ResourceBarrier(1, &barrier);
-    depthState_ = shaderReadState;
-}
-
-void DirectXCommon::TransitionDepthToWrite() {
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
-    if (!commandList || !depthBuffer_ ||
-        depthState_ == D3D12_RESOURCE_STATE_DEPTH_WRITE) {
-        return;
-    }
-
-    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        depthBuffer_.Get(), depthState_, D3D12_RESOURCE_STATE_DEPTH_WRITE);
-    TrackGpuPhase("TransitionDepthToWrite");
-    commandList->ResourceBarrier(1, &barrier);
-    depthState_ = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-}
-
-void DirectXCommon::SetClearColor(const DirectX::XMFLOAT4 &color) {
-    SetClearColor(color.x, color.y, color.z, color.w);
-}
-
-void DirectXCommon::SetClearColor(float r, float g, float b, float a) {
-    clearColor_[0] = ClampFinite(r, 0.0f, 1.0f, kClearColor[0]);
-    clearColor_[1] = ClampFinite(g, 0.0f, 1.0f, kClearColor[1]);
-    clearColor_[2] = ClampFinite(b, 0.0f, 1.0f, kClearColor[2]);
-    clearColor_[3] = ClampFinite(a, 0.0f, 1.0f, kClearColor[3]);
-}
-
-void DirectXCommon::ResetClearColor() {
-    clearColor_[0] = kClearColor[0];
-    clearColor_[1] = kClearColor[1];
-    clearColor_[2] = kClearColor[2];
-    clearColor_[3] = kClearColor[3];
-}
-bool DirectXCommon::ReserveFrameRollbacks(size_t additional) {
-    if (!isCommandListRecording_ || additional == 0) {
-        return true;
-    }
-    return frameRollbacks_.ReserveAdditional(additional);
-}
-
-bool DirectXCommon::RegisterFrameRollback(std::function<void()> rollback) {
-    return RegisterFrameRollback(nullptr, std::move(rollback));
-}
-
-bool DirectXCommon::RegisterFrameRollback(
-    const void *owner, std::function<void()> rollback) {
-    if (!isCommandListRecording_ || !rollback) {
-        return true;
-    }
-    return frameRollbacks_.Add(owner, std::move(rollback));
-}
-
-void DirectXCommon::UnregisterFrameRollbacks(const void *owner) noexcept {
-    frameRollbacks_.RemoveOwner(owner);
-}
-
-void DirectXCommon::SnapshotFrameResourceStates() {
-    for (UINT index = 0; index < kSwapChainBufferCount; ++index) {
-        frameBackBufferStates_[index] = backBufferStates_[index];
-    }
-    frameSceneColorState_ = sceneColorState_;
-    frameDepthState_ = depthState_;
-    hasFrameStateSnapshot_ = true;
-}
-
-void DirectXCommon::RestoreFrameResourceStates() noexcept {
-    if (!hasFrameStateSnapshot_) {
-        return;
-    }
-    for (UINT index = 0; index < kSwapChainBufferCount; ++index) {
-        backBufferStates_[index] = frameBackBufferStates_[index];
-    }
-    sceneColorState_ = frameSceneColorState_;
-    depthState_ = frameDepthState_;
-    hasFrameStateSnapshot_ = false;
-}
-
-void DirectXCommon::ClearFrameResourceStateSnapshot() noexcept {
-    hasFrameStateSnapshot_ = false;
-}
-
-void DirectXCommon::RestoreFrameRollbacks() noexcept {
-    frameRollbacks_.Restore();
-}
-
-void DirectXCommon::ClearFrameRollbacks() noexcept {
-    frameRollbacks_.Clear();
+    state_->depthSrvGpuHandle = {};
+    state_->srvManager = nullptr;
 }

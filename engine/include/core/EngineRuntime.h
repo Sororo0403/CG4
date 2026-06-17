@@ -48,6 +48,13 @@ class EngineRuntime {
 
     bool Initialize(HINSTANCE instance, int showCommand,
                     const EngineRuntimeConfig &config);
+    bool InitializeWindowAndDevice(HINSTANCE instance, int showCommand,
+                                   const EngineRuntimeConfig &config);
+    bool InitializeRenderingSystems();
+    bool InitializeSceneSystems(HINSTANCE instance,
+                                const EngineRuntimeConfig &config);
+    bool ValidateDefaultTextures() const;
+    void BindSceneContext();
     bool InitializeLog(const std::wstring &path);
     bool FailInitialize(const char *reason);
     void Log(const std::string &message);
@@ -58,6 +65,10 @@ class EngineRuntime {
     void UpdateFrameContext();
     ResizeResult ResizeIfNeeded();
     bool RenderFrame();
+    void BeginRenderFrameSystems();
+    bool BeginCommandFrame();
+    void BuildRenderGraph();
+    bool FinishCommandFrame();
 
     std::unique_ptr<Systems> systems_;
 

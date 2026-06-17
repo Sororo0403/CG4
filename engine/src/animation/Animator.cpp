@@ -21,7 +21,7 @@ void Animator::Play(Model &model, const std::string &animationName, bool loop) {
     model.animationFinished = false;
 }
 
-bool Animator::IsFinished(const Model &model) const {
+bool Animator::IsFinished(const Model &model) {
     return model.animationFinished;
 }
 

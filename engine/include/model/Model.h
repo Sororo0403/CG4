@@ -1,7 +1,8 @@
 #pragma once
 #include "animation/AnimationTypes.h"
+#include "core/ResourceHandle.h"
+#include "model/VertexInfluence.h"
 #include <DirectXMath.h>
-#include <array>
 #include <cstdint>
 #include <d3d12.h>
 #include <string>
@@ -23,16 +24,6 @@ struct VertexWeightData {
 struct JointWeightData {
     DirectX::XMFLOAT4X4 inverseBindPoseMatrix{};
     std::vector<VertexWeightData> vertexWeights;
-};
-
-constexpr uint32_t kNumMaxInfluence = 4;
-
-/// <summary>
-/// GPUへ渡す頂点スキニング情報
-/// </summary>
-struct VertexInfluence {
-    std::array<float, kNumMaxInfluence> weights{};
-    std::array<int32_t, kNumMaxInfluence> jointIndices{};
 };
 
 /// <summary>
@@ -57,7 +48,7 @@ struct SkinCluster {
     Microsoft::WRL::ComPtr<ID3D12Resource> influenceResource;
     VertexInfluence *mappedInfluence = nullptr;
     uint32_t influenceCount = 0;
-    uint32_t influenceSrvIndex = UINT32_MAX;
+    uint32_t influenceSrvIndex = kInvalidResourceId;
     D3D12_CPU_DESCRIPTOR_HANDLE influenceSrvCpuHandle{};
     D3D12_GPU_DESCRIPTOR_HANDLE influenceSrvGpuHandle{};
 
@@ -68,10 +59,10 @@ struct SkinCluster {
 
     Microsoft::WRL::ComPtr<ID3D12Resource> skinnedVertexResource;
     D3D12_VERTEX_BUFFER_VIEW skinnedVertexBufferView{};
-    uint32_t inputVertexSrvIndex = UINT32_MAX;
+    uint32_t inputVertexSrvIndex = kInvalidResourceId;
     D3D12_CPU_DESCRIPTOR_HANDLE inputVertexSrvCpuHandle{};
     D3D12_GPU_DESCRIPTOR_HANDLE inputVertexSrvGpuHandle{};
-    uint32_t skinnedVertexUavIndex = UINT32_MAX;
+    uint32_t skinnedVertexUavIndex = kInvalidResourceId;
     D3D12_CPU_DESCRIPTOR_HANDLE skinnedVertexUavCpuHandle{};
     D3D12_GPU_DESCRIPTOR_HANDLE skinnedVertexUavGpuHandle{};
     mutable D3D12_RESOURCE_STATES skinnedVertexState =
@@ -95,10 +86,10 @@ struct BoneInfo {
 /// モデルを構成するサブメッシュ情報
 /// </summary>
 struct ModelSubMesh {
-    uint32_t meshId = 0;
-    uint32_t textureId = 0;
-    uint32_t normalTextureId = UINT32_MAX;
-    uint32_t materialId = 0;
+    uint32_t meshId = kInvalidResourceId;
+    uint32_t textureId = kInvalidResourceId;
+    uint32_t normalTextureId = kInvalidResourceId;
+    uint32_t materialId = kInvalidResourceId;
     uint32_t vertexCount = 0;
     std::vector<DirectX::XMFLOAT3> sourcePositions;
     DirectX::XMFLOAT3 sourceBoundsMin = {0.0f, 0.0f, 0.0f};
@@ -112,9 +103,9 @@ struct ModelSubMesh {
 /// 描画・アニメーションに必要なモデルデータ一式
 /// </summary>
 struct Model {
-    uint32_t meshId = 0;
-    uint32_t textureId = 0;
-    uint32_t materialId = 0;
+    uint32_t meshId = kInvalidResourceId;
+    uint32_t textureId = kInvalidResourceId;
+    uint32_t materialId = kInvalidResourceId;
 
     std::vector<ModelSubMesh> subMeshes;
 

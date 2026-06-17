@@ -25,7 +25,7 @@ cbuffer Material : register(b2)
 void main(MeshVSOutput input)
 {
     float2 uv = mul(float4(input.uv, 0.0f, 1.0f), uvTransform).xy;
-    if (saturate(input.color.a) < Dither01(input.worldPos, uv))
+    if (saturate(input.color.a) < Dither01(input.ditherPos, uv))
     {
         discard;
     }
@@ -44,5 +44,22 @@ void main(MeshVSOutput input)
     if (alpha < alphaCutoff)
     {
         discard;
+    }
+
+    bool isLeafMaterial = customParams.x > 0.0f && customParams.z > 0.55f;
+    if (isLeafMaterial)
+    {
+        float leafThinness = saturate(customParams.z);
+        float edgeAlpha =
+            saturate((alpha - alphaCutoff) / max(1.0f - alphaCutoff, 0.0001f));
+        float edgeTransmittance = (1.0f - edgeAlpha) * 0.08f;
+        float bodyTransmittance =
+            saturate(customParams.x * lerp(0.70f, 1.18f, leafThinness));
+        float shadowTransmittance =
+            saturate(bodyTransmittance + edgeTransmittance);
+        if (input.coverageHash < shadowTransmittance)
+        {
+            discard;
+        }
     }
 }

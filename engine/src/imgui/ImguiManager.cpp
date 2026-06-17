@@ -1,5 +1,6 @@
 #ifdef _DEBUG
 #include "imgui/ImguiManager.h"
+#include "core/ResourceHandle.h"
 #include "core/WinApp.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/GpuResourceLifetime.h"
@@ -50,16 +51,21 @@ class ImguiDescriptorAllocationGuard {
 
   private:
     SrvManager *srvManager_ = nullptr;
-    uint32_t index_ = UINT32_MAX;
+    uint32_t index_ = kInvalidResourceId;
     bool active_ = true;
 };
+
+void LoadJapaneseImguiFont() {
+    ImGuiIO &io = ImGui::GetIO();
+    io.Fonts->AddFontDefault();
+}
 } // namespace
 
 ImguiManager::~ImguiManager() {
     Finalize(true);
 }
 
-void ImguiManager::Initialize(WinApp *winApp, DirectXCommon *dxCommon,
+void ImguiManager::Initialize(const WinApp *winApp, DirectXCommon *dxCommon,
                               SrvManager *srvManager) {
     if (!winApp || !dxCommon || !srvManager) {
         Finalize();
@@ -78,6 +84,7 @@ void ImguiManager::Initialize(WinApp *winApp, DirectXCommon *dxCommon,
     ImGui::CreateContext();
     contextCreated_ = true;
     ImGui::StyleColorsDark();
+    LoadJapaneseImguiFont();
 
     if (!ImGui_ImplWin32_Init(winApp->GetHwnd())) {
         return;
@@ -117,7 +124,7 @@ void ImguiManager::Initialize(WinApp *winApp, DirectXCommon *dxCommon,
         }
 
         uint32_t index = manager->srvManager_->Allocate();
-        if (index == UINT32_MAX) {
+        if (!IsValidResourceId(index)) {
             return;
         }
         ImguiDescriptorAllocationGuard allocationGuard(*manager->srvManager_,

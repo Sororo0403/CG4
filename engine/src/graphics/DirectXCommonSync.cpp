@@ -1,68 +1,66 @@
 #include "graphics/DirectXCommon.h"
+#include "DirectXCommonDiagnostics.h"
 #include "DirectXCommonInternal.h"
+#include "DirectXCommonState.h"
+
+#include <algorithm>
+#include <iterator>
 
 using DirectXCommonInternal::LogIfFailed;
 
 bool DirectXCommon::HasFrameResources() const {
-    if (!swapChain_ || !rtvHeap_ || rtvDescriptorSize_ == 0 ||
-        !sceneColorBuffer_ || !dsvHeap_ || !depthBuffer_ ||
-        backBufferIndex_ >= kSwapChainBufferCount) {
+    if (!state_->swapChain || !state_->rtvHeap || state_->rtvDescriptorSize == 0 ||
+        !state_->sceneColorBuffer || !state_->dsvHeap || !state_->depthBuffer ||
+        state_->backBufferIndex >= kSwapChainBufferCount) {
         return false;
     }
 
-    for (const auto &backBuffer : backBuffers_) {
-        if (!backBuffer) {
-            return false;
-        }
-    }
-
-    return true;
+    return std::all_of(std::begin(state_->backBuffers),
+                       std::end(state_->backBuffers),
+                       [](const auto &backBuffer) {
+                           return backBuffer != nullptr;
+                       });
 }
 
 void DirectXCommon::CreateFence() {
-    if (!device_) {
+    if (!state_->device) {
         return;
     }
     if (LogIfFailed(
-            device_->CreateFence(0, D3D12_FENCE_FLAG_NONE,
-                                 IID_PPV_ARGS(&fence_)),
+            state_->device->CreateFence(0, D3D12_FENCE_FLAG_NONE,
+                                 IID_PPV_ARGS(&state_->fence)),
             "CreateFence failed") ||
-        !fence_) {
-        fence_.Reset();
+        !state_->fence) {
+        state_->fence.Reset();
         return;
     }
-    fence_->SetName(L"DirectXCommon.FrameFence");
+    state_->fence->SetName(L"DirectXCommon.FrameFence");
 
-    fenceEvent_ = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-    if (!fenceEvent_) {
+    state_->fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+    if (!state_->fenceEvent) {
         OutputDebugStringA("DirectXCommon: CreateEvent failed\n");
-        fence_.Reset();
+        state_->fence.Reset();
     }
 }
 
 void DirectXCommon::WaitForFrame(UINT frameIndex) {
-    if (!fence_ || fenceEvent_ == nullptr ||
+    if (!state_->fence || state_->fenceEvent == nullptr ||
         frameIndex >= kSwapChainBufferCount) {
         return;
     }
 
-    const UINT64 fenceValue = frameFenceValues_[frameIndex];
-    if (fenceValue == 0 || fence_->GetCompletedValue() >= fenceValue) {
+    const UINT64 fenceValue = state_->frameFenceValues[frameIndex];
+    if (fenceValue == 0 || state_->fence->GetCompletedValue() >= fenceValue) {
         return;
     }
 
-    if (LogIfFailed(fence_->SetEventOnCompletion(fenceValue, fenceEvent_),
-                    "fence_->SetEventOnCompletion failed")) {
+    if (LogIfFailed(state_->fence->SetEventOnCompletion(fenceValue, state_->fenceEvent),
+                    "state_->fence->SetEventOnCompletion failed")) {
         return;
     }
-    WaitForSingleObject(fenceEvent_, INFINITE);
+    WaitForSingleObject(state_->fenceEvent, INFINITE);
 }
 
 void DirectXCommon::TrackGpuPhase(const char *phase) {
-    recentGpuPhases_[recentGpuPhaseCursor_] = phase;
-    recentGpuPhaseCursor_ =
-        (recentGpuPhaseCursor_ + 1) % kRecentGpuPhaseCount;
-    if (recentGpuPhaseSize_ < kRecentGpuPhaseCount) {
-        ++recentGpuPhaseSize_;
-    }
+    state_->diagnostics->TrackPhase(phase);
 }

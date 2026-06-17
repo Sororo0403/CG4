@@ -13,5 +13,4 @@ struct InputReplayStartupOptions {
     std::wstring replayPath;
     std::wstring replayDirectory;
     bool autoRecord = false;
-    bool enableHotkeys = true;
 };

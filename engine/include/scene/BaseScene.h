@@ -1,7 +1,23 @@
 #pragma once
 #include "scene/SceneContext.h"
 
+#include <cstdint>
+#include <string>
+
+class FrameHistory;
+class LightingScene;
+class RenderScene;
 class SceneManager;
+
+struct SceneLoadingStatus {
+    bool active = false;
+    bool failed = false;
+    uint32_t completedSteps = 1u;
+    uint32_t totalSteps = 1u;
+    std::string status;
+    std::string detail;
+    std::string error;
+};
 
 /// <summary>
 /// すべてのシーン実装が継承する基底クラス
@@ -20,14 +36,50 @@ class BaseScene {
     virtual void Initialize(const SceneContext &ctx) { ctx_ = &ctx; }
 
     /// <summary>
+    /// LoadingSceneから1ステップずつ進める遅延ロード処理。
+    /// </summary>
+    virtual void AdvanceDeferredLoading() {}
+
+    /// <summary>
+    /// LoadingSceneへ現在のロード状態を返す。
+    /// </summary>
+    virtual SceneLoadingStatus GetLoadingStatus() const { return {}; }
+
+    /// <summary>
     /// シーン固有の状態を更新する
     /// </summary>
     virtual void Update() = 0;
 
     /// <summary>
+    /// 新しい描画登録経路。既存のDraw系を残したまま段階的に移行する。
+    /// </summary>
+    virtual void SubmitRenderScene(RenderScene &renderScene) {
+        (void)renderScene;
+    }
+
+    /// <summary>
+    /// 新しいライト登録経路。既存のSceneLightingへ段階的に橋渡しする。
+    /// </summary>
+    virtual void SubmitLighting(LightingScene &lightingScene) {
+        (void)lightingScene;
+    }
+
+    /// <summary>
+    /// temporal系で使うカメラとオブジェクト履歴を登録する。
+    /// </summary>
+    virtual void SubmitFrameHistory(FrameHistory &frameHistory) {
+        (void)frameHistory;
+    }
+
+    /// <summary>
     /// ShadowPassで必要な深度だけの描画を行う。
     /// </summary>
     virtual void DrawShadow() {}
+
+    /// <summary>
+    /// SpotLight用ShadowPassで必要な深度だけの描画を行う。
+    /// </summary>
+    virtual void DrawSpotLightShadow() {}
 
     /// <summary>
     /// シーン固有の内容を描画する
@@ -48,6 +100,11 @@ class BaseScene {
     /// 透明描画だけをSceneColorPassの後段で描画する。
     /// </summary>
     virtual void DrawTransparent() {}
+
+    /// <summary>
+    /// 深度とシャドウを参照して、シーンカラーへボリューム光を重ねる。
+    /// </summary>
+    virtual void DrawVolumetricLighting() {}
 
     /// <summary>
     /// ポストエフェクト適用後のバックバッファへUIを描画する。

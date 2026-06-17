@@ -11,7 +11,7 @@ struct InstanceData {
     DirectX::XMFLOAT4X4 world{};
     DirectX::XMFLOAT4 color{1.0f, 1.0f, 1.0f, 1.0f};
     float fade = 1.0f;
-    uint32_t seed = 0;
+    uint32_t customId = 0;
     DirectX::XMFLOAT2 padding{};
 };
 

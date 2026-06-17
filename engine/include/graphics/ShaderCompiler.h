@@ -1,7 +1,7 @@
 #pragma once
 #include "core/AssetManager.h"
-#include <dxcapi.h>
 #include <Windows.h>
+#include <dxcapi.h>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -34,6 +34,15 @@ inline std::wstring NormalizeShaderTarget(const std::string &target) {
     if (target.rfind("cs_", 0) == 0) {
         return L"cs_6_6";
     }
+    if (target.rfind("ms_", 0) == 0) {
+        return L"ms_6_6";
+    }
+    if (target.rfind("as_", 0) == 0) {
+        return L"as_6_6";
+    }
+    if (target.rfind("lib_", 0) == 0) {
+        return L"lib_6_6";
+    }
     return {};
 }
 
@@ -42,15 +51,6 @@ inline std::string BlobToString(IDxcBlobUtf8 *blob) {
         return {};
     }
     return std::string(blob->GetStringPointer(), blob->GetStringLength());
-}
-
-inline std::string NarrowAscii(const std::wstring &value) {
-    std::string result;
-    result.reserve(value.size());
-    for (wchar_t ch : value) {
-        result.push_back(static_cast<char>(ch));
-    }
-    return result;
 }
 
 /// <summary>
@@ -64,7 +64,9 @@ Compile(const std::wstring &path, const std::string &entry,
     const std::wstring resolvedPath = ResolveShaderPath(path);
     const std::wstring wideEntry = Widen(entry);
     const std::wstring normalizedTarget = NormalizeShaderTarget(target);
-    if (resolvedPath.empty() || wideEntry.empty() || normalizedTarget.empty()) {
+    const bool isLibraryTarget = normalizedTarget.rfind(L"lib_", 0) == 0;
+    if (resolvedPath.empty() || normalizedTarget.empty() ||
+        (!isLibraryTarget && wideEntry.empty())) {
         OutputDebugStringA("ShaderCompiler: invalid shader compile request\n");
         return {};
     }
@@ -101,9 +103,16 @@ Compile(const std::wstring &path, const std::string &entry,
     sourceBuffer.Size = source->GetBufferSize();
     sourceBuffer.Encoding = DXC_CP_UTF8;
 
-    std::vector<LPCWSTR> arguments = {
-        resolvedPath.c_str(), L"-E", wideEntry.c_str(), L"-T",
-        normalizedTarget.c_str(), L"-HV", L"2021", L"-all_resources_bound"};
+    std::vector<LPCWSTR> arguments = {resolvedPath.c_str()};
+    if (!isLibraryTarget) {
+        arguments.push_back(L"-E");
+        arguments.push_back(wideEntry.c_str());
+    }
+    arguments.push_back(L"-T");
+    arguments.push_back(normalizedTarget.c_str());
+    arguments.push_back(L"-HV");
+    arguments.push_back(L"2021");
+    arguments.push_back(L"-all_resources_bound");
 #ifdef _DEBUG
     arguments.push_back(L"-Zi");
     arguments.push_back(L"-Qembed_debug");

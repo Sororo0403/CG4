@@ -1,14 +1,14 @@
 #pragma once
 #include "graphics/PostProcessSettings.h"
 #include <d3d12.h>
-#include <vector>
-#include <wrl.h>
+#include <memory>
 
 class DirectXCommon;
 class SrvManager;
 
 class PostProcessSystem {
   public:
+    PostProcessSystem();
     ~PostProcessSystem();
 
     void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager, int width,
@@ -29,30 +29,16 @@ class PostProcessSystem {
     /// </summary>
     void SetProfile(const PostProcessProfile &profile);
 
-    const PostProcessProfile &GetProfile() const { return profile_; }
+    const PostProcessProfile &GetProfile() const;
     /// <summary>
     /// RequiresPostProcessを実行する
     /// </summary>
     bool RequiresPostProcess() const;
-    bool IsReady() const {
-        return dxCommon_ != nullptr && srvManager_ != nullptr &&
-               rootSignature_ && pipelineState_ && copyPipelineState_ &&
-               HasConstantBuffers();
-    }
+    bool IsReady() const;
 
   private:
-    struct ConstantFrame {
-        Microsoft::WRL::ComPtr<ID3D12Resource> resource;
-        PostProcessConstants *mapped = nullptr;
-
-        void Reset() {
-            if (resource && mapped != nullptr) {
-                resource->Unmap(0, nullptr);
-                mapped = nullptr;
-            }
-            resource.Reset();
-        }
-    };
+    struct ConstantFrame;
+    struct State;
 
     /// <summary>
     /// RootSignatureを生成する
@@ -60,6 +46,8 @@ class PostProcessSystem {
     void CreateRootSignature();
 
     void CreatePipelineState();
+    void CreateBloomRootSignature();
+    void CreateBloomPipelineState();
 
     /// <summary>
     /// ConstantBufferを生成する
@@ -70,18 +58,15 @@ class PostProcessSystem {
     ConstantFrame *GetCurrentConstantFrame();
     const ConstantFrame *GetCurrentConstantFrame() const;
     bool HasConstantBuffers() const;
+    bool CreateBloomResources();
+    bool ReleaseBloomResources(bool allowFrameAbort = false);
+    void FreeBloomDescriptors();
+    bool HasBloomResources() const;
+    bool BuildBloom(D3D12_GPU_DESCRIPTOR_HANDLE sourceHandle,
+                    const PostProcessConstants &constants);
+    bool TransitionBloomLevel(uint32_t level, D3D12_RESOURCE_STATES state);
 
     DirectXCommon *dxCommon_ = nullptr;
     SrvManager *srvManager_ = nullptr;
-
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> copyPipelineState_;
-    std::vector<ConstantFrame> constantFrames_;
-    PostProcessConstants constants_{};
-    D3D12_VIEWPORT viewport_{};
-    D3D12_RECT scissorRect_{};
-    PostProcessProfile profile_{};
-    int width_ = 1;
-    int height_ = 1;
+    std::unique_ptr<State> state_;
 };

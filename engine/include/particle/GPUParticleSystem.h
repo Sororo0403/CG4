@@ -1,22 +1,50 @@
 #pragma once
 #include "camera/Camera.h"
+#include "core/ResourceHandle.h"
 #include "particle/ParticleEmitterSettings.h"
 #include <DirectXMath.h>
+#include <cstddef>
 #include <cstdint>
-#include <d3d12.h>
+#include <deque>
+#include <memory>
 #include <string>
 #include <vector>
-#include <wrl.h>
 
 class DirectXCommon;
 class SrvManager;
 class TextureManager;
 
 struct GPUParticleMaterialSettings {
+    enum class BlendMode : uint32_t {
+        Alpha = 0,
+        Additive = 1,
+    };
+
     std::wstring pixelShaderPath;
     DirectX::XMFLOAT4 params0{0.0f, 0.0f, 0.0f, 0.0f};
     DirectX::XMFLOAT4 params1{0.0f, 0.0f, 0.0f, 0.0f};
-    uint32_t noiseTextureId = UINT32_MAX;
+    uint32_t noiseTextureId = kInvalidResourceId;
+    BlendMode blendMode = BlendMode::Alpha;
+};
+
+struct GPUParticleExplicitSpawn {
+    DirectX::XMFLOAT4 positionLife{0.0f, 0.0f, 0.0f, 1.0f};
+    DirectX::XMFLOAT4 velocityStartScale{0.0f, 0.0f, 0.0f, 0.1f};
+    DirectX::XMFLOAT4 color{1.0f, 1.0f, 1.0f, 1.0f};
+    DirectX::XMFLOAT4 scaleFade{0.0f, 0.0f, 0.2f, 1.0f};
+    DirectX::XMFLOAT4 motion{0.0f, 0.0f, 0.98f, 0.0f};
+    DirectX::XMFLOAT4 accelerationAtlas{0.0f, 0.0f, 0.0f, 0.0f};
+    DirectX::XMFLOAT4 drawAxis{0.0f, 0.0f, 0.0f, 0.0f};
+    DirectX::XMFLOAT4 shapeParams{0.0f, 0.0f, 0.0f, 0.0f};
+    DirectX::XMUINT4 atlas{1u, 1u, 1u, 0u};
+};
+
+enum class GPUParticleProceduralShape : uint32_t {
+    SoftCircle = 0,
+    Ring = 1,
+    Spark = 2,
+    Slash = 3,
+    Smoke = 4,
 };
 
 /// <summary>
@@ -32,14 +60,20 @@ class GPUParticleSystem {
     /// <summary>
     /// GPUパーティクル用リソースを解放する
     /// </summary>
+    GPUParticleSystem();
     ~GPUParticleSystem();
 
     /// <summary>
     /// GPUパーティクルの各種バッファ、SRV/UAV、描画設定を作成する
     /// </summary>
-    void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
+    bool Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
                     TextureManager *textureManager, uint32_t textureId,
                     uint32_t maxParticles = 1024);
+
+    /// <summary>
+    /// GPUパーティクル用リソースを解放する
+    /// </summary>
+    bool Release();
 
     /// <summary>
     /// 経過時間とEmitter設定をGPUへ渡し、パーティクルシミュレーションを進める
@@ -93,8 +127,16 @@ class GPUParticleSystem {
     /// </summary>
     void EmitOnce(const ParticleEmitterSettings &settings);
 
+    /// <summary>
+    /// 位置・速度・色を明示した粒子群を一度だけ発生させる
+    /// </summary>
+    size_t EmitParticles(const std::vector<GPUParticleExplicitSpawn> &particles);
+
   private:
     class InitializationGuard;
+    struct ConstantFrame;
+    struct ExplicitSpawnFrame;
+    struct ResourceState;
 
     struct ParticleForGPU {
         DirectX::XMFLOAT3 translate{};
@@ -109,6 +151,8 @@ class GPUParticleSystem {
         DirectX::XMFLOAT4 params1{};
         DirectX::XMFLOAT4 params2{};
         DirectX::XMFLOAT4 params3{};
+        DirectX::XMFLOAT4 params4{};
+        DirectX::XMFLOAT4 params5{};
     };
 
     struct UpdateConstantBufferData {
@@ -131,7 +175,7 @@ class GPUParticleSystem {
         DirectX::XMFLOAT4 motion{1.0f, 1.0f, 0.0f, 0.0f};
         DirectX::XMFLOAT4 atlasAndRotation{0.0f, 1.0f, 0.7f, 0.0f};
         DirectX::XMFLOAT4 tintColor{1.0f, 1.0f, 1.0f, 1.0f};
-        DirectX::XMUINT4 config{};
+        DirectX::XMUINT3 config{};
     };
 
     struct DrawConstantBufferData {
@@ -142,26 +186,6 @@ class GPUParticleSystem {
         DirectX::XMFLOAT4 atlasInfo{1.0f, 1.0f, 0.0f, 0.0f};
         DirectX::XMFLOAT4 materialParams0{};
         DirectX::XMFLOAT4 materialParams1{};
-    };
-
-    struct ConstantFrame {
-        Microsoft::WRL::ComPtr<ID3D12Resource> updateConstantBuffer;
-        Microsoft::WRL::ComPtr<ID3D12Resource> drawConstantBuffer;
-        UpdateConstantBufferData *mappedUpdateCB = nullptr;
-        DrawConstantBufferData *mappedDrawCB = nullptr;
-
-        void Reset() {
-            if (updateConstantBuffer && mappedUpdateCB != nullptr) {
-                updateConstantBuffer->Unmap(0, nullptr);
-                mappedUpdateCB = nullptr;
-            }
-            if (drawConstantBuffer && mappedDrawCB != nullptr) {
-                drawConstantBuffer->Unmap(0, nullptr);
-                mappedDrawCB = nullptr;
-            }
-            updateConstantBuffer.Reset();
-            drawConstantBuffer.Reset();
-        }
     };
 
     /// <summary>
@@ -194,13 +218,29 @@ class GPUParticleSystem {
     /// パーティクル更新用ComputeShaderを実行する
     /// </summary>
     void DispatchUpdate();
-    void RecordUpdateDispatch(const EmitterForGPU &emitter);
+    void RecordUpdateDispatch(const EmitterForGPU &emitter,
+                              uint32_t dispatchParticleCount = 0u);
+    void RecordExplicitSpawnDispatch(uint32_t spawnCount);
+    bool EnsureExplicitSpawnCapacity(uint32_t capacity);
+    bool EnsureExplicitSpawnFrameCapacity(ExplicitSpawnFrame &frame,
+                                          uint32_t capacity);
+    bool UploadExplicitParticles(
+        const std::vector<GPUParticleExplicitSpawn> &particles,
+        uint32_t &uploadedCount);
 
     EmitterForGPU BuildEmitterForGPU(const ParticleEmitterSettings &settings,
                                      uint32_t emit) const;
     ConstantFrame *GetCurrentConstantFrame();
     const ConstantFrame *GetCurrentConstantFrame() const;
     bool HasConstantBuffers() const;
+    bool ConfigureInitialState(
+        uint32_t textureId, uint32_t maxParticles,
+        std::deque<ParticleEmitterSettings> pendingEmitSettings);
+    std::vector<ParticleForGPU> CreateInitialParticleData() const;
+    bool CreateInitializationGpuResources(
+        const std::vector<ParticleForGPU> &particles);
+    bool HasRequiredGpuResources() const;
+    void QueueInitialUpdateIfNeeded();
 
     /// <summary>
     /// 保持しているGPUリソースを解放する
@@ -217,59 +257,11 @@ class GPUParticleSystem {
     float emitterFrequencyTime_ = 0.0f;
     float activeTimeRemaining_ = 0.0f;
     bool updatePending_ = false;
+    bool clearPending_ = false;
     ParticleEmitterSettings emitterSettings_{};
-    std::vector<ParticleEmitterSettings> pendingEmitSettings_;
+    std::deque<ParticleEmitterSettings> pendingEmitSettings_;
+    std::vector<GPUParticleExplicitSpawn> pendingExplicitParticles_;
     GPUParticleMaterialSettings materialSettings_{};
 
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> updateRootSignature_;
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> drawRootSignature_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> updatePSO_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> drawPSO_;
-    Microsoft::WRL::ComPtr<ID3D12CommandSignature> drawCommandSignature_;
-
-    Microsoft::WRL::ComPtr<ID3D12Resource> particleResource_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> particleUploadResource_;
-    D3D12_GPU_DESCRIPTOR_HANDLE particleSrvGpuHandle_{};
-    D3D12_CPU_DESCRIPTOR_HANDLE particleSrvCpuHandle_{};
-    uint32_t particleSrvIndex_ = UINT32_MAX;
-    D3D12_GPU_DESCRIPTOR_HANDLE particleUavGpuHandle_{};
-    D3D12_CPU_DESCRIPTOR_HANDLE particleUavCpuHandle_{};
-    uint32_t particleUavIndex_ = UINT32_MAX;
-
-    Microsoft::WRL::ComPtr<ID3D12Resource> freeListResource_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> freeListUploadResource_;
-    D3D12_GPU_DESCRIPTOR_HANDLE freeListUavGpuHandle_{};
-    D3D12_CPU_DESCRIPTOR_HANDLE freeListUavCpuHandle_{};
-    uint32_t freeListUavIndex_ = UINT32_MAX;
-
-    Microsoft::WRL::ComPtr<ID3D12Resource> freeListIndexResource_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> freeListIndexUploadResource_;
-    D3D12_GPU_DESCRIPTOR_HANDLE freeListIndexUavGpuHandle_{};
-    D3D12_CPU_DESCRIPTOR_HANDLE freeListIndexUavCpuHandle_{};
-    uint32_t freeListIndexUavIndex_ = UINT32_MAX;
-
-    Microsoft::WRL::ComPtr<ID3D12Resource> activeIndexResource_;
-    D3D12_GPU_DESCRIPTOR_HANDLE activeIndexSrvGpuHandle_{};
-    D3D12_CPU_DESCRIPTOR_HANDLE activeIndexSrvCpuHandle_{};
-    uint32_t activeIndexSrvIndex_ = UINT32_MAX;
-    D3D12_GPU_DESCRIPTOR_HANDLE activeIndexUavGpuHandle_{};
-    D3D12_CPU_DESCRIPTOR_HANDLE activeIndexUavCpuHandle_{};
-    uint32_t activeIndexUavIndex_ = UINT32_MAX;
-    D3D12_RESOURCE_STATES activeIndexState_ =
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-
-    Microsoft::WRL::ComPtr<ID3D12Resource> activeCountResource_;
-    D3D12_GPU_DESCRIPTOR_HANDLE activeCountUavGpuHandle_{};
-    D3D12_CPU_DESCRIPTOR_HANDLE activeCountUavCpuHandle_{};
-    uint32_t activeCountUavIndex_ = UINT32_MAX;
-
-    Microsoft::WRL::ComPtr<ID3D12Resource> drawArgsResource_;
-    D3D12_GPU_DESCRIPTOR_HANDLE drawArgsUavGpuHandle_{};
-    D3D12_CPU_DESCRIPTOR_HANDLE drawArgsUavCpuHandle_{};
-    uint32_t drawArgsUavIndex_ = UINT32_MAX;
-    D3D12_RESOURCE_STATES drawArgsState_ =
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-
-    std::vector<ConstantFrame> constantFrames_;
-    UpdateConstantBufferData updateConstants_{};
+    std::unique_ptr<ResourceState> resources_;
 };

@@ -32,6 +32,9 @@ struct MeshSceneConstBufferData {
     DirectX::XMFLOAT4 customSceneParams0;
     DirectX::XMFLOAT4 customSceneParams1;
     RendererSpotLightConstant spotLight;
+    DirectX::XMFLOAT4X4 spotLightViewProjection;
+    DirectX::XMFLOAT4 spotShadowParams;
+    DirectX::XMFLOAT4 spotShadowFilterParams;
 };
 
 struct ModelSceneConstBufferData {
@@ -51,6 +54,9 @@ struct ModelSceneConstBufferData {
     DirectX::XMFLOAT4 shadowParams;
     DirectX::XMFLOAT4 shadowFilterParams;
     RendererSpotLightConstant spotLight;
+    DirectX::XMFLOAT4X4 spotLightViewProjection;
+    DirectX::XMFLOAT4 spotShadowParams;
+    DirectX::XMFLOAT4 spotShadowFilterParams;
 };
 
 static_assert(sizeof(MeshSceneConstBufferData) % 16 == 0);

@@ -1,15 +1,29 @@
 #pragma once
 
+#include "core/ResourceHandle.h"
+
 #include <cstdint>
+#include <d3d12.h>
+#include <dxgiformat.h>
 #include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
 
+class DirectXCommon;
+class SrvManager;
+
+struct RenderGraphContext {
+    DirectXCommon *dxCommon = nullptr;
+    SrvManager *srvManager = nullptr;
+    ID3D12GraphicsCommandList *commandList = nullptr;
+};
+
 class RenderGraph {
   public:
     using PassCallback = std::function<void()>;
-    static constexpr uint32_t kInvalidIndex = UINT32_MAX;
+    using ContextPassCallback = std::function<void(RenderGraphContext &)>;
+    static constexpr uint32_t kInvalidIndex = kInvalidResourceId;
 
     enum class ResourceUsage {
         Unknown,
@@ -27,7 +41,9 @@ class RenderGraph {
         uint32_t width = 0;
         uint32_t height = 0;
         uint32_t mipCount = 1;
+        DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
         bool resizeWithBackBuffer = false;
+        bool imported = false;
     };
 
     struct ResourceAccess {
@@ -45,6 +61,7 @@ class RenderGraph {
     };
 
     uint32_t AddPass(std::string name, PassCallback callback);
+    uint32_t AddPass(std::string name, ContextPassCallback callback);
     uint32_t AddResource(ResourceDesc desc);
     bool AddDependency(std::string_view before, std::string_view after);
     bool ReadResource(std::string_view pass, std::string_view resource,
@@ -56,6 +73,7 @@ class RenderGraph {
 
     bool Compile();
     bool Execute();
+    bool Execute(RenderGraphContext context);
 
     const std::vector<std::string> &GetExecutionOrder() const {
         return executionOrder_;
@@ -75,6 +93,7 @@ class RenderGraph {
     struct Pass {
         std::string name;
         PassCallback callback;
+        ContextPassCallback contextCallback;
         std::vector<uint32_t> dependencies;
     };
 

@@ -1,8 +1,11 @@
 #include "graphics/PipelineManager.h"
+#include "PipelineManagerInternal.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/GpuResourceLifetime.h"
 #include "graphics/ShaderCompiler.h"
 #include <cstdint>
+
+PipelineManager::PipelineManager() : state_(std::make_unique<State>()) {}
 
 PipelineManager::~PipelineManager() {
     Clear(true);
@@ -27,8 +30,8 @@ IDxcBlob *PipelineManager::CompileShader(const std::wstring &path,
                                          const std::string &entry,
                                          const std::string &target) {
     const std::string key = MakeShaderKey(path, entry, target);
-    auto it = shaderCache_.find(key);
-    if (it != shaderCache_.end()) {
+    auto it = state_->shaderCache.find(key);
+    if (it != state_->shaderCache.end()) {
         return it->second.Get();
     }
 
@@ -37,7 +40,7 @@ IDxcBlob *PipelineManager::CompileShader(const std::wstring &path,
         return nullptr;
     }
     IDxcBlob *result = shader.Get();
-    shaderCache_.emplace(key, std::move(shader));
+    state_->shaderCache.emplace(key, std::move(shader));
     return result;
 }
 
@@ -55,26 +58,50 @@ ID3D12PipelineState *PipelineManager::CreateGraphicsPipeline(
     }
 
     ID3D12PipelineState *result = pipeline.Get();
-    graphicsPipelines_[name] = std::move(pipeline);
+    state_->graphicsPipelines[name] = std::move(pipeline);
+    return result;
+}
+
+ID3D12PipelineState *PipelineManager::CreatePipelineStateStream(
+    const std::string &name, const D3D12_PIPELINE_STATE_STREAM_DESC &desc) {
+    if (!dxCommon_ || !dxCommon_->GetDevice() || desc.pPipelineStateSubobjectStream == nullptr ||
+        desc.SizeInBytes == 0u) {
+        return nullptr;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D12Device2> device2;
+    if (FAILED(dxCommon_->GetDevice()->QueryInterface(IID_PPV_ARGS(&device2))) ||
+        !device2) {
+        return nullptr;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline;
+    if (FAILED(device2->CreatePipelineState(&desc, IID_PPV_ARGS(&pipeline))) ||
+        !pipeline) {
+        return nullptr;
+    }
+
+    ID3D12PipelineState *result = pipeline.Get();
+    state_->graphicsPipelines[name] = std::move(pipeline);
     return result;
 }
 
 ID3D12PipelineState *
 PipelineManager::GetGraphicsPipeline(const std::string &name) const {
-    auto it = graphicsPipelines_.find(name);
-    return it == graphicsPipelines_.end() ? nullptr : it->second.Get();
+    auto it = state_->graphicsPipelines.find(name);
+    return it == state_->graphicsPipelines.end() ? nullptr : it->second.Get();
 }
 
 bool PipelineManager::Clear() { return Clear(false); }
 
 bool PipelineManager::Clear(bool allowFrameAbort) {
-    if (!CanReleaseGpuResources(dxCommon_, !graphicsPipelines_.empty(),
+    if (!CanReleaseGpuResources(dxCommon_, !state_->graphicsPipelines.empty(),
                                 allowFrameAbort)) {
         return false;
     }
 
-    graphicsPipelines_.clear();
-    shaderCache_.clear();
+    state_->graphicsPipelines.clear();
+    state_->shaderCache.clear();
     return true;
 }
 

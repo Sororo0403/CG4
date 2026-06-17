@@ -5,8 +5,8 @@ struct Vertex
     float2 uv;
     float4 color;
     float4 tangent;
-    float custom0;
-    float3 bindPos;
+    float customScalar0;
+    float3 customPosition0;
 };
 
 struct VertexInfluence

@@ -1,7 +1,7 @@
 #pragma once
 #include <DirectXMath.h>
 #include <d3d12.h>
-#include <wrl.h>
+#include <memory>
 
 class DirectXCommon;
 class SrvManager;
@@ -11,6 +11,7 @@ class SrvManager;
 /// </summary>
 class RenderTexture {
   public:
+    RenderTexture();
     ~RenderTexture();
 
     void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager, int width,
@@ -45,16 +46,13 @@ class RenderTexture {
     /// <summary>
     /// テクスチャ幅を取得する
     /// </summary>
-    int GetWidth() const { return width_; }
+    int GetWidth() const;
 
     /// <summary>
     /// テクスチャ高さを取得する
     /// </summary>
-    int GetHeight() const { return height_; }
-    bool IsReady() const {
-        return dxCommon_ != nullptr && srvManager_ != nullptr && resource_ &&
-               rtvHeap_ && srvIndex_ != UINT_MAX && GetGpuHandle().ptr != 0;
-    }
+    int GetHeight() const;
+    bool IsReady() const;
 
   private:
     /// <summary>
@@ -64,15 +62,9 @@ class RenderTexture {
     bool ReleaseTextureResources();
     bool ReleaseTextureResources(bool allowFrameAbort);
 
+    struct State;
+
     DirectXCommon *dxCommon_ = nullptr;
     SrvManager *srvManager_ = nullptr;
-
-    Microsoft::WRL::ComPtr<ID3D12Resource> resource_;
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap_;
-    UINT rtvDescriptorSize_ = 0;
-    UINT srvIndex_ = UINT_MAX;
-    int width_ = 0;
-    int height_ = 0;
-    D3D12_RESOURCE_STATES resourceState_ =
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    std::unique_ptr<State> resources_;
 };

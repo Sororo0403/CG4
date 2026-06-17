@@ -1,9 +1,12 @@
 #include "graphics/GpuProfiler.h"
+#include "GpuProfilerInternal.h"
 
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/GpuResourceHelpers.h"
 #include "graphics/GpuResourceLifetime.h"
+
+#include <pix_win.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -14,7 +17,23 @@ namespace {
 using GpuResourceHelpers::CreateCommittedResourceChecked;
 } // namespace
 
+GpuProfiler::GpuProfiler() : state_(std::make_unique<State>()) {}
+
 GpuProfiler::~GpuProfiler() { Finalize(true); }
+
+bool GpuProfiler::IsReady() const {
+    return dxCommon_ != nullptr && state_->queryHeap &&
+           state_->timestampFrequency > 0;
+}
+
+const std::array<GpuTimingSample, GpuProfiler::kMaxEvents> &
+GpuProfiler::GetLastSamples() const {
+    return state_->lastSamples;
+}
+
+uint32_t GpuProfiler::GetLastSampleCount() const {
+    return state_->lastSampleCount;
+}
 
 void GpuProfiler::Initialize(DirectXCommon *dxCommon) {
     if (!Finalize()) {
@@ -27,22 +46,22 @@ void GpuProfiler::Initialize(DirectXCommon *dxCommon) {
 
     dxCommon_ = dxCommon;
     if (FAILED(dxCommon_->GetCommandQueue()->GetTimestampFrequency(
-            &timestampFrequency_)) ||
-        timestampFrequency_ == 0) {
+            &state_->timestampFrequency)) ||
+        state_->timestampFrequency == 0) {
         Finalize();
         return;
     }
 
     D3D12_QUERY_HEAP_DESC queryDesc{};
     queryDesc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
-    queryDesc.Count = kMaxTimestamps;
+    queryDesc.Count = State::kMaxTimestamps;
     if (FAILED(dxCommon_->GetDevice()->CreateQueryHeap(
-            &queryDesc, IID_PPV_ARGS(&queryHeap_))) ||
-        !queryHeap_) {
+            &queryDesc, IID_PPV_ARGS(&state_->queryHeap))) ||
+        !state_->queryHeap) {
         Finalize();
         return;
     }
-    queryHeap_->SetName(L"GpuProfiler.TimestampQueryHeap");
+    state_->queryHeap->SetName(L"GpuProfiler.TimestampQueryHeap");
 
     if (!CreateReadbackBuffers()) {
         Finalize();
@@ -52,33 +71,33 @@ void GpuProfiler::Initialize(DirectXCommon *dxCommon) {
 bool GpuProfiler::Finalize() { return Finalize(false); }
 
 bool GpuProfiler::Finalize(bool allowFrameAbort) {
-    bool hasReadbackResources = false;
-    for (const FrameQueryData &frame : frames_) {
-        if (frame.readback) {
-            hasReadbackResources = true;
-            break;
-        }
-    }
+    const bool hasReadbackResources =
+        std::any_of(state_->frames.begin(), state_->frames.end(),
+                    [](const FrameQueryData &frame) {
+                        return frame.readback != nullptr;
+                    });
     if (!CanReleaseGpuResources(dxCommon_,
-                                queryHeap_ != nullptr || hasReadbackResources,
+                                state_->queryHeap != nullptr || hasReadbackResources,
                                 allowFrameAbort)) {
         return false;
     }
 
-    for (FrameQueryData &frame : frames_) {
+    for (FrameQueryData &frame : state_->frames) {
         frame.readback.Reset();
         frame.names = {};
         frame.eventCount = 0;
         frame.resolved = false;
     }
-    queryHeap_.Reset();
+    state_->queryHeap.Reset();
     dxCommon_ = nullptr;
-    timestampFrequency_ = 0;
-    currentFrameIndex_ = 0;
-    currentEventCount_ = 0;
-    eventOpen_ = false;
-    lastSamples_ = {};
-    lastSampleCount_ = 0;
+    state_->timestampFrequency = 0;
+    state_->currentFrameIndex = 0;
+    state_->currentEventCount = 0;
+    state_->eventStack = {};
+    state_->eventDepth = 0;
+    state_->eventOpen = false;
+    state_->lastSamples = {};
+    state_->lastSampleCount = 0;
     return true;
 }
 
@@ -87,36 +106,51 @@ void GpuProfiler::BeginFrame() {
         return;
     }
 
-    currentFrameIndex_ =
-        dxCommon_->GetBackBufferIndex() % static_cast<uint32_t>(frames_.size());
-    ReadResolvedFrame(currentFrameIndex_);
-    currentEventCount_ = 0;
-    eventOpen_ = false;
+    state_->currentFrameIndex =
+        dxCommon_->GetBackBufferIndex() % static_cast<uint32_t>(state_->frames.size());
+    ReadResolvedFrame(state_->currentFrameIndex);
+    state_->currentEventCount = 0;
+    state_->eventStack = {};
+    state_->eventDepth = 0;
+    state_->eventOpen = false;
+}
+
+bool GpuProfiler::TryBeginEvent(const char *name) {
+    if (!IsReady() || state_->currentEventCount >= kMaxEvents ||
+        state_->eventDepth >= kMaxEvents) {
+        return false;
+    }
+
+    ID3D12GraphicsCommandList *commandList = dxCommon_->GetCommandList();
+    if (commandList == nullptr) {
+        return false;
+    }
+
+    const uint32_t eventIndex = state_->currentEventCount++;
+    const uint32_t timestampIndex =
+        eventIndex * State::kTimestampsPerEvent;
+    state_->frames[state_->currentFrameIndex].names[eventIndex] =
+        name != nullptr ? name : "Unnamed";
+    PIXBeginEvent(commandList, 0,
+                  state_->frames[state_->currentFrameIndex].names[eventIndex]);
+    commandList->EndQuery(state_->queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
+                          timestampIndex);
+    state_->eventStack[state_->eventDepth++] = eventIndex;
+    state_->eventOpen = true;
+    return true;
 }
 
 void GpuProfiler::BeginEvent(const char *name) {
-    if (!IsReady() || eventOpen_ || currentEventCount_ >= kMaxEvents) {
-        return;
-    }
-
-    ID3D12GraphicsCommandList *commandList = dxCommon_->GetCommandList();
-    if (commandList == nullptr) {
-        return;
-    }
-
-    const uint32_t timestampIndex =
-        currentEventCount_ * kTimestampsPerEvent;
-    frames_[currentFrameIndex_].names[currentEventCount_] =
-        name != nullptr ? name : "Unnamed";
-    commandList->EndQuery(queryHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
-                          timestampIndex);
-    eventOpen_ = true;
+    (void)TryBeginEvent(name);
 }
 
 void GpuProfiler::EndEvent() {
-    if (!IsReady() || !eventOpen_ || currentEventCount_ >= kMaxEvents) {
+    if (!IsReady() || state_->eventDepth == 0u) {
         return;
     }
+
+    const uint32_t eventIndex = state_->eventStack[--state_->eventDepth];
+    state_->eventOpen = state_->eventDepth > 0u;
 
     ID3D12GraphicsCommandList *commandList = dxCommon_->GetCommandList();
     if (commandList == nullptr) {
@@ -124,32 +158,31 @@ void GpuProfiler::EndEvent() {
     }
 
     const uint32_t timestampIndex =
-        currentEventCount_ * kTimestampsPerEvent + 1u;
-    commandList->EndQuery(queryHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
+        eventIndex * State::kTimestampsPerEvent + 1u;
+    commandList->EndQuery(state_->queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
                           timestampIndex);
-    ++currentEventCount_;
-    eventOpen_ = false;
+    PIXEndEvent(commandList);
 }
 
 void GpuProfiler::EndFrame() {
     if (!IsReady()) {
         return;
     }
-    if (eventOpen_) {
+    while (state_->eventDepth > 0u) {
         EndEvent();
     }
 
     ID3D12GraphicsCommandList *commandList = dxCommon_->GetCommandList();
-    FrameQueryData &frame = frames_[currentFrameIndex_];
-    frame.eventCount = currentEventCount_;
+    FrameQueryData &frame = state_->frames[state_->currentFrameIndex];
+    frame.eventCount = state_->currentEventCount;
     frame.resolved = false;
-    if (commandList == nullptr || !frame.readback || currentEventCount_ == 0) {
+    if (commandList == nullptr || !frame.readback || state_->currentEventCount == 0) {
         return;
     }
 
     commandList->ResolveQueryData(
-        queryHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0,
-        currentEventCount_ * kTimestampsPerEvent, frame.readback.Get(), 0);
+        state_->queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0,
+        state_->currentEventCount * State::kTimestampsPerEvent, frame.readback.Get(), 0);
     frame.resolved = true;
 }
 
@@ -160,9 +193,9 @@ bool GpuProfiler::CreateReadbackBuffers() {
     }
 
     CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_READBACK);
-    const uint64_t byteSize = sizeof(uint64_t) * kMaxTimestamps;
+    const uint64_t byteSize = sizeof(uint64_t) * State::kMaxTimestamps;
     auto bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(byteSize);
-    for (uint32_t frameIndex = 0; frameIndex < frames_.size(); ++frameIndex) {
+    for (uint32_t frameIndex = 0; frameIndex < state_->frames.size(); ++frameIndex) {
         ComPtr<ID3D12Resource> readback;
         if (!CreateCommittedResourceChecked(
                 device, &heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
@@ -172,27 +205,27 @@ bool GpuProfiler::CreateReadbackBuffers() {
         wchar_t name[64]{};
         swprintf_s(name, L"GpuProfiler.Readback[%u]", frameIndex);
         readback->SetName(name);
-        frames_[frameIndex].readback = std::move(readback);
+        state_->frames[frameIndex].readback = std::move(readback);
     }
     return true;
 }
 
 void GpuProfiler::ReadResolvedFrame(uint32_t frameIndex) {
-    if (frameIndex >= frames_.size()) {
+    if (frameIndex >= state_->frames.size()) {
         return;
     }
 
-    FrameQueryData &frame = frames_[frameIndex];
-    lastSampleCount_ = 0;
-    lastSamples_ = {};
+    FrameQueryData &frame = state_->frames[frameIndex];
+    state_->lastSampleCount = 0;
+    state_->lastSamples = {};
     if (!frame.resolved || !frame.readback || frame.eventCount == 0 ||
-        timestampFrequency_ == 0) {
+        state_->timestampFrequency == 0) {
         return;
     }
 
     void *mapped = nullptr;
     D3D12_RANGE readRange{0, sizeof(uint64_t) * frame.eventCount *
-                                 kTimestampsPerEvent};
+                                 State::kTimestampsPerEvent};
     if (FAILED(frame.readback->Map(0, &readRange, &mapped)) ||
         mapped == nullptr) {
         return;
@@ -201,15 +234,15 @@ void GpuProfiler::ReadResolvedFrame(uint32_t frameIndex) {
     const uint64_t *timestamps = static_cast<const uint64_t *>(mapped);
     const uint32_t count = (std::min)(frame.eventCount, kMaxEvents);
     for (uint32_t eventIndex = 0; eventIndex < count; ++eventIndex) {
-        const uint64_t begin = timestamps[eventIndex * kTimestampsPerEvent];
+        const uint64_t begin = timestamps[eventIndex * State::kTimestampsPerEvent];
         const uint64_t end =
-            timestamps[eventIndex * kTimestampsPerEvent + 1u];
+            timestamps[eventIndex * State::kTimestampsPerEvent + 1u];
         if (end >= begin) {
-            lastSamples_[lastSampleCount_++] = {
+            state_->lastSamples[state_->lastSampleCount++] = {
                 frame.names[eventIndex] != nullptr ? frame.names[eventIndex]
                                                    : "Unnamed",
                 static_cast<double>(end - begin) * 1000.0 /
-                    static_cast<double>(timestampFrequency_)};
+                    static_cast<double>(state_->timestampFrequency)};
         }
     }
 

@@ -1,5 +1,8 @@
 #include "input/Input.h"
+
+#include "InputInternal.h"
 #include "input/InputReplayLimits.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -17,8 +20,8 @@ float NormalizeThumbAxis(SHORT value, SHORT deadZone) {
     }
 
     const int maxValue = intValue < 0 ? 32768 : 32767;
-    const float normalized = static_cast<float>(absValue - deadZone) /
-                             static_cast<float>(maxValue - deadZone);
+    const float normalized =
+        static_cast<float>(absValue - deadZone) / static_cast<float>(maxValue - deadZone);
     return std::clamp(normalized, 0.0f, 1.0f) * (intValue < 0 ? -1.0f : 1.0f);
 }
 
@@ -28,115 +31,174 @@ float NormalizeTrigger(BYTE value) {
     }
 
     constexpr float maxValue = 255.0f - XINPUT_GAMEPAD_TRIGGER_THRESHOLD;
-    return std::clamp(
-        static_cast<float>(value - XINPUT_GAMEPAD_TRIGGER_THRESHOLD) / maxValue,
-        0.0f, 1.0f);
+    return std::clamp(static_cast<float>(value - XINPUT_GAMEPAD_TRIGGER_THRESHOLD) / maxValue, 0.0f,
+                      1.0f);
 }
 
 std::wstring GetDefaultReplayDirectory() {
     std::array<wchar_t, MAX_PATH> pathBuffer{};
-    const DWORD length = GetModuleFileNameW(
-        nullptr, pathBuffer.data(), static_cast<DWORD>(pathBuffer.size()));
+    const DWORD length =
+        GetModuleFileNameW(nullptr, pathBuffer.data(), static_cast<DWORD>(pathBuffer.size()));
     if (length == 0 || length >= pathBuffer.size()) {
         return L"replays";
     }
 
-    const std::filesystem::path executablePath(
-        std::wstring(pathBuffer.data(), length));
+    const std::filesystem::path executablePath(std::wstring(pathBuffer.data(), length));
     return (executablePath.parent_path() / L"replays").wstring();
 }
 
 } // namespace
 
+Input::Input() : state_(std::make_unique<State>()) {}
+
 Input::~Input() {
     FinishRecording();
 }
 
+Input::ReplayMode Input::GetReplayMode() const {
+    return state_->replayMode;
+}
+
+bool Input::IsReplayFinished() const {
+    return state_->replayFinished;
+}
+
+size_t Input::GetReplayFrameIndex() const {
+    return state_->replayFrameIndex;
+}
+
+size_t Input::GetReplayFrameCount() const {
+    return state_->replayFrames.size();
+}
+
+const std::wstring& Input::GetReplayPath() const {
+    return state_->replayPath;
+}
+
+long Input::GetMouseDX() const {
+    return state_->mouseState.lX;
+}
+
+long Input::GetMouseDY() const {
+    return state_->mouseState.lY;
+}
+
+long Input::GetMouseWheel() const {
+    return state_->mouseState.lZ;
+}
+
+bool Input::IsGamepadConnected() const {
+    return state_->gamepadConnected;
+}
+
+float Input::GetGamepadLeftStickX() const {
+    return state_->gamepadLeftStickX;
+}
+
+float Input::GetGamepadLeftStickY() const {
+    return state_->gamepadLeftStickY;
+}
+
+float Input::GetGamepadRightStickX() const {
+    return state_->gamepadRightStickX;
+}
+
+float Input::GetGamepadRightStickY() const {
+    return state_->gamepadRightStickY;
+}
+
+float Input::GetGamepadLeftTrigger() const {
+    return state_->gamepadLeftTrigger;
+}
+
+float Input::GetGamepadRightTrigger() const {
+    return state_->gamepadRightTrigger;
+}
+
 void Input::ClearInputState(bool clearPrevious) {
-    keyNow_.fill(0);
-    mouseState_ = {};
-    gamepadState_ = {};
-    gamepadConnected_ = false;
-    gamepadLeftStickX_ = 0.0f;
-    gamepadLeftStickY_ = 0.0f;
-    gamepadRightStickX_ = 0.0f;
-    gamepadRightStickY_ = 0.0f;
-    gamepadLeftTrigger_ = 0.0f;
-    gamepadRightTrigger_ = 0.0f;
+    state_->keyNow.fill(0);
+    state_->mouseState = {};
+    state_->gamepadState = {};
+    state_->gamepadConnected = false;
+    state_->gamepadLeftStickX = 0.0f;
+    state_->gamepadLeftStickY = 0.0f;
+    state_->gamepadRightStickX = 0.0f;
+    state_->gamepadRightStickY = 0.0f;
+    state_->gamepadLeftTrigger = 0.0f;
+    state_->gamepadRightTrigger = 0.0f;
 
     if (clearPrevious) {
-        keyPrev_.fill(0);
-        mousePrevState_ = {};
-        gamepadPrevState_ = {};
-        gamepadPrevConnected_ = false;
+        state_->keyPrev.fill(0);
+        state_->mousePrevState = {};
+        state_->gamepadPrevState = {};
+        state_->gamepadPrevConnected = false;
     }
 }
 
 void Input::Initialize(HINSTANCE hInstance, HWND hwnd) {
-    if (replayDirectory_.empty()) {
-        replayDirectory_ = GetDefaultReplayDirectory();
+    if (state_->replayDirectory.empty()) {
+        state_->replayDirectory = GetDefaultReplayDirectory();
     }
 
-    directInput_.Reset();
-    keyboard_.Reset();
-    mouse_.Reset();
+    state_->directInput.Reset();
+    state_->keyboard.Reset();
+    state_->mouse.Reset();
     ClearInputState(true);
 
-    HRESULT hr = DirectInput8Create(
-        hInstance, DIRECTINPUT_VERSION, IID_IDirectInput8,
-        reinterpret_cast<void **>(directInput_.GetAddressOf()), nullptr);
-    if (FAILED(hr) || !directInput_) {
+    HRESULT hr =
+        DirectInput8Create(hInstance, DIRECTINPUT_VERSION, IID_IDirectInput8,
+                           reinterpret_cast<void**>(state_->directInput.GetAddressOf()), nullptr);
+    if (FAILED(hr) || !state_->directInput) {
         return;
     }
 
-    hr = directInput_->CreateDevice(GUID_SysKeyboard, keyboard_.GetAddressOf(),
-                                    nullptr);
-    if (SUCCEEDED(hr) && keyboard_) {
-        hr = keyboard_->SetDataFormat(&c_dfDIKeyboard);
+    hr = state_->directInput->CreateDevice(GUID_SysKeyboard, state_->keyboard.GetAddressOf(),
+                                           nullptr);
+    if (SUCCEEDED(hr) && state_->keyboard) {
+        hr = state_->keyboard->SetDataFormat(&c_dfDIKeyboard);
         if (SUCCEEDED(hr)) {
-            hr = keyboard_->SetCooperativeLevel(
-                hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
+            hr = state_->keyboard->SetCooperativeLevel(hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
         }
         if (SUCCEEDED(hr)) {
-            keyboard_->Acquire();
+            state_->keyboard->Acquire();
         } else {
-            keyboard_.Reset();
+            state_->keyboard.Reset();
         }
     } else {
-        keyboard_.Reset();
+        state_->keyboard.Reset();
     }
 
-    hr = directInput_->CreateDevice(GUID_SysMouse, mouse_.GetAddressOf(),
-                                    nullptr);
-    if (SUCCEEDED(hr) && mouse_) {
-        hr = mouse_->SetDataFormat(&c_dfDIMouse);
+    hr = state_->directInput->CreateDevice(GUID_SysMouse, state_->mouse.GetAddressOf(), nullptr);
+    if (SUCCEEDED(hr) && state_->mouse) {
+        hr = state_->mouse->SetDataFormat(&c_dfDIMouse);
         if (SUCCEEDED(hr)) {
-            hr = mouse_->SetCooperativeLevel(
-                hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
+            hr = state_->mouse->SetCooperativeLevel(hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
         }
         if (SUCCEEDED(hr)) {
-            mouse_->Acquire();
+            state_->mouse->Acquire();
         } else {
-            mouse_.Reset();
+            state_->mouse.Reset();
         }
     } else {
-        mouse_.Reset();
+        state_->mouse.Reset();
     }
 }
 
 void Input::Update(float deltaTime) {
-    if (replayMode_ == ReplayMode::Replay) {
-        keyPrev_ = keyNow_;
-        mousePrevState_ = mouseState_;
-        gamepadPrevConnected_ = gamepadConnected_;
-        gamepadPrevState_ = gamepadState_;
+    (void)deltaTime;
 
-        if (replayFrameIndex_ < replayFrames_.size()) {
-            ApplyReplayFrame(replayFrames_[replayFrameIndex_]);
-            ++replayFrameIndex_;
-            replayFinished_ = replayFrameIndex_ >= replayFrames_.size();
+    if (state_->replayMode == ReplayMode::Replay) {
+        state_->keyPrev = state_->keyNow;
+        state_->mousePrevState = state_->mouseState;
+        state_->gamepadPrevConnected = state_->gamepadConnected;
+        state_->gamepadPrevState = state_->gamepadState;
+
+        if (state_->replayFrameIndex < state_->replayFrames.size()) {
+            ApplyReplayFrame(state_->replayFrames[state_->replayFrameIndex]);
+            ++state_->replayFrameIndex;
+            state_->replayFinished = state_->replayFrameIndex >= state_->replayFrames.size();
         } else {
-            replayFinished_ = true;
+            state_->replayFinished = true;
             ClearInputState(false);
         }
         return;
@@ -145,163 +207,151 @@ void Input::Update(float deltaTime) {
     UpdateKeyboard();
     UpdateMouse();
     UpdateGamepad();
-    UpdateReplayHotkeys(deltaTime);
 
-    if (replayMode_ == ReplayMode::Record &&
-        recordedFrames_.size() < InputReplayLimits::kMaxFrames) {
-        try {
-            recordedFrames_.push_back(CaptureFrame());
-            recordingDirty_ = true;
-        } catch (...) {
-            replayMode_ = ReplayMode::Live;
-        }
+    if (state_->replayMode == ReplayMode::Record &&
+        state_->recordedFrames.size() < InputReplayLimits::kMaxFrames) {
+        state_->recordedFrames.push_back(CaptureFrame());
+        state_->recordingDirty = true;
     }
 }
 
 void Input::UpdateKeyboard() {
-    keyPrev_ = keyNow_;
-    if (!keyboard_) {
-        keyNow_.fill(0);
+    state_->keyPrev = state_->keyNow;
+    if (!state_->keyboard) {
+        state_->keyNow.fill(0);
         return;
     }
 
-    HRESULT hr = keyboard_->GetDeviceState(256, keyNow_.data());
+    HRESULT hr = state_->keyboard->GetDeviceState(256, state_->keyNow.data());
 
     if (FAILED(hr)) {
-        hr = keyboard_->Acquire();
+        hr = state_->keyboard->Acquire();
 
         if (SUCCEEDED(hr)) {
-            hr = keyboard_->GetDeviceState(256, keyNow_.data());
+            hr = state_->keyboard->GetDeviceState(256, state_->keyNow.data());
         }
         if (FAILED(hr)) {
-            keyNow_.fill(0);
+            state_->keyNow.fill(0);
         }
     }
 }
 
 void Input::UpdateMouse() {
-    mousePrevState_ = mouseState_;
-    if (!mouse_) {
-        mouseState_ = {};
+    state_->mousePrevState = state_->mouseState;
+    if (!state_->mouse) {
+        state_->mouseState = {};
         return;
     }
 
-    HRESULT hr = mouse_->GetDeviceState(sizeof(DIMOUSESTATE), &mouseState_);
+    HRESULT hr = state_->mouse->GetDeviceState(sizeof(DIMOUSESTATE), &state_->mouseState);
 
     if (FAILED(hr)) {
-        hr = mouse_->Acquire();
+        hr = state_->mouse->Acquire();
 
         if (SUCCEEDED(hr)) {
-            hr = mouse_->GetDeviceState(sizeof(DIMOUSESTATE), &mouseState_);
+            hr = state_->mouse->GetDeviceState(sizeof(DIMOUSESTATE), &state_->mouseState);
         }
         if (FAILED(hr)) {
-            mouseState_ = {};
+            state_->mouseState = {};
         }
     }
 }
 
 void Input::UpdateGamepad() {
-    gamepadPrevState_ = gamepadState_;
-    gamepadPrevConnected_ = gamepadConnected_;
-    ZeroMemory(&gamepadState_, sizeof(XINPUT_STATE));
+    state_->gamepadPrevState = state_->gamepadState;
+    state_->gamepadPrevConnected = state_->gamepadConnected;
+    ZeroMemory(&state_->gamepadState, sizeof(XINPUT_STATE));
 
-    const DWORD result = XInputGetState(0, &gamepadState_);
-    gamepadConnected_ = result == ERROR_SUCCESS;
+    const DWORD result = XInputGetState(0, &state_->gamepadState);
+    state_->gamepadConnected = result == ERROR_SUCCESS;
 
-    if (!gamepadConnected_) {
-        gamepadLeftStickX_ = 0.0f;
-        gamepadLeftStickY_ = 0.0f;
-        gamepadRightStickX_ = 0.0f;
-        gamepadRightStickY_ = 0.0f;
-        gamepadLeftTrigger_ = 0.0f;
-        gamepadRightTrigger_ = 0.0f;
+    if (!state_->gamepadConnected) {
+        state_->gamepadLeftStickX = 0.0f;
+        state_->gamepadLeftStickY = 0.0f;
+        state_->gamepadRightStickX = 0.0f;
+        state_->gamepadRightStickY = 0.0f;
+        state_->gamepadLeftTrigger = 0.0f;
+        state_->gamepadRightTrigger = 0.0f;
         return;
     }
 
-    const XINPUT_GAMEPAD &pad = gamepadState_.Gamepad;
-    gamepadLeftStickX_ =
+    const XINPUT_GAMEPAD& pad = state_->gamepadState.Gamepad;
+    state_->gamepadLeftStickX =
         NormalizeThumbAxis(pad.sThumbLX, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
-    gamepadLeftStickY_ =
+    state_->gamepadLeftStickY =
         NormalizeThumbAxis(pad.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
-    gamepadRightStickX_ =
+    state_->gamepadRightStickX =
         NormalizeThumbAxis(pad.sThumbRX, XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);
-    gamepadRightStickY_ =
+    state_->gamepadRightStickY =
         NormalizeThumbAxis(pad.sThumbRY, XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);
-    gamepadLeftTrigger_ = NormalizeTrigger(pad.bLeftTrigger);
-    gamepadRightTrigger_ = NormalizeTrigger(pad.bRightTrigger);
+    state_->gamepadLeftTrigger = NormalizeTrigger(pad.bLeftTrigger);
+    state_->gamepadRightTrigger = NormalizeTrigger(pad.bRightTrigger);
 }
 
 bool Input::IsKeyPress(int dik) const {
-    if (dik < 0 || dik >= static_cast<int>(keyNow_.size())) {
+    if (dik < 0 || dik >= static_cast<int>(state_->keyNow.size())) {
         return false;
     }
-    return (keyNow_[dik] & kPressMask) != 0;
+    return (state_->keyNow[dik] & kPressMask) != 0;
 }
 
 bool Input::IsKeyTrigger(int dik) const {
-    if (dik < 0 || dik >= static_cast<int>(keyNow_.size())) {
+    if (dik < 0 || dik >= static_cast<int>(state_->keyNow.size())) {
         return false;
     }
-    return (keyNow_[dik] & kPressMask) && !(keyPrev_[dik] & kPressMask);
+    return (state_->keyNow[dik] & kPressMask) && !(state_->keyPrev[dik] & kPressMask);
 }
 
 bool Input::IsKeyRelease(int dik) const {
-    if (dik < 0 || dik >= static_cast<int>(keyNow_.size())) {
+    if (dik < 0 || dik >= static_cast<int>(state_->keyNow.size())) {
         return false;
     }
-    return !(keyNow_[dik] & kPressMask) && (keyPrev_[dik] & kPressMask);
+    return !(state_->keyNow[dik] & kPressMask) && (state_->keyPrev[dik] & kPressMask);
 }
 
 bool Input::IsMousePress(int button) const {
-    if (button < 0 ||
-        button >= static_cast<int>(_countof(mouseState_.rgbButtons))) {
+    if (button < 0 || button >= static_cast<int>(_countof(state_->mouseState.rgbButtons))) {
         return false;
     }
-    return (mouseState_.rgbButtons[button] & 0x80) != 0;
+    return (state_->mouseState.rgbButtons[button] & 0x80) != 0;
 }
 
 bool Input::IsMouseTrigger(int button) const {
-    if (button < 0 ||
-        button >= static_cast<int>(_countof(mouseState_.rgbButtons))) {
+    if (button < 0 || button >= static_cast<int>(_countof(state_->mouseState.rgbButtons))) {
         return false;
     }
-    return (mouseState_.rgbButtons[button] & 0x80) &&
-           !(mousePrevState_.rgbButtons[button] & 0x80);
+    return (state_->mouseState.rgbButtons[button] & 0x80) &&
+           !(state_->mousePrevState.rgbButtons[button] & 0x80);
 }
 
 bool Input::IsMouseRelease(int button) const {
-    if (button < 0 ||
-        button >= static_cast<int>(_countof(mouseState_.rgbButtons))) {
+    if (button < 0 || button >= static_cast<int>(_countof(state_->mouseState.rgbButtons))) {
         return false;
     }
-    return !(mouseState_.rgbButtons[button] & 0x80) &&
-           (mousePrevState_.rgbButtons[button] & 0x80);
+    return !(state_->mouseState.rgbButtons[button] & 0x80) &&
+           (state_->mousePrevState.rgbButtons[button] & 0x80);
 }
 
 bool Input::IsGamepadButtonPress(WORD button) const {
-    return gamepadConnected_ && (gamepadState_.Gamepad.wButtons & button) != 0;
+    return state_->gamepadConnected && (state_->gamepadState.Gamepad.wButtons & button) != 0;
 }
 
 bool Input::IsGamepadButtonTrigger(WORD button) const {
-    return gamepadConnected_ &&
-           (gamepadState_.Gamepad.wButtons & button) != 0 &&
-           (gamepadPrevState_.Gamepad.wButtons & button) == 0;
+    return state_->gamepadConnected && (state_->gamepadState.Gamepad.wButtons & button) != 0 &&
+           (state_->gamepadPrevState.Gamepad.wButtons & button) == 0;
 }
 
 bool Input::IsGamepadButtonRelease(WORD button) const {
-    return gamepadPrevConnected_ &&
-           (gamepadState_.Gamepad.wButtons & button) == 0 &&
-           (gamepadPrevState_.Gamepad.wButtons & button) != 0;
+    return state_->gamepadPrevConnected && (state_->gamepadState.Gamepad.wButtons & button) == 0 &&
+           (state_->gamepadPrevState.Gamepad.wButtons & button) != 0;
 }
 
 bool Input::IsGamepadLeftTriggerTrigger(float threshold) const {
-    return gamepadConnected_ && gamepadLeftTrigger_ > threshold &&
-           NormalizeTrigger(gamepadPrevState_.Gamepad.bLeftTrigger) <=
-               threshold;
+    return state_->gamepadConnected && state_->gamepadLeftTrigger > threshold &&
+           NormalizeTrigger(state_->gamepadPrevState.Gamepad.bLeftTrigger) <= threshold;
 }
 
 bool Input::IsGamepadRightTriggerTrigger(float threshold) const {
-    return gamepadConnected_ && gamepadRightTrigger_ > threshold &&
-           NormalizeTrigger(gamepadPrevState_.Gamepad.bRightTrigger) <=
-               threshold;
+    return state_->gamepadConnected && state_->gamepadRightTrigger > threshold &&
+           NormalizeTrigger(state_->gamepadPrevState.Gamepad.bRightTrigger) <= threshold;
 }

@@ -1,6 +1,10 @@
 #pragma once
 
+#include "core/ResourceHandle.h"
+#include "RendererPipelineVariantUtils.h"
 #include "model/Material.h"
+#include "model/MaterialFeatures.h"
+#include "model/MeshManager.h"
 #include "texture/TextureManager.h"
 
 #include <d3d12.h>
@@ -15,15 +19,7 @@ inline bool IsTransparentMaterial(const Material &material) {
 }
 
 inline D3D12_CULL_MODE ToD3D12CullMode(const MaterialCullMode mode) {
-    switch (mode) {
-    case MaterialCullMode::None:
-        return D3D12_CULL_MODE_NONE;
-    case MaterialCullMode::Front:
-        return D3D12_CULL_MODE_FRONT;
-    case MaterialCullMode::Back:
-    default:
-        return D3D12_CULL_MODE_BACK;
-    }
+    return RendererPipelineVariantUtils::ToD3D12CullMode(mode);
 }
 
 inline MaterialCullMode NormalizeCullMode(int32_t cullMode) {
@@ -37,62 +33,102 @@ inline MaterialCullMode NormalizeCullMode(int32_t cullMode) {
 inline size_t PipelineVariantIndex(bool transparent,
                                    MaterialCullMode cullMode,
                                    bool depthWrite) {
-    const size_t blendIndex = transparent ? 1 : 0;
-    const size_t cullIndex = static_cast<size_t>(cullMode);
-    const size_t depthIndex = depthWrite ? 1 : 0;
-    return blendIndex * 6 + cullIndex * 2 + depthIndex;
+    return RendererPipelineVariantUtils::MaterialPipelineVariantIndex(
+        transparent, cullMode, depthWrite);
 }
 
 inline size_t PipelineVariantIndex(const Material &material) {
-    const Material drawMaterial = NormalizeMaterialForDraw(material);
-    const MaterialCullMode cullMode =
-        NormalizeCullMode(drawMaterial.cullMode);
-    return PipelineVariantIndex(IsTransparentMaterial(drawMaterial), cullMode,
-                                drawMaterial.depthWrite != 0);
+    const MaterialPipelineKey key = BuildMaterialPipelineKey(material);
+    return PipelineVariantIndex(key.blendMode == BlendMode::Transparent,
+                                key.cullMode, key.depthWrite);
 }
 
-inline uint32_t ResolveTextureId(TextureManager *textureManager,
+inline bool IsDrawableMesh(const Mesh &mesh) {
+    return mesh.vertexBuffer && mesh.indexBuffer && mesh.indexCount > 0 &&
+           mesh.vertexStride > 0 && mesh.vbView.BufferLocation != 0 &&
+           mesh.vbView.SizeInBytes > 0 &&
+           mesh.vbView.StrideInBytes > 0 &&
+           mesh.ibView.BufferLocation != 0 && mesh.ibView.SizeInBytes > 0 &&
+           mesh.primitiveTopology != D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
+}
+
+inline uint32_t ResolveTextureId(const TextureManager *textureManager,
                                  uint32_t textureId,
                                  uint32_t fallbackTextureId) {
     if (textureManager == nullptr) {
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
-    if (textureId != UINT32_MAX &&
-        textureManager->IsValidTextureId(textureId)) {
+    if (IsValidResourceId(textureId) && textureManager->IsValidTextureId(textureId)) {
         return textureId;
     }
-    if (fallbackTextureId != UINT32_MAX &&
+    if (IsValidResourceId(fallbackTextureId) &&
         textureManager->IsValidTextureId(fallbackTextureId)) {
         return fallbackTextureId;
     }
     return textureManager->GetWhiteTextureId();
 }
 
-inline uint32_t ResolveNormalTextureId(TextureManager *textureManager,
+inline uint32_t ResolveNormalTextureId(const TextureManager *textureManager,
                                        uint32_t normalTextureId) {
     const uint32_t fallbackTextureId =
         textureManager != nullptr ? textureManager->GetDefaultNormalTextureId()
-                                  : UINT32_MAX;
+                                  : kInvalidResourceId;
     return ResolveTextureId(textureManager, normalTextureId,
                             fallbackTextureId);
 }
 
-inline uint32_t ResolveBaseColorTextureId(TextureManager *textureManager,
+inline uint32_t ResolveBaseColorTextureId(const TextureManager *textureManager,
                                           const Material &material,
                                           uint32_t fallbackTextureId) {
-    const uint32_t textureId = material.baseColorTextureId == UINT32_MAX
-                                   ? fallbackTextureId
-                                   : material.baseColorTextureId;
+    const uint32_t textureId = IsValidResourceId(material.baseColorTextureId)
+                                   ? material.baseColorTextureId
+                                   : fallbackTextureId;
     return ResolveTextureId(textureManager, textureId, fallbackTextureId);
 }
 
-inline uint32_t ResolveNormalTextureId(TextureManager *textureManager,
+inline uint32_t ResolveNormalTextureId(const TextureManager *textureManager,
                                        const Material &material,
                                        uint32_t fallbackTextureId) {
-    const uint32_t textureId = material.normalTextureId == UINT32_MAX
-                                   ? fallbackTextureId
-                                   : material.normalTextureId;
+    const uint32_t textureId = IsValidResourceId(material.normalTextureId)
+                                   ? material.normalTextureId
+                                   : fallbackTextureId;
     return ResolveNormalTextureId(textureManager, textureId);
+}
+
+inline uint32_t ResolveRoughnessTextureId(const TextureManager *textureManager,
+                                          const Material &material) {
+    return ResolveTextureId(textureManager, material.roughnessTextureId,
+                            textureManager != nullptr
+                                ? textureManager->GetWhiteTextureId()
+                                : kInvalidResourceId);
+}
+
+inline uint32_t ResolveMetallicTextureId(const TextureManager *textureManager,
+                                         const Material &material) {
+    const uint32_t textureId = IsValidResourceId(material.metallicTextureId)
+                                   ? material.metallicTextureId
+                                   : material.roughnessTextureId;
+    return ResolveTextureId(textureManager, textureId,
+                            textureManager != nullptr
+                                ? textureManager->GetWhiteTextureId()
+                                : kInvalidResourceId);
+}
+
+inline uint32_t ResolveCubeTextureId(const TextureManager *textureManager,
+                                     uint32_t textureId,
+                                     uint32_t fallbackTextureId) {
+    if (textureManager == nullptr) {
+        return kInvalidResourceId;
+    }
+    if (IsValidResourceId(textureId) &&
+        textureManager->IsCubeTextureId(textureId)) {
+        return textureId;
+    }
+    if (IsValidResourceId(fallbackTextureId) &&
+        textureManager->IsCubeTextureId(fallbackTextureId)) {
+        return fallbackTextureId;
+    }
+    return textureManager->GetBlackCubeTextureId();
 }
 
 } // namespace RendererMaterialUtils

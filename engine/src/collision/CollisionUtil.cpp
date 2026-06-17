@@ -11,7 +11,7 @@ constexpr float kEpsilon = 1.0e-5f;
 
 struct OBBBasis {
     DirectX::XMVECTOR axes[3];
-    float extent[3];
+    float extent[3]{};
 };
 
 float AbsDot(DirectX::FXMVECTOR a, DirectX::FXMVECTOR b) {

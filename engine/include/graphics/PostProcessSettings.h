@@ -63,6 +63,7 @@ struct PostProcessBloomSettings {
     float threshold = 1.0f;
     float intensity = 0.25f;
     float radius = 2.0f;
+    float softKnee = 0.55f;
 };
 
 struct PostProcessNoiseSettings {
@@ -122,8 +123,8 @@ struct PostProcessDissolveSettings {
 struct PostProcessLensFlareSettings {
     bool enabled = false;
     float visibility = 0.0f;
-    float sunUv[2]{0.5f, 0.5f};
-    float sunDepth = 1.0f;
+    float sourceUv[2]{0.5f, 0.5f};
+    float sourceDepth = 1.0f;
     float occlusionBias = 0.0015f;
     float glareRadius = 0.22f;
     float glareIntensity = 0.0f;
@@ -137,6 +138,7 @@ struct PostProcessLensFlareSettings {
     float streakAlpha = 0.0f;
     float streakWidth = 0.018f;
     float streakColor[3]{1.0f, 0.70f, 0.40f};
+    float shaftIntensity = 0.0f;
 };
 
 struct PostProcessProfile {
@@ -173,6 +175,7 @@ struct PostProcessConstants {
     float bloomThreshold = 1.0f;
     float bloomIntensity = 0.25f;
     float bloomRadius = 2.0f;
+    float bloomSoftKnee = 0.55f;
     int32_t noiseEnabled = 0;
     float noiseStrength = 0.025f;
     float noiseScale = 240.0f;
@@ -187,8 +190,8 @@ struct PostProcessConstants {
     float postEffectPadding = 0.0f;
     int32_t lensFlareEnabled = 0;
     float lensFlareVisibility = 0.0f;
-    float lensFlareSunUv[2]{0.5f, 0.5f};
-    float lensFlareSunDepth = 1.0f;
+    float lensFlareSourceUv[2]{0.5f, 0.5f};
+    float lensFlareSourceDepth = 1.0f;
     float lensFlareOcclusionBias = 0.0015f;
     float lensFlareGlareRadius = 0.22f;
     float lensFlareGlareIntensity = 0.0f;
@@ -204,7 +207,7 @@ struct PostProcessConstants {
     float lensFlareGhostCoolColor[3]{0.46f, 0.56f, 1.0f};
     float lensFlareStreakAlpha = 0.0f;
     float lensFlareStreakColor[3]{1.0f, 0.70f, 0.40f};
-    float lensFlarePadding1 = 0.0f;
+    float lensFlareShaftIntensity = 0.0f;
     int32_t enableVignetting = 0;
     int32_t randomMode = 0;
     int32_t radialBlurSampleCount = 10;
@@ -229,6 +232,7 @@ struct PostProcessConstants {
     float toonPadding[3]{};
     float toonPaddingFinal = 0.0f;
     float constantsPadding[4]{};
+    float constantsPaddingBloom[3]{};
 };
 
 static_assert(sizeof(PostProcessConstants) % 16 == 0,

@@ -3,11 +3,10 @@
 #include "input/InputReplayTypes.h"
 #include <Windows.h>
 #include <Xinput.h>
-#include <array>
+#include <cstddef>
 #include <dinput.h>
+#include <memory>
 #include <string>
-#include <vector>
-#include <wrl.h>
 
 /// <summary>
 /// キーボードとマウスの入力状態を管理する
@@ -17,6 +16,7 @@ class Input {
     using ReplayMode = InputReplayMode;
     using ReplayStartupOptions = InputReplayStartupOptions;
 
+    Input();
     ~Input();
 
     /// <summary>
@@ -58,11 +58,11 @@ class Input {
     bool ApplyReplayStartupOptions(const ReplayStartupOptions &options,
                                    float fixedDeltaTime);
 
-    ReplayMode GetReplayMode() const { return replayMode_; }
-    bool IsReplayFinished() const { return replayFinished_; }
-    size_t GetReplayFrameIndex() const { return replayFrameIndex_; }
-    size_t GetReplayFrameCount() const { return replayFrames_.size(); }
-    const std::wstring &GetReplayPath() const { return replayPath_; }
+    ReplayMode GetReplayMode() const;
+    bool IsReplayFinished() const;
+    size_t GetReplayFrameIndex() const;
+    size_t GetReplayFrameCount() const;
+    const std::wstring &GetReplayPath() const;
 
     /// <summary>
     /// 指定キーが押下中かを判定する
@@ -89,19 +89,19 @@ class Input {
     /// マウスのX方向移動量を取得する
     /// </summary>
     /// <returns>X方向の移動量</returns>
-    long GetMouseDX() const { return mouseState_.lX; }
+    long GetMouseDX() const;
 
     /// <summary>
     /// マウスのY方向移動量を取得する
     /// </summary>
     /// <returns>Y方向の移動量</returns>
-    long GetMouseDY() const { return mouseState_.lY; }
+    long GetMouseDY() const;
 
     /// <summary>
     /// マウスホイールの移動量を取得する
     /// </summary>
     /// <returns>ホイールの移動量</returns>
-    long GetMouseWheel() const { return mouseState_.lZ; }
+    long GetMouseWheel() const;
 
     /// <summary>
     /// 指定マウスボタンが押下中かを判定する
@@ -127,7 +127,7 @@ class Input {
     /// <summary>
     /// Xboxコントローラーが接続されているかを取得する
     /// </summary>
-    bool IsGamepadConnected() const { return gamepadConnected_; }
+    bool IsGamepadConnected() const;
 
     /// <summary>
     /// 指定ゲームパッドボタンが押下中かを判定する
@@ -157,32 +157,32 @@ class Input {
     /// <summary>
     /// 左スティックのX入力を取得する
     /// </summary>
-    float GetGamepadLeftStickX() const { return gamepadLeftStickX_; }
+    float GetGamepadLeftStickX() const;
 
     /// <summary>
     /// 左スティックのY入力を取得する
     /// </summary>
-    float GetGamepadLeftStickY() const { return gamepadLeftStickY_; }
+    float GetGamepadLeftStickY() const;
 
     /// <summary>
     /// 右スティックのX入力を取得する
     /// </summary>
-    float GetGamepadRightStickX() const { return gamepadRightStickX_; }
+    float GetGamepadRightStickX() const;
 
     /// <summary>
     /// 右スティックのY入力を取得する
     /// </summary>
-    float GetGamepadRightStickY() const { return gamepadRightStickY_; }
+    float GetGamepadRightStickY() const;
 
     /// <summary>
     /// 左トリガーの入力値を取得する
     /// </summary>
-    float GetGamepadLeftTrigger() const { return gamepadLeftTrigger_; }
+    float GetGamepadLeftTrigger() const;
 
     /// <summary>
     /// 右トリガーの入力値を取得する
     /// </summary>
-    float GetGamepadRightTrigger() const { return gamepadRightTrigger_; }
+    float GetGamepadRightTrigger() const;
 
   private:
     /// <summary>
@@ -201,25 +201,14 @@ class Input {
     void UpdateGamepad();
     void ClearInputState(bool clearPrevious);
 
-    struct InputFrame {
-        std::array<BYTE, 256> keys{};
-        DIMOUSESTATE mouse{};
-        bool gamepadConnected = false;
-        WORD gamepadButtons = 0;
-        float gamepadLeftStickX = 0.0f;
-        float gamepadLeftStickY = 0.0f;
-        float gamepadRightStickX = 0.0f;
-        float gamepadRightStickY = 0.0f;
-        float gamepadLeftTrigger = 0.0f;
-        float gamepadRightTrigger = 0.0f;
-    };
+    struct InputFrame;
+    struct State;
 
     /// <summary>
     /// CaptureFrameを実行する
     /// </summary>
     InputFrame CaptureFrame() const;
     void ApplyReplayFrame(const InputFrame &frame);
-    void UpdateReplayHotkeys(float fixedDeltaTime);
     /// <summary>
     /// MakeAutoReplayPathを実行する
     /// </summary>
@@ -230,35 +219,5 @@ class Input {
   private:
     static constexpr BYTE kPressMask = 0x80;
 
-    Microsoft::WRL::ComPtr<IDirectInput8> directInput_;
-    Microsoft::WRL::ComPtr<IDirectInputDevice8> keyboard_;
-    Microsoft::WRL::ComPtr<IDirectInputDevice8> mouse_;
-
-    std::array<BYTE, 256> keyNow_{};
-    std::array<BYTE, 256> keyPrev_{};
-
-    DIMOUSESTATE mouseState_{};
-    DIMOUSESTATE mousePrevState_{};
-
-    XINPUT_STATE gamepadState_{};
-    XINPUT_STATE gamepadPrevState_{};
-    bool gamepadConnected_ = false;
-    bool gamepadPrevConnected_ = false;
-    float gamepadLeftStickX_ = 0.0f;
-    float gamepadLeftStickY_ = 0.0f;
-    float gamepadRightStickX_ = 0.0f;
-    float gamepadRightStickY_ = 0.0f;
-    float gamepadLeftTrigger_ = 0.0f;
-    float gamepadRightTrigger_ = 0.0f;
-
-    ReplayMode replayMode_ = ReplayMode::Live;
-    std::wstring replayPath_;
-    float replayFixedDeltaTime_ = 0.0f;
-    std::vector<InputFrame> recordedFrames_;
-    std::vector<InputFrame> replayFrames_;
-    size_t replayFrameIndex_ = 0;
-    bool replayFinished_ = false;
-    bool recordingDirty_ = false;
-    std::wstring replayDirectory_;
-    bool replayHotkeysEnabled_ = true;
+    std::unique_ptr<State> state_;
 };

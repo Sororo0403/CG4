@@ -1,4 +1,6 @@
 #include "model/ModelRenderer.h"
+#include "ModelRendererInternal.h"
+#include "RendererUploadUtils.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/ShaderCompiler.h"
@@ -14,95 +16,10 @@
 #include <array>
 #include <cmath>
 #include <cstring>
-#include <limits>
 #include <vector>
 
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
-
-namespace {
-
-constexpr UINT kSkinningThreadCount = 1024u;
-
-bool IsTransparentMaterial(const Material &material) {
-    return material.blendMode == static_cast<int32_t>(BlendMode::Transparent) ||
-           material.color.w < 1.0f;
-}
-
-D3D12_CULL_MODE ToD3D12CullMode(const MaterialCullMode mode) {
-    switch (mode) {
-    case MaterialCullMode::None:
-        return D3D12_CULL_MODE_NONE;
-    case MaterialCullMode::Front:
-        return D3D12_CULL_MODE_FRONT;
-    case MaterialCullMode::Back:
-    default:
-        return D3D12_CULL_MODE_BACK;
-    }
-}
-
-size_t PipelineVariantIndex(bool transparent, MaterialCullMode cullMode,
-                            bool depthWrite) {
-    const size_t blendIndex = transparent ? 1 : 0;
-    const size_t cullIndex = static_cast<size_t>(cullMode);
-    const size_t depthIndex = depthWrite ? 1 : 0;
-    return blendIndex * 6 + cullIndex * 2 + depthIndex;
-}
-
-size_t PipelineVariantIndex(const Material &material) {
-    const Material drawMaterial = NormalizeMaterialForDraw(material);
-    MaterialCullMode cullMode =
-        static_cast<MaterialCullMode>(drawMaterial.cullMode);
-    if (drawMaterial.cullMode < static_cast<int32_t>(MaterialCullMode::None) ||
-        drawMaterial.cullMode > static_cast<int32_t>(MaterialCullMode::Back)) {
-        cullMode = MaterialCullMode::Back;
-    }
-    return PipelineVariantIndex(IsTransparentMaterial(drawMaterial), cullMode,
-                                drawMaterial.depthWrite != 0);
-}
-
-uint32_t ResolveNormalTextureId(TextureManager *textureManager,
-                                uint32_t normalTextureId) {
-    return normalTextureId == UINT32_MAX
-               ? textureManager->GetDefaultNormalTextureId()
-               : normalTextureId;
-}
-
-uint32_t ResolveBaseColorTextureId(const Material &material,
-                                   uint32_t fallbackTextureId) {
-    return material.baseColorTextureId == UINT32_MAX
-               ? fallbackTextureId
-               : material.baseColorTextureId;
-}
-
-uint32_t ResolveNormalTextureId(TextureManager *textureManager,
-                                const Material &material,
-                                uint32_t fallbackTextureId) {
-    const uint32_t textureId = material.normalTextureId == UINT32_MAX
-                                   ? fallbackTextureId
-                                   : material.normalTextureId;
-    return ResolveNormalTextureId(textureManager, textureId);
-}
-
-}
-
-bool CanStageInstanceData(size_t bytesPerFrame, uint32_t instanceCount) {
-    if (bytesPerFrame == 0 || instanceCount == 0) {
-        return false;
-    }
-    if (instanceCount >
-        (std::numeric_limits<size_t>::max)() / sizeof(InstanceData)) {
-        return false;
-    }
-    return sizeof(InstanceData) * static_cast<size_t>(instanceCount) <=
-           bytesPerFrame;
-}
-
-struct PerObjectConstBufferData {
-    XMFLOAT4X4 matWVP;
-    XMFLOAT4X4 matWorld;
-    XMFLOAT4X4 matWorldInverseTranspose;
-};
 
 struct DrawEffectConstBufferData {
     XMFLOAT4 color{1.0f, 1.0f, 1.0f, 1.0f};
@@ -112,22 +29,15 @@ struct DrawEffectConstBufferData {
 };
 
 void ModelRenderer::CreateUploadBuffer() {
-    if (!dxCommon_ || !dxCommon_->GetDevice()) {
-        uploadBuffer_.Reset();
-        return;
-    }
-    uploadBuffer_.Initialize(dxCommon_->GetDevice(), kUploadBytesPerFrame, 2);
+    RendererUploadUtils::InitializeUploadBuffer(
+        state_->uploadBuffer, state_->dxCommon, kUploadBytesPerFrame);
 }
 
 D3D12_GPU_VIRTUAL_ADDRESS ModelRenderer::WriteObjectConstants(
     const XMMATRIX &wvp, const XMMATRIX &world,
     const XMMATRIX &worldInverseTranspose) {
-    PerObjectConstBufferData data{};
-    XMStoreFloat4x4(&data.matWVP, XMMatrixTranspose(wvp));
-    XMStoreFloat4x4(&data.matWorld, XMMatrixTranspose(world));
-    XMStoreFloat4x4(&data.matWorldInverseTranspose,
-                    XMMatrixTranspose(worldInverseTranspose));
-    return uploadBuffer_.Write(data).gpu;
+    return RendererUploadUtils::WriteObjectConstants(
+        state_->uploadBuffer, wvp, world, worldInverseTranspose);
 }
 
 D3D12_GPU_VIRTUAL_ADDRESS
@@ -135,69 +45,74 @@ ModelRenderer::WriteSceneConstants(const Camera &camera) {
     ModelSceneConstBufferData data{};
     data.cameraPos = {camera.GetPosition().x, camera.GetPosition().y,
                       camera.GetPosition().z, 1.0f};
-    data.keyLightDirection = {currentLighting_.keyLightDirection.x,
-                              currentLighting_.keyLightDirection.y,
-                              currentLighting_.keyLightDirection.z, 0.0f};
-    data.keyLightColor = currentLighting_.keyLightColor;
-    data.fillLightDirection = {currentLighting_.fillLightDirection.x,
-                               currentLighting_.fillLightDirection.y,
-                               currentLighting_.fillLightDirection.z, 0.0f};
-    data.fillLightColor = currentLighting_.fillLightColor;
-    data.ambientColor = currentLighting_.ambientColor;
+    data.keyLightDirection = {state_->currentLighting.keyLightDirection.x,
+                              state_->currentLighting.keyLightDirection.y,
+                              state_->currentLighting.keyLightDirection.z, 0.0f};
+    data.keyLightColor = state_->currentLighting.keyLightColor;
+    data.fillLightDirection = {state_->currentLighting.fillLightDirection.x,
+                               state_->currentLighting.fillLightDirection.y,
+                               state_->currentLighting.fillLightDirection.z, 0.0f};
+    data.fillLightColor = state_->currentLighting.fillLightColor;
+    data.ambientColor = state_->currentLighting.ambientColor;
     for (size_t lightIndex = 0;
-         lightIndex < currentLighting_.pointLights.size(); ++lightIndex) {
+         lightIndex < state_->currentLighting.pointLights.size(); ++lightIndex) {
         data.pointLights[lightIndex].positionRange =
-            currentLighting_.pointLights[lightIndex].positionRange;
+            state_->currentLighting.pointLights[lightIndex].positionRange;
         data.pointLights[lightIndex].colorIntensity =
-            currentLighting_.pointLights[lightIndex].colorIntensity;
+            state_->currentLighting.pointLights[lightIndex].colorIntensity;
     }
-    data.lightingParams = currentLighting_.lightingParams;
-    data.lightingModeParams = currentLighting_.lightingModeParams;
-    data.fogColor = currentFog_.color;
-    data.fogParams = currentFog_.params;
+    data.lightingParams = state_->currentLighting.lightingParams;
+    data.lightingModeParams = state_->currentLighting.lightingModeParams;
+    data.fogColor = state_->currentFog.color;
+    data.fogParams = state_->currentFog.params;
     XMStoreFloat4x4(&data.viewProjection,
                     XMMatrixTranspose(camera.GetView() * camera.GetProj()));
     XMStoreFloat4x4(
         &data.lightViewProjection,
-        XMMatrixTranspose(XMLoadFloat4x4(&shadowLightViewProjection_)));
-    data.shadowParams = shadowParams_;
-    data.shadowFilterParams = shadowFilterParams_;
-    data.spotLight.positionRange = currentLighting_.spotLight.positionRange;
-    data.spotLight.direction = currentLighting_.spotLight.direction;
-    data.spotLight.colorIntensity = currentLighting_.spotLight.colorIntensity;
-    data.spotLight.angleParams = currentLighting_.spotLight.angleParams;
-    return uploadBuffer_.Write(data).gpu;
+        XMMatrixTranspose(XMLoadFloat4x4(&state_->shadowLightViewProjection)));
+    data.shadowParams = state_->shadowParams;
+    data.shadowFilterParams = state_->shadowFilterParams;
+    data.spotLight.positionRange = state_->currentLighting.spotLight.positionRange;
+    data.spotLight.direction = state_->currentLighting.spotLight.direction;
+    data.spotLight.colorIntensity = state_->currentLighting.spotLight.colorIntensity;
+    data.spotLight.angleParams = state_->currentLighting.spotLight.angleParams;
+    XMStoreFloat4x4(
+        &data.spotLightViewProjection,
+        XMMatrixTranspose(XMLoadFloat4x4(&state_->spotLightViewProjection)));
+    data.spotShadowParams = state_->spotShadowParams;
+    data.spotShadowFilterParams = state_->spotShadowFilterParams;
+    return state_->uploadBuffer.Write(data).gpu;
 }
 
 D3D12_GPU_VIRTUAL_ADDRESS ModelRenderer::WriteDrawEffectConstants() {
     DrawEffectConstBufferData data{};
-    data.color = currentEffect_.color;
+    data.color = state_->currentEffect.color;
     data.params0 = {
-        currentEffect_.enabled ? 1.0f : 0.0f,
-        currentEffect_.enabled ? currentEffect_.intensity : 0.0f,
-        currentEffect_.fresnelPower,
-        currentEffect_.noiseAmount,
+        state_->currentEffect.enabled ? 1.0f : 0.0f,
+        state_->currentEffect.enabled ? state_->currentEffect.intensity : 0.0f,
+        state_->currentEffect.fresnelPower,
+        state_->currentEffect.noiseAmount,
     };
     data.params1 = {
-        currentEffect_.time,
-        currentEffect_.baseDim,
-        currentEffect_.alphaBoost,
-        currentEffect_.forceOpaqueMaterial ? 1.0f : 0.0f,
+        state_->currentEffect.time,
+        state_->currentEffect.baseDim,
+        state_->currentEffect.alphaBoost,
+        state_->currentEffect.forceOpaqueMaterial ? 1.0f : 0.0f,
     };
     data.params2 = {
-        currentEffect_.surfaceTint,
-        currentEffect_.alphaMultiplier,
+        state_->currentEffect.surfaceTint,
+        state_->currentEffect.alphaMultiplier,
         0.0f,
         0.0f,
     };
-    return uploadBuffer_.Write(data).gpu;
+    return state_->uploadBuffer.Write(data).gpu;
 }
 
 D3D12_VERTEX_BUFFER_VIEW
 ModelRenderer::WriteInstances(const Model &model, const Transform *transforms,
                               uint32_t instanceCount) {
-    if (!CanStageInstanceData(uploadBuffer_.GetBytesPerFrame(),
-                              instanceCount)) {
+    if (!RendererUploadUtils::CanStageInstanceData(
+            state_->uploadBuffer.GetBytesPerFrame(), instanceCount)) {
         return {};
     }
 
@@ -215,8 +130,8 @@ D3D12_VERTEX_BUFFER_VIEW
 ModelRenderer::WriteInstances(const Model &model,
                               const InstanceData *sourceInstances,
                               uint32_t instanceCount) {
-    if (!CanStageInstanceData(uploadBuffer_.GetBytesPerFrame(),
-                              instanceCount)) {
+    if (!RendererUploadUtils::CanStageInstanceData(
+            state_->uploadBuffer.GetBytesPerFrame(), instanceCount)) {
         return {};
     }
 
@@ -240,7 +155,7 @@ ModelRenderer::WriteInstances(const Model &model,
     }
 
     const UploadAllocation allocation =
-        uploadBuffer_.WriteArray(instances.data(), instances.size(),
+        state_->uploadBuffer.WriteArray(instances.data(), instances.size(),
                                  alignof(InstanceData));
 
     D3D12_VERTEX_BUFFER_VIEW view{};

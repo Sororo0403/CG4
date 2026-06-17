@@ -10,6 +10,7 @@
 
 Texture2D renderTexture : register(t0);
 Texture2D depthTexture : register(t1);
+Texture2D bloomTexture : register(t2);
 SamplerState textureSampler : register(s0);
 
 bool IsPostProcessBypass()
@@ -47,8 +48,10 @@ float4 main(PostProcessVSOutput input) : SV_TARGET
     outputColor = ApplyEdge(outputColor, renderTexture, depthTexture,
                             textureSampler, input.uv);
 
-    outputColor.rgb = ApplyBloom(renderTexture, textureSampler, outputColor.rgb,
+    outputColor.rgb = ApplyBloom(bloomTexture, textureSampler, outputColor.rgb,
                                  input.uv);
+    outputColor.rgb = ApplyLensFlare(depthTexture, textureSampler,
+                                     outputColor.rgb, input.uv);
     outputColor.rgb = ApplyToneMapping(outputColor.rgb);
     outputColor.rgb = ApplyNoise(outputColor.rgb, input.uv);
     outputColor.rgb = ApplyVignetting(outputColor.rgb, input.uv);
@@ -60,8 +63,6 @@ float4 main(PostProcessVSOutput input) : SV_TARGET
                                         secondaryVignetteTintStrength,
                                         secondaryVignetteTintColor);
     outputColor.rgb = ApplySpecialEffect(outputColor.rgb, input.uv);
-    outputColor.rgb = ApplyLensFlare(depthTexture, textureSampler,
-                                     outputColor.rgb, input.uv);
     outputColor.rgb =
         ApplyToon(renderTexture, textureSampler, outputColor.rgb, input.uv);
     outputColor = ApplyRandomNoise(outputColor, input.uv);

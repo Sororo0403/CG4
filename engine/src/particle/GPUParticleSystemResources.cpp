@@ -1,18 +1,21 @@
-#include "particle/GPUParticleSystem.h"
+﻿#include "particle/GPUParticleSystem.h"
+#include "GPUParticleSystemInternal.h"
 #include "GPUParticleSystemShared.h"
 
+#include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/GpuResourceHelpers.h"
 #include "graphics/GpuResourceLifetime.h"
+#include "../graphics/RootSignatureUtils.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
 #include "texture/TextureManager.h"
+#include "../graphics/SrvDescriptorAllocation.h"
 
 #include <algorithm>
 #include <cstring>
-#include <limits>
 #include <vector>
 
 using namespace DirectX;
@@ -21,145 +24,10 @@ using Microsoft::WRL::ComPtr;
 namespace {
 using GpuResourceHelpers::CreateCommittedResourceChecked;
 using GpuResourceHelpers::MapResourceChecked;
-
-UINT CheckedByteSize(size_t elementSize, size_t count, const char *message) {
-    (void)message;
-    if (count == 0 ||
-        elementSize > (std::numeric_limits<size_t>::max)() / count) {
-        return 0;
-    }
-    const size_t bytes = elementSize * count;
-    if (bytes > (std::numeric_limits<UINT>::max)()) {
-        return 0;
-    }
-    return static_cast<UINT>(bytes);
-}
-
-UINT Align256(size_t size) {
-    if (size > static_cast<size_t>((std::numeric_limits<UINT>::max)()) - 0xFFu) {
-        return 0;
-    }
-    return static_cast<UINT>((size + 0xFFu) & ~size_t{0xFFu});
-}
-
-bool AllocateSrvHandles(SrvManager *srvManager, uint32_t &index,
-                        D3D12_CPU_DESCRIPTOR_HANDLE &cpuHandle,
-                        D3D12_GPU_DESCRIPTOR_HANDLE &gpuHandle) {
-    index = UINT32_MAX;
-    cpuHandle = {};
-    gpuHandle = {};
-
-    if (srvManager == nullptr || !srvManager->CanAllocate()) {
-        return false;
-    }
-
-    index = srvManager->Allocate();
-    if (index == UINT32_MAX) {
-        return false;
-    }
-
-    cpuHandle = srvManager->GetCpuHandle(index);
-    gpuHandle = srvManager->GetGpuHandle(index);
-    if (cpuHandle.ptr == 0 || gpuHandle.ptr == 0) {
-        srvManager->FreeIfAllocated(index);
-        index = UINT32_MAX;
-        cpuHandle = {};
-        gpuHandle = {};
-        return false;
-    }
-
-    return true;
-}
+using GpuParticleSystemInternal::Align256;
+using GpuParticleSystemInternal::CheckedByteSize;
 
 } // namespace
-
-void GPUParticleSystem::CreateRootSignatures() {
-    if (!dxCommon_ || !dxCommon_->GetDevice()) {
-        return;
-    }
-    {
-        static_assert((sizeof(EmitterForGPU) / sizeof(uint32_t)) + 2u + 6u <=
-                          64u,
-                      "GPUParticle update root signature exceeds 64 DWORDs");
-        CD3DX12_ROOT_PARAMETER params[8]{};
-        params[0].InitAsConstantBufferView(0);
-        params[1].InitAsConstants(
-            static_cast<UINT>(sizeof(EmitterForGPU) / sizeof(uint32_t)), 1);
-
-        CD3DX12_DESCRIPTOR_RANGE particleRange{};
-        particleRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
-        params[2].InitAsDescriptorTable(1, &particleRange);
-
-        CD3DX12_DESCRIPTOR_RANGE freeListRange{};
-        freeListRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
-        params[3].InitAsDescriptorTable(1, &freeListRange);
-
-        CD3DX12_DESCRIPTOR_RANGE freeListIndexRange{};
-        freeListIndexRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2);
-        params[4].InitAsDescriptorTable(1, &freeListIndexRange);
-
-        CD3DX12_DESCRIPTOR_RANGE activeIndexRange{};
-        activeIndexRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 3);
-        params[5].InitAsDescriptorTable(1, &activeIndexRange);
-
-        CD3DX12_DESCRIPTOR_RANGE activeCountRange{};
-        activeCountRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 4);
-        params[6].InitAsDescriptorTable(1, &activeCountRange);
-
-        CD3DX12_DESCRIPTOR_RANGE drawArgsRange{};
-        drawArgsRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 5);
-        params[7].InitAsDescriptorTable(1, &drawArgsRange);
-
-        CD3DX12_ROOT_SIGNATURE_DESC desc;
-        desc.Init(_countof(params), params, 0, nullptr);
-
-        ComPtr<ID3DBlob> blob, error;
-        if (FAILED(D3D12SerializeRootSignature(
-                &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error)) ||
-            !blob) {
-            return;
-        }
-        if (FAILED(dxCommon_->GetDevice()->CreateRootSignature(
-                0, blob->GetBufferPointer(), blob->GetBufferSize(),
-                IID_PPV_ARGS(&updateRootSignature_))) ||
-            !updateRootSignature_) {
-            return;
-        }
-    }
-
-    drawRootSignature_ =
-        GpuParticleShared::GetDrawRootSignature(dxCommon_->GetDevice());
-}
-
-void GPUParticleSystem::CreatePipelineStates() {
-    auto *device = dxCommon_->GetDevice();
-    if (device == nullptr || !updateRootSignature_ || !drawRootSignature_) {
-        return;
-    }
-
-    auto cs = ShaderCompiler::Compile(ShaderPaths::ParticleUpdateCS, "main",
-                                      "cs_6_6");
-    if (!cs) {
-        return;
-    }
-    D3D12_COMPUTE_PIPELINE_STATE_DESC computePso{};
-    computePso.pRootSignature = updateRootSignature_.Get();
-    computePso.CS = {cs->GetBufferPointer(), cs->GetBufferSize()};
-    if (FAILED(device->CreateComputePipelineState(
-            &computePso, IID_PPV_ARGS(&updatePSO_))) ||
-        !updatePSO_) {
-        return;
-    }
-
-    drawCommandSignature_ = GpuParticleShared::GetDrawCommandSignature(device);
-
-    const std::wstring pixelShaderPath =
-        materialSettings_.pixelShaderPath.empty()
-            ? std::wstring(ShaderPaths::ParticlePS)
-            : materialSettings_.pixelShaderPath;
-    drawPSO_ = GpuParticleShared::GetOrCreateDrawPipeline(device, drawRootSignature_.Get(),
-                                          pixelShaderPath);
-}
 
 void GPUParticleSystem::CreateParticleBuffer(
     const std::vector<ParticleForGPU> &particles) {
@@ -181,37 +49,38 @@ void GPUParticleSystem::CreateParticleBuffer(
     if (!CreateCommittedResourceChecked(
             device, &defaultHeap, D3D12_HEAP_FLAG_NONE, &particleDesc,
             D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-            particleResource_.GetAddressOf())) {
+            resources_->particleResource.GetAddressOf())) {
         return;
     }
-    particleResource_->SetName(L"GPUParticleSystem.Particles");
+    resources_->particleResource->SetName(L"GPUParticleSystem.Particles");
 
     CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
     auto uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
     if (!CreateCommittedResourceChecked(
             device, &uploadHeap, D3D12_HEAP_FLAG_NONE, &uploadDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            particleUploadResource_.GetAddressOf())) {
+            resources_->particleUploadResource.GetAddressOf())) {
         return;
     }
-    particleUploadResource_->SetName(L"GPUParticleSystem.ParticlesUpload");
+    resources_->particleUploadResource->SetName(L"GPUParticleSystem.ParticlesUpload");
 
     uint8_t *mapped = nullptr;
-    if (!MapResourceChecked(particleUploadResource_.Get(), &mapped)) {
+    if (!MapResourceChecked(resources_->particleUploadResource.Get(), &mapped)) {
         return;
     }
     std::memcpy(mapped, particles.data(), bufferSize);
-    particleUploadResource_->Unmap(0, nullptr);
+    resources_->particleUploadResource->Unmap(0, nullptr);
 
-    cmdList->CopyBufferRegion(particleResource_.Get(), 0,
-                              particleUploadResource_.Get(), 0, bufferSize);
+    cmdList->CopyBufferRegion(resources_->particleResource.Get(), 0,
+                              resources_->particleUploadResource.Get(), 0, bufferSize);
     auto toSrv = CD3DX12_RESOURCE_BARRIER::Transition(
-        particleResource_.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+        resources_->particleResource.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
         D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     cmdList->ResourceBarrier(1, &toSrv);
 
-    if (!AllocateSrvHandles(srvManager_, particleSrvIndex_,
-                            particleSrvCpuHandle_, particleSrvGpuHandle_)) {
+    if (!SrvDescriptorAllocation::Allocate(
+            srvManager_, resources_->particleSrvIndex,
+            resources_->particleSrvCpuHandle, resources_->particleSrvGpuHandle)) {
         return;
     }
 
@@ -223,11 +92,12 @@ void GPUParticleSystem::CreateParticleBuffer(
     srvDesc.Buffer.NumElements = maxParticles_;
     srvDesc.Buffer.StructureByteStride = sizeof(ParticleForGPU);
     srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-    device->CreateShaderResourceView(particleResource_.Get(), &srvDesc,
-                                     particleSrvCpuHandle_);
+    device->CreateShaderResourceView(resources_->particleResource.Get(), &srvDesc,
+                                     resources_->particleSrvCpuHandle);
 
-    if (!AllocateSrvHandles(srvManager_, particleUavIndex_,
-                            particleUavCpuHandle_, particleUavGpuHandle_)) {
+    if (!SrvDescriptorAllocation::Allocate(
+            srvManager_, resources_->particleUavIndex,
+            resources_->particleUavCpuHandle, resources_->particleUavGpuHandle)) {
         return;
     }
 
@@ -238,8 +108,8 @@ void GPUParticleSystem::CreateParticleBuffer(
     uavDesc.Buffer.NumElements = maxParticles_;
     uavDesc.Buffer.StructureByteStride = sizeof(ParticleForGPU);
     uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
-    device->CreateUnorderedAccessView(particleResource_.Get(), nullptr,
-                                      &uavDesc, particleUavCpuHandle_);
+    device->CreateUnorderedAccessView(resources_->particleResource.Get(), nullptr,
+                                      &uavDesc, resources_->particleUavCpuHandle);
 }
 
 void GPUParticleSystem::CreateFreeListBuffers() {
@@ -261,20 +131,20 @@ void GPUParticleSystem::CreateFreeListBuffers() {
     if (!CreateCommittedResourceChecked(
             device, &defaultHeap, D3D12_HEAP_FLAG_NONE, &freeListDesc,
             D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-            freeListResource_.GetAddressOf())) {
+            resources_->freeListResource.GetAddressOf())) {
         return;
     }
-    freeListResource_->SetName(L"GPUParticleSystem.FreeList");
+    resources_->freeListResource->SetName(L"GPUParticleSystem.FreeList");
 
     CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
     auto freeListUploadDesc = CD3DX12_RESOURCE_DESC::Buffer(freeListBufferSize);
     if (!CreateCommittedResourceChecked(
             device, &uploadHeap, D3D12_HEAP_FLAG_NONE, &freeListUploadDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-            freeListUploadResource_.GetAddressOf())) {
+            resources_->freeListUploadResource.GetAddressOf())) {
         return;
     }
-    freeListUploadResource_->SetName(L"GPUParticleSystem.FreeListUpload");
+    resources_->freeListUploadResource->SetName(L"GPUParticleSystem.FreeListUpload");
 
     std::vector<uint32_t> freeList(maxParticles_);
     for (uint32_t index = 0; index < maxParticles_; ++index) {
@@ -282,22 +152,24 @@ void GPUParticleSystem::CreateFreeListBuffers() {
     }
 
     uint8_t *mappedFreeList = nullptr;
-    if (!MapResourceChecked(freeListUploadResource_.Get(), &mappedFreeList)) {
+    if (!MapResourceChecked(resources_->freeListUploadResource.Get(), &mappedFreeList)) {
         return;
     }
     std::memcpy(mappedFreeList, freeList.data(), freeListBufferSize);
-    freeListUploadResource_->Unmap(0, nullptr);
+    resources_->freeListUploadResource->Unmap(0, nullptr);
 
-    cmdList->CopyBufferRegion(freeListResource_.Get(), 0,
-                              freeListUploadResource_.Get(), 0,
+    cmdList->CopyBufferRegion(resources_->freeListResource.Get(), 0,
+                              resources_->freeListUploadResource.Get(), 0,
                               freeListBufferSize);
     auto freeListToUav = CD3DX12_RESOURCE_BARRIER::Transition(
-        freeListResource_.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+        resources_->freeListResource.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     cmdList->ResourceBarrier(1, &freeListToUav);
 
-    if (!AllocateSrvHandles(srvManager_, freeListUavIndex_,
-                            freeListUavCpuHandle_, freeListUavGpuHandle_)) {
+    if (!SrvDescriptorAllocation::Allocate(
+            srvManager_, resources_->freeListUavIndex,
+            resources_->freeListUavCpuHandle,
+            resources_->freeListUavGpuHandle)) {
         return;
     }
 
@@ -308,8 +180,8 @@ void GPUParticleSystem::CreateFreeListBuffers() {
     uavDesc.Buffer.NumElements = maxParticles_;
     uavDesc.Buffer.StructureByteStride = sizeof(uint32_t);
     uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
-    device->CreateUnorderedAccessView(freeListResource_.Get(), nullptr,
-                                      &uavDesc, freeListUavCpuHandle_);
+    device->CreateUnorderedAccessView(resources_->freeListResource.Get(), nullptr,
+                                      &uavDesc, resources_->freeListUavCpuHandle);
 
     constexpr UINT freeListIndexBufferSize = sizeof(int32_t);
     auto freeListIndexDesc = CD3DX12_RESOURCE_DESC::Buffer(
@@ -317,41 +189,42 @@ void GPUParticleSystem::CreateFreeListBuffers() {
     if (!CreateCommittedResourceChecked(
             device, &defaultHeap, D3D12_HEAP_FLAG_NONE, &freeListIndexDesc,
             D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-            freeListIndexResource_.GetAddressOf())) {
+            resources_->freeListIndexResource.GetAddressOf())) {
         return;
     }
-    freeListIndexResource_->SetName(L"GPUParticleSystem.FreeListIndex");
+    resources_->freeListIndexResource->SetName(L"GPUParticleSystem.FreeListIndex");
 
     auto freeListIndexUploadDesc =
         CD3DX12_RESOURCE_DESC::Buffer(freeListIndexBufferSize);
     if (!CreateCommittedResourceChecked(
             device, &uploadHeap, D3D12_HEAP_FLAG_NONE,
             &freeListIndexUploadDesc, D3D12_RESOURCE_STATE_GENERIC_READ,
-            nullptr, freeListIndexUploadResource_.GetAddressOf())) {
+            nullptr, resources_->freeListIndexUploadResource.GetAddressOf())) {
         return;
     }
-    freeListIndexUploadResource_->SetName(
+    resources_->freeListIndexUploadResource->SetName(
         L"GPUParticleSystem.FreeListIndexUpload");
 
     int32_t *mappedFreeListIndex = nullptr;
-    if (!MapResourceChecked(freeListIndexUploadResource_.Get(),
+    if (!MapResourceChecked(resources_->freeListIndexUploadResource.Get(),
                             &mappedFreeListIndex)) {
         return;
     }
     *mappedFreeListIndex = static_cast<int32_t>(maxParticles_);
-    freeListIndexUploadResource_->Unmap(0, nullptr);
+    resources_->freeListIndexUploadResource->Unmap(0, nullptr);
 
     cmdList->CopyBufferRegion(
-        freeListIndexResource_.Get(), 0, freeListIndexUploadResource_.Get(), 0,
+        resources_->freeListIndexResource.Get(), 0, resources_->freeListIndexUploadResource.Get(), 0,
         freeListIndexBufferSize);
     auto freeListIndexToUav = CD3DX12_RESOURCE_BARRIER::Transition(
-        freeListIndexResource_.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+        resources_->freeListIndexResource.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     cmdList->ResourceBarrier(1, &freeListIndexToUav);
 
-    if (!AllocateSrvHandles(srvManager_, freeListIndexUavIndex_,
-                            freeListIndexUavCpuHandle_,
-                            freeListIndexUavGpuHandle_)) {
+    if (!SrvDescriptorAllocation::Allocate(
+            srvManager_, resources_->freeListIndexUavIndex,
+            resources_->freeListIndexUavCpuHandle,
+            resources_->freeListIndexUavGpuHandle)) {
         return;
     }
 
@@ -362,9 +235,9 @@ void GPUParticleSystem::CreateFreeListBuffers() {
     indexUavDesc.Buffer.NumElements = 1;
     indexUavDesc.Buffer.StructureByteStride = sizeof(int32_t);
     indexUavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
-    device->CreateUnorderedAccessView(freeListIndexResource_.Get(), nullptr,
+    device->CreateUnorderedAccessView(resources_->freeListIndexResource.Get(), nullptr,
                                       &indexUavDesc,
-                                      freeListIndexUavCpuHandle_);
+                                      resources_->freeListIndexUavCpuHandle);
 }
 
 void GPUParticleSystem::CreateActiveDrawBuffers() {
@@ -386,15 +259,16 @@ void GPUParticleSystem::CreateActiveDrawBuffers() {
     if (!CreateCommittedResourceChecked(
             device, &defaultHeap, D3D12_HEAP_FLAG_NONE, &activeIndexDesc,
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
-            activeIndexResource_.GetAddressOf())) {
+            resources_->activeIndexResource.GetAddressOf())) {
         return;
     }
-    activeIndexResource_->SetName(L"GPUParticleSystem.ActiveIndex");
-    activeIndexState_ = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    resources_->activeIndexResource->SetName(L"GPUParticleSystem.ActiveIndex");
+    resources_->activeIndexState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 
-    if (!AllocateSrvHandles(srvManager_, activeIndexSrvIndex_,
-                            activeIndexSrvCpuHandle_,
-                            activeIndexSrvGpuHandle_)) {
+    if (!SrvDescriptorAllocation::Allocate(
+            srvManager_, resources_->activeIndexSrvIndex,
+            resources_->activeIndexSrvCpuHandle,
+            resources_->activeIndexSrvGpuHandle)) {
         return;
     }
 
@@ -407,13 +281,14 @@ void GPUParticleSystem::CreateActiveDrawBuffers() {
     activeIndexSrvDesc.Buffer.NumElements = maxParticles_;
     activeIndexSrvDesc.Buffer.StructureByteStride = sizeof(uint32_t);
     activeIndexSrvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-    device->CreateShaderResourceView(activeIndexResource_.Get(),
+    device->CreateShaderResourceView(resources_->activeIndexResource.Get(),
                                      &activeIndexSrvDesc,
-                                     activeIndexSrvCpuHandle_);
+                                     resources_->activeIndexSrvCpuHandle);
 
-    if (!AllocateSrvHandles(srvManager_, activeIndexUavIndex_,
-                            activeIndexUavCpuHandle_,
-                            activeIndexUavGpuHandle_)) {
+    if (!SrvDescriptorAllocation::Allocate(
+            srvManager_, resources_->activeIndexUavIndex,
+            resources_->activeIndexUavCpuHandle,
+            resources_->activeIndexUavGpuHandle)) {
         return;
     }
 
@@ -424,9 +299,9 @@ void GPUParticleSystem::CreateActiveDrawBuffers() {
     activeIndexUavDesc.Buffer.NumElements = maxParticles_;
     activeIndexUavDesc.Buffer.StructureByteStride = sizeof(uint32_t);
     activeIndexUavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
-    device->CreateUnorderedAccessView(activeIndexResource_.Get(), nullptr,
+    device->CreateUnorderedAccessView(resources_->activeIndexResource.Get(), nullptr,
                                       &activeIndexUavDesc,
-                                      activeIndexUavCpuHandle_);
+                                      resources_->activeIndexUavCpuHandle);
 
     constexpr UINT counterBufferSize = 16;
     auto activeCountDesc = CD3DX12_RESOURCE_DESC::Buffer(
@@ -434,14 +309,15 @@ void GPUParticleSystem::CreateActiveDrawBuffers() {
     if (!CreateCommittedResourceChecked(
             device, &defaultHeap, D3D12_HEAP_FLAG_NONE, &activeCountDesc,
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
-            activeCountResource_.GetAddressOf())) {
+            resources_->activeCountResource.GetAddressOf())) {
         return;
     }
-    activeCountResource_->SetName(L"GPUParticleSystem.ActiveCount");
+    resources_->activeCountResource->SetName(L"GPUParticleSystem.ActiveCount");
 
-    if (!AllocateSrvHandles(srvManager_, activeCountUavIndex_,
-                            activeCountUavCpuHandle_,
-                            activeCountUavGpuHandle_)) {
+    if (!SrvDescriptorAllocation::Allocate(
+            srvManager_, resources_->activeCountUavIndex,
+            resources_->activeCountUavCpuHandle,
+            resources_->activeCountUavGpuHandle)) {
         return;
     }
 
@@ -451,8 +327,8 @@ void GPUParticleSystem::CreateActiveDrawBuffers() {
     rawUavDesc.Buffer.FirstElement = 0;
     rawUavDesc.Buffer.NumElements = counterBufferSize / sizeof(uint32_t);
     rawUavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
-    device->CreateUnorderedAccessView(activeCountResource_.Get(), nullptr,
-                                      &rawUavDesc, activeCountUavCpuHandle_);
+    device->CreateUnorderedAccessView(resources_->activeCountResource.Get(), nullptr,
+                                      &rawUavDesc, resources_->activeCountUavCpuHandle);
 
     const UINT drawArgsBufferSize = sizeof(D3D12_DRAW_ARGUMENTS);
     auto drawArgsDesc = CD3DX12_RESOURCE_DESC::Buffer(
@@ -460,20 +336,21 @@ void GPUParticleSystem::CreateActiveDrawBuffers() {
     if (!CreateCommittedResourceChecked(
             device, &defaultHeap, D3D12_HEAP_FLAG_NONE, &drawArgsDesc,
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
-            drawArgsResource_.GetAddressOf())) {
+            resources_->drawArgsResource.GetAddressOf())) {
         return;
     }
-    drawArgsResource_->SetName(L"GPUParticleSystem.DrawArgs");
-    drawArgsState_ = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    resources_->drawArgsResource->SetName(L"GPUParticleSystem.DrawArgs");
+    resources_->drawArgsState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 
-    if (!AllocateSrvHandles(srvManager_, drawArgsUavIndex_,
-                            drawArgsUavCpuHandle_, drawArgsUavGpuHandle_)) {
+    if (!SrvDescriptorAllocation::Allocate(
+            srvManager_, resources_->drawArgsUavIndex,
+            resources_->drawArgsUavCpuHandle, resources_->drawArgsUavGpuHandle)) {
         return;
     }
 
     rawUavDesc.Buffer.NumElements = drawArgsBufferSize / sizeof(uint32_t);
-    device->CreateUnorderedAccessView(drawArgsResource_.Get(), nullptr,
-                                      &rawUavDesc, drawArgsUavCpuHandle_);
+    device->CreateUnorderedAccessView(resources_->drawArgsResource.Get(), nullptr,
+                                      &rawUavDesc, resources_->drawArgsUavCpuHandle);
 
     ID3D12DescriptorHeap *heap = srvManager_->GetHeap();
     if (heap == nullptr) {
@@ -483,10 +360,10 @@ void GPUParticleSystem::CreateActiveDrawBuffers() {
     cmdList->SetDescriptorHeaps(1, heaps);
     const UINT safeDrawArgs[4] = {6u, 0u, 0u, 0u};
     cmdList->ClearUnorderedAccessViewUint(
-        drawArgsUavGpuHandle_, drawArgsUavCpuHandle_, drawArgsResource_.Get(),
+        resources_->drawArgsUavGpuHandle, resources_->drawArgsUavCpuHandle, resources_->drawArgsResource.Get(),
         safeDrawArgs, 0, nullptr);
     auto drawArgsClearBarrier =
-        CD3DX12_RESOURCE_BARRIER::UAV(drawArgsResource_.Get());
+        CD3DX12_RESOURCE_BARRIER::UAV(resources_->drawArgsResource.Get());
     cmdList->ResourceBarrier(1, &drawArgsClearBarrier);
 }
 
@@ -506,8 +383,9 @@ void GPUParticleSystem::CreateConstantBuffers() {
     auto drawDesc = CD3DX12_RESOURCE_DESC::Buffer(drawSize);
 
     const UINT frameCount = (std::max)(1u, dxCommon_->GetSwapChainBufferCount());
-    constantFrames_.resize(frameCount);
-    for (ConstantFrame &frame : constantFrames_) {
+    resources_->constantFrames.resize(frameCount);
+    resources_->explicitSpawnFrames.resize(frameCount);
+    for (ConstantFrame &frame : resources_->constantFrames) {
         if (!CreateCommittedResourceChecked(
                 device, &uploadHeap, D3D12_HEAP_FLAG_NONE, &updateDesc,
                 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
@@ -530,121 +408,130 @@ void GPUParticleSystem::CreateConstantBuffers() {
                 return;
             }
     }
-}
-bool GPUParticleSystem::ReleaseResources() { return ReleaseResources(false); }
 
-bool GPUParticleSystem::ReleaseResources(bool allowFrameAbort) {
-    const bool hasDescriptors =
-        particleSrvIndex_ != UINT32_MAX || particleUavIndex_ != UINT32_MAX ||
-        freeListUavIndex_ != UINT32_MAX ||
-        freeListIndexUavIndex_ != UINT32_MAX ||
-        activeIndexSrvIndex_ != UINT32_MAX ||
-        activeIndexUavIndex_ != UINT32_MAX ||
-        activeCountUavIndex_ != UINT32_MAX ||
-        drawArgsUavIndex_ != UINT32_MAX;
-    const bool hasGpuResources =
-        !constantFrames_.empty() ||
-        particleResource_ || particleUploadResource_ || freeListResource_ ||
-        freeListUploadResource_ || freeListIndexResource_ ||
-        freeListIndexUploadResource_ || activeIndexResource_ ||
-        activeCountResource_ || drawArgsResource_ || updatePSO_ || drawPSO_ ||
-        updateRootSignature_ || drawRootSignature_ || drawCommandSignature_ ||
-        hasDescriptors;
-    if (!CanReleaseGpuResources(dxCommon_, hasGpuResources,
-                                allowFrameAbort)) {
+    for (ExplicitSpawnFrame &frame : resources_->explicitSpawnFrames) {
+        if (!EnsureExplicitSpawnFrameCapacity(frame, 1u)) {
+            return;
+        }
+    }
+}
+
+bool GPUParticleSystem::EnsureExplicitSpawnFrameCapacity(
+    ExplicitSpawnFrame &frame, uint32_t capacity) {
+    auto *device = dxCommon_ != nullptr ? dxCommon_->GetDevice() : nullptr;
+    if (device == nullptr || srvManager_ == nullptr) {
         return false;
     }
 
-    if (dxCommon_ != nullptr) {
-        dxCommon_->UnregisterFrameRollbacks(this);
+    const uint32_t safeCapacity =
+        (std::max)(1u, (std::min)(capacity, maxParticles_));
+    if (frame.resource && frame.mappedSpawns != nullptr &&
+        IsValidResourceId(frame.srvIndex) && frame.srvCpuHandle.ptr != 0 &&
+        frame.srvGpuHandle.ptr != 0 && frame.capacity >= safeCapacity) {
+        return true;
     }
 
-    if (srvManager_) {
-        if (particleSrvIndex_ != UINT32_MAX) {
-            srvManager_->FreeIfAllocated(particleSrvIndex_);
-            particleSrvIndex_ = UINT32_MAX;
-        }
-        if (particleUavIndex_ != UINT32_MAX) {
-            srvManager_->FreeIfAllocated(particleUavIndex_);
-            particleUavIndex_ = UINT32_MAX;
-        }
-        if (freeListUavIndex_ != UINT32_MAX) {
-            srvManager_->FreeIfAllocated(freeListUavIndex_);
-            freeListUavIndex_ = UINT32_MAX;
-        }
-        if (freeListIndexUavIndex_ != UINT32_MAX) {
-            srvManager_->FreeIfAllocated(freeListIndexUavIndex_);
-            freeListIndexUavIndex_ = UINT32_MAX;
-        }
-        if (activeIndexSrvIndex_ != UINT32_MAX) {
-            srvManager_->FreeIfAllocated(activeIndexSrvIndex_);
-            activeIndexSrvIndex_ = UINT32_MAX;
-        }
-        if (activeIndexUavIndex_ != UINT32_MAX) {
-            srvManager_->FreeIfAllocated(activeIndexUavIndex_);
-            activeIndexUavIndex_ = UINT32_MAX;
-        }
-        if (activeCountUavIndex_ != UINT32_MAX) {
-            srvManager_->FreeIfAllocated(activeCountUavIndex_);
-            activeCountUavIndex_ = UINT32_MAX;
-        }
-        if (drawArgsUavIndex_ != UINT32_MAX) {
-            srvManager_->FreeIfAllocated(drawArgsUavIndex_);
-            drawArgsUavIndex_ = UINT32_MAX;
-        }
+    const UINT bufferSize = CheckedByteSize(
+        sizeof(GPUParticleExplicitSpawn), safeCapacity,
+        "GPUParticleSystem explicit spawn buffer size overflow");
+    if (bufferSize == 0) {
+        return false;
     }
 
-    for (ConstantFrame &frame : constantFrames_) {
+    ExplicitSpawnFrame replacement;
+    CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
+    auto desc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
+    if (!CreateCommittedResourceChecked(device, &uploadHeap,
+                                        D3D12_HEAP_FLAG_NONE, &desc,
+                                        D3D12_RESOURCE_STATE_GENERIC_READ,
+                                        nullptr,
+                                        replacement.resource.GetAddressOf())) {
+        return false;
+    }
+    replacement.resource->SetName(L"GPUParticleSystem.ExplicitSpawns");
+    if (!MapResourceChecked(replacement.resource.Get(),
+                            &replacement.mappedSpawns)) {
+        replacement.Reset();
+        return false;
+    }
+
+    const bool canReuseSrv =
+        IsValidResourceId(frame.srvIndex) && frame.srvCpuHandle.ptr != 0 &&
+        frame.srvGpuHandle.ptr != 0;
+    if (canReuseSrv) {
+        replacement.srvIndex = frame.srvIndex;
+        replacement.srvCpuHandle = frame.srvCpuHandle;
+        replacement.srvGpuHandle = frame.srvGpuHandle;
+    } else {
+        SrvDescriptorAllocation::Release(srvManager_, frame.srvIndex);
         frame.Reset();
+        if (!SrvDescriptorAllocation::Allocate(
+                srvManager_, replacement.srvIndex, replacement.srvCpuHandle,
+                replacement.srvGpuHandle)) {
+            replacement.Reset();
+            return false;
+        }
     }
-    constantFrames_.clear();
 
-    particleResource_.Reset();
-    particleUploadResource_.Reset();
-    freeListResource_.Reset();
-    freeListUploadResource_.Reset();
-    freeListIndexResource_.Reset();
-    freeListIndexUploadResource_.Reset();
-    activeIndexResource_.Reset();
-    activeCountResource_.Reset();
-    drawArgsResource_.Reset();
-    updatePSO_.Reset();
-    drawPSO_.Reset();
-    updateRootSignature_.Reset();
-    drawRootSignature_.Reset();
-    drawCommandSignature_.Reset();
-    activeIndexState_ = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    drawArgsState_ = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    updatePending_ = false;
-    activeTimeRemaining_ = 0.0f;
-    pendingEmitSettings_.clear();
-    particleSrvIndex_ = UINT32_MAX;
-    particleUavIndex_ = UINT32_MAX;
-    freeListUavIndex_ = UINT32_MAX;
-    freeListIndexUavIndex_ = UINT32_MAX;
-    activeIndexSrvIndex_ = UINT32_MAX;
-    activeIndexUavIndex_ = UINT32_MAX;
-    activeCountUavIndex_ = UINT32_MAX;
-    drawArgsUavIndex_ = UINT32_MAX;
-    particleSrvGpuHandle_ = {};
-    particleSrvCpuHandle_ = {};
-    particleUavGpuHandle_ = {};
-    particleUavCpuHandle_ = {};
-    freeListUavGpuHandle_ = {};
-    freeListUavCpuHandle_ = {};
-    freeListIndexUavGpuHandle_ = {};
-    freeListIndexUavCpuHandle_ = {};
-    activeIndexSrvGpuHandle_ = {};
-    activeIndexSrvCpuHandle_ = {};
-    activeIndexUavGpuHandle_ = {};
-    activeIndexUavCpuHandle_ = {};
-    activeCountUavGpuHandle_ = {};
-    activeCountUavCpuHandle_ = {};
-    drawArgsUavGpuHandle_ = {};
-    drawArgsUavCpuHandle_ = {};
-    updateConstants_ = {};
-    dxCommon_ = nullptr;
-    srvManager_ = nullptr;
-    textureManager_ = nullptr;
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+    srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+    srvDesc.Buffer.FirstElement = 0;
+    srvDesc.Buffer.NumElements = safeCapacity;
+    srvDesc.Buffer.StructureByteStride = sizeof(GPUParticleExplicitSpawn);
+    srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+    device->CreateShaderResourceView(replacement.resource.Get(), &srvDesc,
+                                     replacement.srvCpuHandle);
+    replacement.capacity = safeCapacity;
+
+    frame.Reset();
+    frame.srvIndex = kInvalidResourceId;
+    std::swap(frame, replacement);
+    return true;
+}
+
+bool GPUParticleSystem::EnsureExplicitSpawnCapacity(uint32_t capacity) {
+    if (resources_->explicitSpawnFrames.empty()) {
+        return false;
+    }
+
+    const size_t frameIndex =
+        dxCommon_ != nullptr
+            ? dxCommon_->GetBackBufferIndex() % resources_->explicitSpawnFrames.size()
+            : 0u;
+    return EnsureExplicitSpawnFrameCapacity(
+        resources_->explicitSpawnFrames[frameIndex], capacity);
+}
+
+bool GPUParticleSystem::UploadExplicitParticles(
+    const std::vector<GPUParticleExplicitSpawn> &particles,
+    uint32_t &uploadedCount) {
+    uploadedCount = 0u;
+    if (particles.empty() || maxParticles_ == 0u ||
+        resources_->explicitSpawnFrames.empty()) {
+        return false;
+    }
+
+    const uint32_t count = (std::min)(
+        static_cast<uint32_t>((std::min)(particles.size(),
+                                         static_cast<size_t>(maxParticles_))),
+        maxParticles_);
+    if (count == 0u || !EnsureExplicitSpawnCapacity(count)) {
+        return false;
+    }
+
+    const size_t frameIndex =
+        dxCommon_ != nullptr
+            ? dxCommon_->GetBackBufferIndex() % resources_->explicitSpawnFrames.size()
+            : 0u;
+    ExplicitSpawnFrame &frame = resources_->explicitSpawnFrames[frameIndex];
+    if (frame.mappedSpawns == nullptr || frame.capacity < count) {
+        return false;
+    }
+
+    std::memcpy(frame.mappedSpawns, particles.data(),
+                sizeof(GPUParticleExplicitSpawn) * count);
+    uploadedCount = count;
     return true;
 }

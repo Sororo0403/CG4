@@ -1,4 +1,5 @@
 #include "model/ModelRenderer.h"
+#include "ModelRendererInternal.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/ShaderCompiler.h"
@@ -6,9 +7,12 @@
 #include "graphics/SrvManager.h"
 #include "model/MaterialManager.h"
 #include "model/MeshManager.h"
+#include "../graphics/RootSignatureUtils.h"
+#include "RendererInputLayouts.h"
 #include "RendererMaterialUtils.h"
+#include "RendererPipelineVariantUtils.h"
+#include "RendererShadowPipelineUtils.h"
 #include "model/Vertex.h"
-#include "texture/TextureManager.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -22,21 +26,29 @@ namespace {
 using RendererMaterialUtils::IsTransparentMaterial;
 using RendererMaterialUtils::NormalizeCullMode;
 using RendererMaterialUtils::ToD3D12CullMode;
+using RendererPipelineVariantUtils::PipelineBlendMode;
+using RendererPipelineVariantUtils::PipelineVariantIndex;
 
-constexpr UINT kSkinningThreadCount = 1024u;
+bool SetGraphicsPipelineStateCached(
+    ID3D12GraphicsCommandList *commandList, ID3D12RootSignature *rootSignature,
+    ID3D12PipelineState *pipelineState,
+    ID3D12RootSignature *&currentRootSignature,
+    ID3D12PipelineState *&currentPipelineState) {
+    if (commandList == nullptr || rootSignature == nullptr ||
+        pipelineState == nullptr) {
+        return false;
+    }
+    if (currentRootSignature != rootSignature) {
+        commandList->SetGraphicsRootSignature(rootSignature);
+        currentRootSignature = rootSignature;
+        currentPipelineState = nullptr;
+    }
 
-enum class ModelBlendMode : size_t {
-    Opaque = 0,
-    Alpha = 1,
-    Additive = 2,
-};
-
-size_t PipelineVariantIndex(ModelBlendMode blendMode, MaterialCullMode cullMode,
-                            bool depthWrite) {
-    const size_t blendIndex = static_cast<size_t>(blendMode);
-    const size_t cullIndex = static_cast<size_t>(cullMode);
-    const size_t depthIndex = depthWrite ? 1 : 0;
-    return blendIndex * 6 + cullIndex * 2 + depthIndex;
+    if (currentPipelineState != pipelineState) {
+        commandList->SetPipelineState(pipelineState);
+        currentPipelineState = pipelineState;
+    }
+    return true;
 }
 
 size_t PipelineVariantIndex(const Material &material,
@@ -47,108 +59,136 @@ size_t PipelineVariantIndex(const Material &material,
         cullMode = MaterialCullMode::None;
     }
 
-    ModelBlendMode blendMode = IsTransparentMaterial(drawMaterial)
-                                   ? ModelBlendMode::Alpha
-                                   : ModelBlendMode::Opaque;
+    PipelineBlendMode blendMode = IsTransparentMaterial(drawMaterial)
+                                      ? PipelineBlendMode::Alpha
+                                      : PipelineBlendMode::Opaque;
     if (effect.forceOpaqueMaterial ||
         effect.blendOverride == ModelDrawEffectBlendOverride::Opaque) {
-        blendMode = ModelBlendMode::Opaque;
+        blendMode = PipelineBlendMode::Opaque;
     } else if (effect.enabled) {
         if (effect.additiveBlend ||
             effect.blendOverride == ModelDrawEffectBlendOverride::Additive) {
-            blendMode = ModelBlendMode::Additive;
+            blendMode = PipelineBlendMode::Additive;
         } else if (effect.blendOverride ==
                    ModelDrawEffectBlendOverride::Alpha) {
-            blendMode = ModelBlendMode::Alpha;
+            blendMode = PipelineBlendMode::Alpha;
         } else if (effect.alphaMultiplier < 0.999f) {
-            blendMode = ModelBlendMode::Alpha;
+            blendMode = PipelineBlendMode::Alpha;
         }
     }
 
     const bool depthWrite =
-        blendMode == ModelBlendMode::Opaque && drawMaterial.depthWrite != 0;
+        blendMode == PipelineBlendMode::Opaque && drawMaterial.depthWrite != 0;
     return PipelineVariantIndex(blendMode, cullMode, depthWrite);
 }
 
-uint32_t ResolveNormalTextureId(TextureManager *textureManager,
-                                uint32_t normalTextureId) {
-    return normalTextureId == UINT32_MAX
-               ? textureManager->GetDefaultNormalTextureId()
-               : normalTextureId;
+D3D12_BLEND_DESC MakeModelBlendState(PipelineBlendMode blendMode) {
+    D3D12_BLEND_DESC blend = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    blend.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    blend.RenderTarget[0].BlendEnable =
+        blendMode == PipelineBlendMode::Opaque ? FALSE : TRUE;
+    blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+    blend.RenderTarget[0].DestBlend =
+        blendMode == PipelineBlendMode::Additive ? D3D12_BLEND_ONE
+                                                 : D3D12_BLEND_INV_SRC_ALPHA;
+    blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+    blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+    blend.RenderTarget[0].DestBlendAlpha =
+        blendMode == PipelineBlendMode::Additive ? D3D12_BLEND_ONE
+                                                 : D3D12_BLEND_ZERO;
+    blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    return blend;
 }
 
-uint32_t ResolveBaseColorTextureId(const Material &material,
-                                   uint32_t fallbackTextureId) {
-    return material.baseColorTextureId == UINT32_MAX
-               ? fallbackTextureId
-               : material.baseColorTextureId;
+D3D12_DEPTH_STENCIL_DESC MakeModelDepthState(bool depthWrite) {
+    D3D12_DEPTH_STENCIL_DESC depth =
+        CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    depth.DepthEnable = TRUE;
+    depth.DepthWriteMask = depthWrite ? D3D12_DEPTH_WRITE_MASK_ALL
+                                      : D3D12_DEPTH_WRITE_MASK_ZERO;
+    depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+    return depth;
 }
 
-uint32_t ResolveNormalTextureId(TextureManager *textureManager,
-                                const Material &material,
-                                uint32_t fallbackTextureId) {
-    const uint32_t textureId = material.normalTextureId == UINT32_MAX
-                                   ? fallbackTextureId
-                                   : material.normalTextureId;
-    return ResolveNormalTextureId(textureManager, textureId);
+template <size_t VariantCount>
+void CreateModelPipelineVariants(
+    ID3D12Device *device, ID3D12RootSignature *rootSignature,
+    D3D12_SHADER_BYTECODE vertexShader, D3D12_SHADER_BYTECODE pixelShader,
+    D3D12_INPUT_LAYOUT_DESC inputLayout,
+    std::array<ComPtr<ID3D12PipelineState>, VariantCount> &pipelineStates) {
+    if (device == nullptr || rootSignature == nullptr) {
+        return;
+    }
+
+    auto makePso = [&](PipelineBlendMode blendMode, MaterialCullMode cullMode,
+                       bool depthWrite,
+                       ComPtr<ID3D12PipelineState> &psoOut) {
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
+        pso.pRootSignature = rootSignature;
+        pso.VS = vertexShader;
+        pso.PS = pixelShader;
+        pso.InputLayout = inputLayout;
+        pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+        pso.NumRenderTargets = 1;
+        pso.RTVFormats[0] = DirectXCommon::kSceneColorFormat;
+        pso.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+        pso.SampleDesc.Count = 1;
+        pso.SampleMask = UINT_MAX;
+        pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        pso.RasterizerState.CullMode = ToD3D12CullMode(cullMode);
+        pso.BlendState = MakeModelBlendState(blendMode);
+        pso.DepthStencilState = MakeModelDepthState(depthWrite);
+
+        if (FAILED(device->CreateGraphicsPipelineState(
+                &pso, IID_PPV_ARGS(&psoOut)))) {
+            psoOut.Reset();
+        }
+    };
+
+    for (PipelineBlendMode blendMode :
+         {PipelineBlendMode::Opaque, PipelineBlendMode::Alpha,
+          PipelineBlendMode::Additive}) {
+        for (MaterialCullMode cullMode :
+             {MaterialCullMode::None, MaterialCullMode::Front,
+              MaterialCullMode::Back}) {
+            for (bool depthWrite : {false, true}) {
+                const size_t index =
+                    PipelineVariantIndex(blendMode, cullMode, depthWrite);
+                makePso(blendMode, cullMode, depthWrite,
+                        pipelineStates[index]);
+            }
+        }
+    }
 }
 
-}
-
-struct PerObjectConstBufferData {
-    XMFLOAT4X4 matWVP;
-    XMFLOAT4X4 matWorld;
-    XMFLOAT4X4 matWorldInverseTranspose;
-};
+} // namespace
 
 bool ModelRenderer::SetPipelineForMaterial(const Material &material) {
-    auto *cmd = dxCommon_ ? dxCommon_->GetCommandList() : nullptr;
-    ID3D12RootSignature *rootSignature = rootSignature_.Get();
+    auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
+    ID3D12RootSignature *rootSignature = state_->rootSignature.Get();
     ID3D12PipelineState *pipelineState =
-        pipelineStates_[PipelineVariantIndex(material, currentEffect_)].Get();
-    if (cmd == nullptr || rootSignature == nullptr || pipelineState == nullptr) {
-        return false;
-    }
-    if (currentGraphicsRootSignature_ != rootSignature) {
-        cmd->SetGraphicsRootSignature(rootSignature);
-        currentGraphicsRootSignature_ = rootSignature;
-        currentGraphicsPipelineState_ = nullptr;
-    }
-
-    if (currentGraphicsPipelineState_ != pipelineState) {
-        cmd->SetPipelineState(pipelineState);
-        currentGraphicsPipelineState_ = pipelineState;
-    }
-    return true;
+        state_->pipelineStates[PipelineVariantIndex(material, state_->currentEffect)].Get();
+    return SetGraphicsPipelineStateCached(
+        cmd, rootSignature, pipelineState, state_->currentGraphicsRootSignature,
+        state_->currentGraphicsPipelineState);
 }
 
 bool ModelRenderer::SetInstancedPipelineForMaterial(const Material &material) {
-    auto *cmd = dxCommon_ ? dxCommon_->GetCommandList() : nullptr;
-    ID3D12RootSignature *rootSignature = rootSignature_.Get();
+    auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
+    ID3D12RootSignature *rootSignature = state_->rootSignature.Get();
     ID3D12PipelineState *pipelineState =
-        instancedPipelineStates_[PipelineVariantIndex(material, currentEffect_)]
+        state_->instancedPipelineStates[PipelineVariantIndex(material, state_->currentEffect)]
             .Get();
-    if (cmd == nullptr || rootSignature == nullptr || pipelineState == nullptr) {
-        return false;
-    }
-    if (currentGraphicsRootSignature_ != rootSignature) {
-        cmd->SetGraphicsRootSignature(rootSignature);
-        currentGraphicsRootSignature_ = rootSignature;
-        currentGraphicsPipelineState_ = nullptr;
-    }
-
-    if (currentGraphicsPipelineState_ != pipelineState) {
-        cmd->SetPipelineState(pipelineState);
-        currentGraphicsPipelineState_ = pipelineState;
-    }
-    return true;
+    return SetGraphicsPipelineStateCached(
+        cmd, rootSignature, pipelineState, state_->currentGraphicsRootSignature,
+        state_->currentGraphicsPipelineState);
 }
 
 void ModelRenderer::CreateRootSignature() {
-    if (!dxCommon_ || !dxCommon_->GetDevice()) {
+    if (!state_->dxCommon || !state_->dxCommon->GetDevice()) {
         return;
     }
-    CD3DX12_ROOT_PARAMETER params[10]{};
+    CD3DX12_ROOT_PARAMETER params[13]{};
 
     params[0].InitAsConstantBufferView(0);
     params[1].InitAsConstantBufferView(1);
@@ -178,66 +218,50 @@ void ModelRenderer::CreateRootSignature() {
     dissolveNoiseRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 5);
     params[9].InitAsDescriptorTable(1, &dissolveNoiseRange);
 
-    CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
-    sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    CD3DX12_DESCRIPTOR_RANGE spotShadowRange{};
+    spotShadowRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 6);
+    params[10].InitAsDescriptorTable(1, &spotShadowRange);
+
+    CD3DX12_DESCRIPTOR_RANGE roughnessRange{};
+    roughnessRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 7);
+    params[11].InitAsDescriptorTable(1, &roughnessRange);
+
+    CD3DX12_DESCRIPTOR_RANGE metallicRange{};
+    metallicRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 8);
+    params[12].InitAsDescriptorTable(1, &metallicRange);
+
+    CD3DX12_STATIC_SAMPLER_DESC samplers[] = {
+        CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR),
+        CD3DX12_STATIC_SAMPLER_DESC(1, D3D12_FILTER_MIN_MAG_MIP_POINT),
+    };
+    samplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    samplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplers[1].AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    samplers[1].AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    samplers[1].AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    samplers[1].BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
 
     CD3DX12_ROOT_SIGNATURE_DESC desc;
-    desc.Init(_countof(params), params, 1, &sampler,
+    desc.Init(_countof(params), params, _countof(samplers), samplers,
               D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
-    ComPtr<ID3DBlob> blob, error;
-
-    if (FAILED(D3D12SerializeRootSignature(
-            &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error)) ||
-        !blob) {
-        return;
-    }
-
-    if (FAILED(dxCommon_->GetDevice()->CreateRootSignature(
-            0, blob->GetBufferPointer(), blob->GetBufferSize(),
-            IID_PPV_ARGS(&rootSignature_)))) {
-        rootSignature_.Reset();
-    }
+    RootSignatureUtils::CreateRootSignature(state_->dxCommon->GetDevice(),
+                                            desc, state_->rootSignature);
 }
 
 void ModelRenderer::CreateShadowRootSignature() {
-    if (!dxCommon_ || !dxCommon_->GetDevice()) {
+    if (!state_->dxCommon || !state_->dxCommon->GetDevice()) {
         return;
     }
-    CD3DX12_ROOT_PARAMETER params[3]{};
-    params[0].InitAsConstantBufferView(0);
-    params[1].InitAsConstantBufferView(2);
-
-    CD3DX12_DESCRIPTOR_RANGE textureRange{};
-    textureRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-    params[2].InitAsDescriptorTable(1, &textureRange);
-
-    CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
-    sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-
-    CD3DX12_ROOT_SIGNATURE_DESC desc;
-    desc.Init(_countof(params), params, 1, &sampler,
-              D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
-    ComPtr<ID3DBlob> blob, error;
-    if (FAILED(D3D12SerializeRootSignature(
-            &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error)) ||
-        !blob) {
-        return;
-    }
-    if (FAILED(dxCommon_->GetDevice()->CreateRootSignature(
-            0, blob->GetBufferPointer(), blob->GetBufferSize(),
-            IID_PPV_ARGS(&shadowRootSignature_)))) {
-        shadowRootSignature_.Reset();
-    }
+    constexpr uint32_t kShadowCbvRegisters[] = {0u, 2u};
+    RendererShadowPipelineUtils::CreateTexturedShadowRootSignature(
+        state_->dxCommon->GetDevice(), kShadowCbvRegisters,
+        state_->shadowRootSignature);
 }
 void ModelRenderer::CreatePipelineState() {
-    auto device = dxCommon_->GetDevice();
-    if (device == nullptr || !rootSignature_) {
+    auto device = state_->dxCommon->GetDevice();
+    if (device == nullptr || !state_->rootSignature) {
         return;
     }
 
@@ -253,134 +277,26 @@ void ModelRenderer::CreatePipelineState() {
         return;
     }
 
-    D3D12_INPUT_ELEMENT_DESC baseLayout[] = {
-        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"TANGENT", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"CUSTOM", 0, DXGI_FORMAT_R32_FLOAT, 0,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"BINDPOS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    };
+    const auto baseInputLayout =
+        RendererInputLayouts::MakeDesc(RendererInputLayouts::kModelVertex);
+    const auto instancedInputLayout =
+        RendererInputLayouts::MakeDesc(RendererInputLayouts::kModelInstanced);
 
-    D3D12_INPUT_ELEMENT_DESC instancedLayout[] = {
-        baseLayout[0],
-        baseLayout[1],
-        baseLayout[2],
-        baseLayout[3],
-        baseLayout[4],
-        baseLayout[5],
-        baseLayout[6],
-        {"WORLD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0,
-         D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
-        {"WORLD", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 1,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
-        {"WORLD", 2, DXGI_FORMAT_R32G32B32A32_FLOAT, 1,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
-        {"WORLD", 3, DXGI_FORMAT_R32G32B32A32_FLOAT, 1,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
-        {"INSTANCECOLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
-        {"INSTANCEFADE", 0, DXGI_FORMAT_R32_FLOAT, 1,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
-        {"INSTANCESEED", 0, DXGI_FORMAT_R32_UINT, 1,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
-    };
-
-    auto makePso = [&](D3D12_SHADER_BYTECODE vertexShader,
-                       D3D12_INPUT_LAYOUT_DESC inputLayout,
-                       ModelBlendMode blendMode,
-                       MaterialCullMode cullMode, bool depthWrite,
-                       ComPtr<ID3D12PipelineState> &psoOut) {
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
-        pso.pRootSignature = rootSignature_.Get();
-        pso.VS = vertexShader;
-        pso.PS = {ps->GetBufferPointer(), ps->GetBufferSize()};
-        pso.InputLayout = inputLayout;
-        pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        pso.NumRenderTargets = 1;
-        pso.RTVFormats[0] = DirectXCommon::kSceneColorFormat;
-        pso.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-        pso.SampleDesc.Count = 1;
-        pso.SampleMask = UINT_MAX;
-        pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-        pso.RasterizerState.CullMode = ToD3D12CullMode(cullMode);
-
-        D3D12_BLEND_DESC blend = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-        blend.RenderTarget[0].BlendEnable =
-            blendMode == ModelBlendMode::Opaque ? FALSE : TRUE;
-        blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-        blend.RenderTarget[0].DestBlend =
-            blendMode == ModelBlendMode::Additive ? D3D12_BLEND_ONE
-                                                  : D3D12_BLEND_INV_SRC_ALPHA;
-        blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-        blend.RenderTarget[0].DestBlendAlpha =
-            blendMode == ModelBlendMode::Additive ? D3D12_BLEND_ONE
-                                                  : D3D12_BLEND_ZERO;
-        blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-        blend.RenderTarget[0].RenderTargetWriteMask =
-            D3D12_COLOR_WRITE_ENABLE_ALL;
-        pso.BlendState = blend;
-
-        D3D12_DEPTH_STENCIL_DESC depth =
-            CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-        depth.DepthEnable = TRUE;
-        depth.DepthWriteMask = depthWrite ? D3D12_DEPTH_WRITE_MASK_ALL
-                                          : D3D12_DEPTH_WRITE_MASK_ZERO;
-        depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
-        pso.DepthStencilState = depth;
-
-        if (FAILED(device->CreateGraphicsPipelineState(
-                &pso, IID_PPV_ARGS(&psoOut)))) {
-            psoOut.Reset();
-        }
-    };
-
-    for (ModelBlendMode blendMode :
-         {ModelBlendMode::Opaque, ModelBlendMode::Alpha,
-          ModelBlendMode::Additive}) {
-        for (MaterialCullMode cullMode :
-             {MaterialCullMode::None, MaterialCullMode::Front,
-              MaterialCullMode::Back}) {
-            for (bool depthWrite : {false, true}) {
-                const size_t index =
-                    PipelineVariantIndex(blendMode, cullMode, depthWrite);
-                makePso({vs->GetBufferPointer(), vs->GetBufferSize()},
-                        {baseLayout, _countof(baseLayout)}, blendMode,
-                        cullMode, depthWrite, pipelineStates_[index]);
-                makePso({instancedVs->GetBufferPointer(),
-                         instancedVs->GetBufferSize()},
-                        {instancedLayout, _countof(instancedLayout)}, blendMode,
-                        cullMode, depthWrite,
-                        instancedPipelineStates_[index]);
-            }
-        }
-    }
+    const D3D12_SHADER_BYTECODE pixelShader = {ps->GetBufferPointer(),
+                                               ps->GetBufferSize()};
+    CreateModelPipelineVariants(
+        device, state_->rootSignature.Get(),
+        {vs->GetBufferPointer(), vs->GetBufferSize()}, pixelShader,
+        baseInputLayout, state_->pipelineStates);
+    CreateModelPipelineVariants(
+        device, state_->rootSignature.Get(),
+        {instancedVs->GetBufferPointer(), instancedVs->GetBufferSize()},
+        pixelShader, instancedInputLayout, state_->instancedPipelineStates);
 }
 
 void ModelRenderer::CreateShadowPipelineState() {
-    auto device = dxCommon_->GetDevice();
-    if (device == nullptr || !shadowRootSignature_) {
+    auto device = state_->dxCommon->GetDevice();
+    if (device == nullptr || !state_->shadowRootSignature) {
         return;
     }
     auto vs =
@@ -393,93 +309,22 @@ void ModelRenderer::CreateShadowPipelineState() {
         return;
     }
 
-    D3D12_INPUT_ELEMENT_DESC baseLayout[] = {
-        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"TANGENT", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"CUSTOM", 0, DXGI_FORMAT_R32_FLOAT, 0,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"BINDPOS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    };
-
-    D3D12_INPUT_ELEMENT_DESC instancedLayout[] = {
-        baseLayout[0],
-        baseLayout[1],
-        baseLayout[2],
-        baseLayout[3],
-        baseLayout[4],
-        baseLayout[5],
-        baseLayout[6],
-        {"WORLD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0,
-         D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
-        {"WORLD", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 1,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
-        {"WORLD", 2, DXGI_FORMAT_R32G32B32A32_FLOAT, 1,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
-        {"WORLD", 3, DXGI_FORMAT_R32G32B32A32_FLOAT, 1,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
-        {"INSTANCECOLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
-        {"INSTANCEFADE", 0, DXGI_FORMAT_R32_FLOAT, 1,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
-        {"INSTANCESEED", 0, DXGI_FORMAT_R32_UINT, 1,
-         D3D12_APPEND_ALIGNED_ELEMENT,
-         D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
-    };
+    const auto baseInputLayout =
+        RendererInputLayouts::MakeDesc(RendererInputLayouts::kModelVertex);
+    const auto instancedInputLayout =
+        RendererInputLayouts::MakeDesc(RendererInputLayouts::kModelInstanced);
 
     auto makePso = [&](D3D12_SHADER_BYTECODE vertexShader,
                        D3D12_INPUT_LAYOUT_DESC inputLayout,
                        ComPtr<ID3D12PipelineState> &psoOut) {
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
-        pso.pRootSignature = shadowRootSignature_.Get();
-        pso.VS = vertexShader;
-        pso.PS = {ps->GetBufferPointer(), ps->GetBufferSize()};
-        pso.InputLayout = inputLayout;
-        pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        pso.NumRenderTargets = 0;
-        pso.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-        pso.SampleDesc.Count = 1;
-        pso.SampleMask = UINT_MAX;
-        pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-        pso.RasterizerState.DepthBias = 1000;
-        pso.RasterizerState.SlopeScaledDepthBias = 1.5f;
-        pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-
-        D3D12_DEPTH_STENCIL_DESC depth =
-            CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-        depth.DepthEnable = TRUE;
-        depth.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-        depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
-        pso.DepthStencilState = depth;
-
-        if (FAILED(device->CreateGraphicsPipelineState(
-                &pso, IID_PPV_ARGS(&psoOut)))) {
-            psoOut.Reset();
-        }
+        RendererShadowPipelineUtils::CreateDepthPipelineState(
+            device, state_->shadowRootSignature.Get(), vertexShader,
+            {ps->GetBufferPointer(), ps->GetBufferSize()}, inputLayout,
+            D3D12_CULL_MODE_BACK, psoOut);
     };
 
-    makePso({vs->GetBufferPointer(), vs->GetBufferSize()},
-            {baseLayout, _countof(baseLayout)}, shadowPSO_);
+    makePso({vs->GetBufferPointer(), vs->GetBufferSize()}, baseInputLayout,
+            state_->shadowPSO);
     makePso({instancedVs->GetBufferPointer(), instancedVs->GetBufferSize()},
-            {instancedLayout, _countof(instancedLayout)},
-            instancedShadowPSO_);
+            instancedInputLayout, state_->instancedShadowPSO);
 }

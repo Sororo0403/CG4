@@ -1,5 +1,6 @@
 #include "sprite/SpriteManager.h"
 #include "core/Numeric.h"
+#include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "sprite/Sprite.h"
 #include "texture/TextureManager.h"
@@ -75,22 +76,22 @@ void SpriteManager::DrawSprite(const Sprite &sprite) {
 
 uint32_t SpriteManager::Create(const std::wstring &filePath) {
     if (textureManager_ == nullptr) {
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
     if (sprites_.size() >=
         static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
 
     uint32_t texId = textureManager_->Load(filePath);
     if (!textureManager_->IsValidTextureId(texId)) {
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
 
     const uint32_t textureWidth = textureManager_->GetWidth(texId);
     const uint32_t textureHeight = textureManager_->GetHeight(texId);
     if (textureWidth == 0 || textureHeight == 0) {
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
 
     Sprite sprite{};

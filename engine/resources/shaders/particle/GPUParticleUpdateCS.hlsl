@@ -20,7 +20,7 @@ cbuffer EmitterParams : register(b1)
     float4 emitterMotion;
     float4 emitterAtlasAndRotation;
     float4 emitterTintColor;
-    uint4 emitterConfig;
+    uint3 emitterConfig;
 };
 
 RWStructuredBuffer<Particle> gParticles : register(u0);
@@ -29,6 +29,21 @@ RWStructuredBuffer<int> gFreeListIndex : register(u2);
 RWStructuredBuffer<uint> gActiveIndices : register(u3);
 RWByteAddressBuffer gActiveCount : register(u4);
 RWByteAddressBuffer gDrawArgsBuffer : register(u5);
+
+struct ExplicitParticleSpawn
+{
+    float4 positionLife;
+    float4 velocityStartScale;
+    float4 color;
+    float4 scaleFade;
+    float4 motion;
+    float4 accelerationAtlas;
+    float4 drawAxis;
+    float4 shapeParams;
+    uint4 atlas;
+};
+
+StructuredBuffer<ExplicitParticleSpawn> gExplicitSpawns : register(t0);
 
 #define PARTICLE_THREAD_COUNT 256
 #define SPAWN_SHAPE_POINT 0u
@@ -190,6 +205,42 @@ void Respawn(uint index, inout Particle particle)
                               max(1.0f, emitterMotion.z));
     particle.params3 =
         float4(emitterAccelerationAndTurbulence.xyz, max(1.0f, emitterMotion.w));
+    particle.params4 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+    particle.params5 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+    particle.isActive = 1;
+}
+
+void RespawnExplicit(uint particleIndex, uint spawnIndex, inout Particle particle)
+{
+    ExplicitParticleSpawn spawn = gExplicitSpawns[spawnIndex];
+
+    RandomGenerator generator;
+    generator.Initialize(particleIndex + spawnIndex * 4099u, particle.seed + time.x);
+    float random = generator.Generate1d();
+
+    particle.translate = spawn.positionLife.xyz;
+    particle.velocity = spawn.velocityStartScale.xyz;
+    particle.currentTime = 0.0f;
+    particle.lifeTime = max(0.01f, spawn.positionLife.w);
+    particle.color = spawn.color;
+    particle.scale = float2(spawn.accelerationAtlas.w, spawn.motion.w);
+    particle.seed += 23.17f + time.x + random;
+    particle.params0 =
+        float4(max(0.0f, spawn.velocityStartScale.w),
+               max(0.0f, spawn.scaleFade.x),
+               max(0.0f, spawn.scaleFade.y),
+               max(0.0f, spawn.scaleFade.z));
+    float initialRoll = spawn.atlas.z != 0u ? 6.2831853f * random : 0.0f;
+    particle.params1 =
+        float4(max(0.01f, spawn.scaleFade.w), max(0.0f, spawn.motion.x),
+               random, initialRoll);
+    particle.params2 =
+        float4(spawn.motion.y, max(0.0f, spawn.motion.z), spawn.color.a,
+               max(1.0f, (float) spawn.atlas.x));
+    particle.params3 =
+        float4(spawn.accelerationAtlas.xyz, max(1.0f, (float) spawn.atlas.y));
+    particle.params4 = spawn.drawAxis;
+    particle.params5 = spawn.shapeParams;
     particle.isActive = 1;
 }
 
@@ -221,7 +272,38 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     Particle particle = gParticles[index];
 
-    if (emitterConfig.w == 0u)
+    uint emitMode = (uint) round(emitterPosition.w);
+
+    if (emitMode == 2u)
+    {
+        if (index < emitterConfig.z)
+        {
+            int freeListIndex = 0;
+            InterlockedAdd(gFreeListIndex[0], -1, freeListIndex);
+            if (freeListIndex <= 0)
+            {
+                InterlockedAdd(gFreeListIndex[0], 1);
+            } else if (freeListIndex > (int) particleCount)
+            {
+                InterlockedAdd(gFreeListIndex[0], 1);
+            } else
+            {
+                uint particleIndex = gFreeList[freeListIndex - 1];
+                if (particleIndex >= particleCount)
+                {
+                    InterlockedAdd(gFreeListIndex[0], 1);
+                    return;
+                }
+                Particle respawnParticle = gParticles[particleIndex];
+                RespawnExplicit(particleIndex, index, respawnParticle);
+                gParticles[particleIndex] = respawnParticle;
+                AppendActiveParticle(particleIndex, particleCount, respawnParticle);
+            }
+        }
+        return;
+    }
+
+    if (emitMode == 0u)
     {
         if (particle.isActive != 0)
         {
@@ -278,7 +360,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         return;
     }
 
-    if (emitterConfig.w != 0u && index < emitterConfig.z)
+    if (emitMode != 0u && index < emitterConfig.z)
     {
         int freeListIndex = 0;
         InterlockedAdd(gFreeListIndex[0], -1, freeListIndex);

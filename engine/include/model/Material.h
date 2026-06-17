@@ -1,5 +1,6 @@
 #pragma once
 #include "core/Numeric.h"
+#include "core/ResourceHandle.h"
 #include <DirectXMath.h>
 #include <cstdint>
 
@@ -19,6 +20,15 @@ enum class MaterialCullMode : int32_t {
     None = 0,
     Front = 1,
     Back = 2,
+};
+
+/// <summary>
+/// PBR補助テクスチャのチャンネル詰め形式
+/// </summary>
+enum class PbrTexturePacking : int32_t {
+    Separate = 0,
+    OcclusionRoughnessMetallic = 1,
+    MetallicRoughness = 2,
 };
 
 /// <summary>
@@ -46,10 +56,13 @@ struct Material {
     DirectX::XMFLOAT4 customParams = {0.0f, 0.0f, 0.0f, 0.0f};
     DirectX::XMFLOAT4 customParams2 = {0.0f, 0.0f, 0.0f, 0.0f};
     DirectX::XMFLOAT4 customParams3 = {0.0f, 0.0f, 0.0f, 0.0f};
-    uint32_t baseColorTextureId = UINT32_MAX;
-    uint32_t normalTextureId = UINT32_MAX;
-    uint32_t roughnessTextureId = UINT32_MAX;
-    uint32_t metallicTextureId = UINT32_MAX;
+    DirectX::XMFLOAT4 pbrTextureParams = {0.0f, 0.0f, 0.0f, 0.0f};
+    uint32_t baseColorTextureId = kInvalidResourceId;
+    uint32_t normalTextureId = kInvalidResourceId;
+    uint32_t roughnessTextureId = kInvalidResourceId;
+    uint32_t metallicTextureId = kInvalidResourceId;
+    int32_t pbrTexturePacking =
+        static_cast<int32_t>(PbrTexturePacking::Separate);
 };
 
 namespace MaterialDetail {
@@ -78,7 +91,8 @@ FiniteMatrix(const DirectX::XMFLOAT4X4 &value,
 }
 } // namespace MaterialDetail
 
-inline Material NormalizeMaterialForDraw(Material material) {
+inline Material NormalizeMaterialForDraw(Material material,
+                                         bool reflectionsEnabled = true) {
     const Material defaults{};
     const int32_t blendModeValue = material.blendMode;
     BlendMode blendMode = static_cast<BlendMode>(blendModeValue);
@@ -107,6 +121,11 @@ inline Material NormalizeMaterialForDraw(Material material) {
     material.reflectionRoughness = Numeric::ClampFinite(
         material.reflectionRoughness, 0.0f, 1.0f,
         defaults.reflectionRoughness);
+    if (!reflectionsEnabled) {
+        material.reflectionStrength = 0.0f;
+        material.reflectionFresnelStrength = 0.0f;
+        material.reflectionRoughness = 1.0f;
+    }
     material.roughness = Numeric::ClampFinite(
         material.roughness, 0.0f, 1.0f, defaults.roughness);
     material.metallic = Numeric::ClampFinite(
@@ -120,6 +139,35 @@ inline Material NormalizeMaterialForDraw(Material material) {
     material.customParams3 =
         MaterialDetail::FiniteFloat4(material.customParams3,
                                      defaults.customParams3);
+    PbrTexturePacking pbrTexturePacking = PbrTexturePacking::Separate;
+    if (material.pbrTexturePacking >=
+            static_cast<int32_t>(PbrTexturePacking::Separate) &&
+        material.pbrTexturePacking <=
+            static_cast<int32_t>(PbrTexturePacking::MetallicRoughness)) {
+        pbrTexturePacking =
+            static_cast<PbrTexturePacking>(material.pbrTexturePacking);
+    }
+    material.pbrTexturePacking = static_cast<int32_t>(pbrTexturePacking);
+
+    const bool hasRoughnessTexture =
+        IsValidResourceId(material.roughnessTextureId);
+    const bool hasMetallicTexture =
+        IsValidResourceId(material.metallicTextureId);
+    const bool sharesPbrTexture =
+        hasRoughnessTexture && hasMetallicTexture &&
+        material.roughnessTextureId == material.metallicTextureId;
+    material.pbrTextureParams = {
+        hasRoughnessTexture ? 1.0f : 0.0f,
+        hasMetallicTexture ? 1.0f : 0.0f,
+        sharesPbrTexture &&
+                pbrTexturePacking ==
+                    PbrTexturePacking::OcclusionRoughnessMetallic
+            ? 1.0f
+            : 0.0f,
+        sharesPbrTexture &&
+                pbrTexturePacking == PbrTexturePacking::MetallicRoughness
+            ? 1.0f
+            : 0.0f};
 
     if (blendMode == BlendMode::Transparent) {
         material.depthWrite = 0;
@@ -138,7 +186,8 @@ inline Material NormalizeMaterialForDraw(Material material) {
         material.normalStrength, 0.0f, defaults.normalStrength);
 
     material.enableNormalMap =
-        (material.enableNormalMap != 0 || material.normalTextureId != UINT32_MAX)
+        (material.enableNormalMap != 0 ||
+         IsValidResourceId(material.normalTextureId))
             ? 1
             : 0;
     material.enableTexture = material.enableTexture != 0 ? 1 : 0;

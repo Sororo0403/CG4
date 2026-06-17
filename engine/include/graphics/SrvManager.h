@@ -1,8 +1,7 @@
 #pragma once
 #include "core/ResourceHandle.h"
 #include <d3d12.h>
-#include <vector>
-#include <wrl.h>
+#include <memory>
 
 class DirectXCommon;
 
@@ -11,12 +10,15 @@ class DirectXCommon;
 /// </summary>
 class SrvManager {
   public:
+    SrvManager();
+    ~SrvManager();
+
     /// <summary>
     /// SRVディスクリプタヒープを指定数で初期化する
     /// </summary>
     /// <param name="dxCommon">DirectXCommonインスタンス</param>
     /// <param name="maxSrvCount">確保するSRV最大数</param>
-    void Initialize(DirectXCommon *dxCommon, UINT maxSrvCount = 4096);
+    void Initialize(const DirectXCommon *dxCommon, UINT maxSrvCount = 4096);
 
     /// <summary>
     /// SRVを1つ割り当てる
@@ -85,22 +87,19 @@ class SrvManager {
     /// SRVヒープを取得する
     /// </summary>
     /// <returns>ディスクリプタヒープ</returns>
-    ID3D12DescriptorHeap *GetHeap() const { return heap_.Get(); }
+    ID3D12DescriptorHeap *GetHeap() const;
 
     /// <summary>
     /// ディスクリプタサイズを取得する
     /// </summary>
     /// <returns>1ディスクリプタあたりのサイズ</returns>
-    UINT GetDescriptorSize() const { return descriptorSize_; }
+    UINT GetDescriptorSize() const;
 
   private:
-    UINT FindAvailableRange(UINT count) const;
-    void ValidateAllocatedIndex(UINT index, const char *operation) const;
+    struct State;
 
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> heap_;
-    UINT descriptorSize_ = 0;
-    UINT maxSrvCount_ = 0;
-    UINT currentIndex_ = 0;
-    std::vector<UINT> freeList_;
-    std::vector<bool> allocated_;
+    UINT FindAvailableRange(UINT count) const;
+    static void ValidateAllocatedIndex(UINT index, const char *operation);
+
+    std::unique_ptr<State> state_;
 };

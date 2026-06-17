@@ -21,7 +21,7 @@ DirectX::XMFLOAT4 SanitizeFinite(DirectX::XMFLOAT4 value,
 DirectX::XMFLOAT4 ClampColor(DirectX::XMFLOAT4 value,
                              DirectX::XMFLOAT4 fallback);
 
-uint32_t ResolveTextureId(TextureManager *textureManager, uint32_t textureId,
+uint32_t ResolveTextureId(const TextureManager *textureManager, uint32_t textureId,
                           uint32_t fallbackTextureId);
 
 ParticleEmitterSettings

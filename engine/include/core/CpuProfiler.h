@@ -1,10 +1,9 @@
 #pragma once
 
 #include <array>
-#include <chrono>
 #include <cstdint>
+#include <memory>
 #include <string_view>
-#include <vector>
 
 struct CpuTimingSample {
     std::string_view name{};
@@ -14,6 +13,9 @@ struct CpuTimingSample {
 class CpuProfiler {
   public:
     static constexpr uint32_t kMaxEvents = 128u;
+
+    CpuProfiler();
+    ~CpuProfiler();
 
     class ScopedEvent {
       public:
@@ -34,22 +36,12 @@ class CpuProfiler {
     void EndEvent();
     void EndFrame();
 
-    const std::array<CpuTimingSample, kMaxEvents> &GetLastSamples() const {
-        return lastSamples_;
-    }
-    uint32_t GetLastSampleCount() const { return lastSampleCount_; }
+    const std::array<CpuTimingSample, kMaxEvents> &GetLastSamples() const;
+    uint32_t GetLastSampleCount() const;
 
   private:
-    using Clock = std::chrono::steady_clock;
+    struct OpenEvent;
+    struct State;
 
-    struct OpenEvent {
-        const char *name = nullptr;
-        Clock::time_point start{};
-    };
-
-    std::vector<OpenEvent> stack_;
-    std::array<CpuTimingSample, kMaxEvents> currentSamples_{};
-    std::array<CpuTimingSample, kMaxEvents> lastSamples_{};
-    uint32_t currentSampleCount_ = 0;
-    uint32_t lastSampleCount_ = 0;
+    std::unique_ptr<State> state_;
 };

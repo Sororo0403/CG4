@@ -43,12 +43,12 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <OutDir>$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
-    <IntDir>$(SolutionDir)generated\intermediate\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <OutDir>$(MSBuildThisFileDirectory)..\..\generated\outputs\$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)..\..\generated\intermediate\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <OutDir>$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
-    <IntDir>$(SolutionDir)generated\intermediate\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <OutDir>$(MSBuildThisFileDirectory)..\..\generated\outputs\$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)..\..\generated\intermediate\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -63,13 +63,18 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/utf-8 /FS %(AdditionalOptions)</AdditionalOptions>
       <ProgramDataBaseFileName>$(IntDir)$(ProjectName).pdb</ProgramDataBaseFileName>
-      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\include;$(MSBuildThisFileDirectory)..\externals;$(MSBuildThisFileDirectory)..\externals\DirectXTex;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\include;$(MSBuildThisFileDirectory)..\externals;$(MSBuildThisFileDirectory)..\externals\assimp\include;$(MSBuildThisFileDirectory)..\externals\assimp\include\assimp;$(MSBuildThisFileDirectory)..\externals\DirectXTex;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
+      <AdditionalDependencies>dxcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" "$(OutDir)" || if exist "$(OutDir)dxcompiler.dll" (echo Warning: dxcompiler.dll is locked; keeping existing copy.) else (exit /b 1)
+xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" "$(OutDir)" || if exist "$(OutDir)dxil.dll" (echo Warning: dxil.dll is locked; keeping existing copy.) else (exit /b 1)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -83,7 +88,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/utf-8 /FS %(AdditionalOptions)</AdditionalOptions>
       <ProgramDataBaseFileName>$(IntDir)$(ProjectName).pdb</ProgramDataBaseFileName>
-      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\include;$(MSBuildThisFileDirectory)..\externals;$(MSBuildThisFileDirectory)..\externals\DirectXTex;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\include;$(MSBuildThisFileDirectory)..\externals;$(MSBuildThisFileDirectory)..\externals\assimp\include;$(MSBuildThisFileDirectory)..\externals\assimp\include\assimp;$(MSBuildThisFileDirectory)..\externals\DirectXTex;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -91,16 +96,25 @@
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>dxcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" "$(OutDir)" || if exist "$(OutDir)dxcompiler.dll" (echo Warning: dxcompiler.dll is locked; keeping existing copy.) else (exit /b 1)
+xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" "$(OutDir)" || if exist "$(OutDir)dxil.dll" (echo Warning: dxil.dll is locked; keeping existing copy.) else (exit /b 1)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\src\core\AssetHotReloader.cpp" />
     <ClCompile Include="..\src\core\AssetManager.cpp" />
     <ClCompile Include="..\src\core\DebugSettingsStore.cpp" />
     <ClCompile Include="..\src\graphics\RenderGraph.cpp" />
-    <ClCompile Include="..\src\physics\CharacterController.cpp" />
-    <ClCompile Include="..\src\scene\WorldStateStore.cpp" />
+    <ClCompile Include="AssetTests.cpp" />
+    <ClCompile Include="EngineContractTests.cpp" />
+    <ClCompile Include="EngineTestSupport.cpp" />
     <ClCompile Include="FrameRollbackRegistryTests.cpp" />
+    <ClCompile Include="RenderGraphTests.cpp" />
+    <ClCompile Include="ShaderCompileTests.cpp" />
+    <ClCompile Include="StateStoreTests.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

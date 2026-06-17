@@ -10,7 +10,7 @@ float3 ApplyGrayscale(float3 color, float3 weights)
 float3 ApplySepia(float3 color, float3 weights, float3 tone)
 {
     const float value = dot(color, weights);
-    return saturate(value.xxx * tone);
+    return max(value.xxx * tone, 0.0f);
 }
 
 float3 ApplyColorGrading(float3 color)

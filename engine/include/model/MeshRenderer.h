@@ -1,25 +1,26 @@
 #pragma once
+#include "core/ResourceHandle.h"
 #include "camera/Camera.h"
 #include "graphics/Lighting.h"
-#include "graphics/UploadRingBuffer.h"
 #include "model/InstanceData.h"
 #include "model/Material.h"
 #include "model/MeshGpuCullBuffer.h"
 #include "model/MeshInstanceBuffer.h"
 #include "model/MeshManager.h"
 #include "model/MeshPipelineFactory.h"
-#include "model/ModelRenderer.h"
 #include "model/Transform.h"
 #include <DirectXMath.h>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <d3d12.h>
+#include <memory>
 #include <string>
 #include <vector>
 #include <wrl.h>
 
 class DirectXCommon;
+struct MeshRendererCommandCache;
 class SrvManager;
 class TextureManager;
 
@@ -28,6 +29,7 @@ class TextureManager;
 /// </summary>
 class MeshRenderer {
   public:
+    MeshRenderer();
     ~MeshRenderer();
 
     void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
@@ -40,13 +42,13 @@ class MeshRenderer {
     /// </summary>
     void BeginFrame();
     void PreDraw();
-    void PostDraw();
+    static void PostDraw();
     void InvalidateCommandState() noexcept;
 
     void DrawMesh(const Mesh &mesh, const Material &material,
                   const Transform &transform, const Camera &camera,
                   uint32_t textureId = 0,
-                  uint32_t normalTextureId = UINT32_MAX);
+                  uint32_t normalTextureId = kInvalidResourceId);
     /// <summary>
     /// Pipelineを生成する
     /// </summary>
@@ -58,14 +60,12 @@ class MeshRenderer {
         const std::wstring &pixelShaderPath);
     [[nodiscard]] bool ReleasePipeline(
         uint32_t pipelineId, bool allowFrameAbort = false) noexcept;
-    size_t GetCustomPipelineCount() const noexcept {
-        return customPipelines_.size();
-    }
+    size_t GetCustomPipelineCount() const noexcept;
     void DrawMeshWithPipeline(uint32_t pipelineId, const Mesh &mesh,
                               const Material &material,
                               const Transform &transform,
                               const Camera &camera, uint32_t textureId = 0,
-                              uint32_t normalTextureId = UINT32_MAX);
+                              uint32_t normalTextureId = kInvalidResourceId);
     void DrawMeshWithPipelineHandles(
         uint32_t pipelineId, const Mesh &mesh, const Material &material,
         const Transform &transform, const Camera &camera,
@@ -76,7 +76,7 @@ class MeshRenderer {
                            const InstanceData *instances,
                            uint32_t instanceCount, const Camera &camera,
                            uint32_t textureId = 0,
-                           uint32_t normalTextureId = UINT32_MAX);
+                           uint32_t normalTextureId = kInvalidResourceId);
     uint32_t CreateInstancedPipeline(
         const std::wstring &vertexShaderPath,
         const std::wstring &pixelShaderPath,
@@ -84,18 +84,16 @@ class MeshRenderer {
         const std::wstring &shadowPixelShaderPath);
     [[nodiscard]] bool ReleaseInstancedPipeline(
         uint32_t pipelineId, bool allowFrameAbort = false) noexcept;
-    size_t GetCustomInstancedPipelineCount() const noexcept {
-        return customInstancedPipelines_.size();
-    }
+    size_t GetCustomInstancedPipelineCount() const noexcept;
     void DrawMeshInstancedWithPipeline(
         uint32_t pipelineId, const Mesh &mesh, const Material &material,
         const InstanceData *instances, uint32_t instanceCount,
         const Camera &camera, uint32_t textureId = 0,
-        uint32_t normalTextureId = UINT32_MAX);
+        uint32_t normalTextureId = kInvalidResourceId);
     void DrawMeshInstancedWithPipeline(
         uint32_t pipelineId, const Mesh &mesh, const Material &material,
         const MeshInstanceBuffer &instanceBuffer, const Camera &camera,
-        uint32_t textureId = 0, uint32_t normalTextureId = UINT32_MAX);
+        uint32_t textureId = 0, uint32_t normalTextureId = kInvalidResourceId);
     bool CreateStaticInstanceBuffer(const InstanceData *instances,
                                     uint32_t instanceCount,
                                     MeshInstanceBuffer &buffer);
@@ -107,7 +105,7 @@ class MeshRenderer {
         const MeshInstanceBuffer &sourceInstances,
         MeshGpuCullBuffer &cullBuffer, const MeshGpuCullBounds &localBounds,
         const Camera &camera, float maxDistance, uint32_t textureId = 0,
-        uint32_t normalTextureId = UINT32_MAX);
+        uint32_t normalTextureId = kInvalidResourceId);
     bool DrawMeshInstancedGpuLodCulledWithPipeline(
         uint32_t pipelineId,
         const std::array<const Mesh *, kMeshGpuCullLodCount> &lodMeshes,
@@ -116,13 +114,14 @@ class MeshRenderer {
         const MeshGpuCullBounds &localBounds, const Camera &camera,
         const std::array<float, kMeshGpuCullLodCount - 1u> &distanceBreaks,
         uint32_t lodBias, float maxDistance, uint32_t textureId = 0,
-        uint32_t normalTextureId = UINT32_MAX);
+        uint32_t normalTextureId = kInvalidResourceId);
     bool DrawMeshInstancedGpuCulledShadowWithPipeline(
         uint32_t pipelineId, const Mesh &mesh, const Material &material,
         const MeshInstanceBuffer &sourceInstances,
         MeshGpuCullBuffer &cullBuffer, const MeshGpuCullBounds &localBounds,
         const DirectX::XMFLOAT4X4 &lightViewProjection,
-        uint32_t textureId = 0);
+        const DirectX::XMFLOAT3 &cullOrigin, float maxDistance,
+        uint32_t textureId = 0, bool opaqueShadow = false);
     bool DrawMeshInstancedGpuLodCulledShadowWithPipeline(
         uint32_t pipelineId,
         const std::array<const Mesh *, kMeshGpuCullLodCount> &lodMeshes,
@@ -132,7 +131,8 @@ class MeshRenderer {
         const DirectX::XMFLOAT4X4 &lightViewProjection,
         const DirectX::XMFLOAT3 &lodOrigin,
         const std::array<float, kMeshGpuCullLodCount - 1u> &distanceBreaks,
-        uint32_t lodBias, uint32_t textureId = 0);
+        uint32_t lodBias, float maxDistance, uint32_t textureId = 0,
+        bool opaqueShadow = false);
     [[nodiscard]] bool
     ReleaseGpuCullBuffer(MeshGpuCullBuffer &buffer,
                          bool allowFrameAbort = false) noexcept;
@@ -162,55 +162,49 @@ class MeshRenderer {
     void DrawMeshInstancedShadowWithPipeline(
         uint32_t pipelineId, const Mesh &mesh, const Material &material,
         const InstanceData *instances, uint32_t instanceCount,
-        const DirectX::XMFLOAT4X4 &lightViewProjection, uint32_t textureId = 0);
+        const DirectX::XMFLOAT4X4 &lightViewProjection, uint32_t textureId = 0,
+        bool opaqueShadow = false);
     void DrawMeshInstancedShadowWithPipeline(
         uint32_t pipelineId, const Mesh &mesh, const Material &material,
         const MeshInstanceBuffer &instanceBuffer,
-        const DirectX::XMFLOAT4X4 &lightViewProjection, uint32_t textureId = 0);
+        const DirectX::XMFLOAT4X4 &lightViewProjection, uint32_t textureId = 0,
+        bool opaqueShadow = false);
 
-    void SetSceneLighting(const SceneLighting &lighting) {
-        currentLighting_ = lighting;
-        InvalidateConstantCaches();
-    }
-    void SetSceneFog(const SceneFog &fog) {
-        currentFog_ = fog;
-        InvalidateConstantCaches();
-    }
+    void SetSceneLighting(const SceneLighting &lighting);
+    void SetSceneFog(const SceneFog &fog);
+    void SetEnvironmentTexture(uint32_t textureId);
+    void SetMaterialReflectionsEnabled(bool enabled);
+    void SetPlanarReflectionTexture(
+        D3D12_GPU_DESCRIPTOR_HANDLE reflectionTexture);
     void SetCustomSceneParams(const DirectX::XMFLOAT4 &params0,
                               const DirectX::XMFLOAT4 &params1);
     void SetShadowMap(D3D12_GPU_DESCRIPTOR_HANDLE shadowMap,
                       const DirectX::XMFLOAT4X4 &lightViewProjection,
                       const SceneShadowSettings &settings);
+    void SetSpotLightShadowMap(D3D12_GPU_DESCRIPTOR_HANDLE shadowMap,
+                               const DirectX::XMFLOAT4X4 &lightViewProjection,
+                               const SceneShadowSettings &settings);
     void SetOcclusionPyramid(D3D12_GPU_DESCRIPTOR_HANDLE depthPyramid,
                              const DirectX::XMMATRIX &viewProjection,
                              uint32_t width, uint32_t height,
                              uint32_t mipCount, float depthBias = 0.006f);
     void ClearOcclusionPyramid();
     bool IsReady() const;
-    size_t GetUploadBytesPerFrame() const {
-        return uploadBuffer_.GetBytesPerFrame();
-    }
-    size_t GetUploadTotalBytes() const { return uploadBuffer_.GetTotalBytes(); }
-    size_t GetUploadFrameOffset() const {
-        return uploadBuffer_.GetFrameOffset();
-    }
+    size_t GetUploadBytesPerFrame() const;
+    size_t GetUploadTotalBytes() const;
+    size_t GetUploadFrameOffset() const;
 
   private:
     static constexpr uint32_t kMaxDraws = 4096;
     static constexpr size_t kUploadBytesPerFrame = 4 * 1024 * 1024;
     static constexpr size_t kPipelineVariantCount = kMeshPipelineVariantCount;
+    using PipelineStateArray = MeshPipelineStateArray;
 
     struct ConstantCacheEntry {
         uint64_t hash = 0;
         D3D12_GPU_VIRTUAL_ADDRESS gpu = 0;
         bool valid = false;
     };
-    enum class RootParameterKind : uint8_t {
-        None,
-        ConstantBuffer,
-        DescriptorTable,
-    };
-
     /// <summary>
     /// RootSignatureを生成する
     /// </summary>
@@ -226,6 +220,7 @@ class MeshRenderer {
     void CreateUploadBuffer();
     void ResetResources();
     void InvalidateConstantCaches() noexcept;
+    void PreDrawWithRootSignature(ID3D12RootSignature *rootSignature);
     void SetGraphicsRootSignatureCached(ID3D12RootSignature *rootSignature);
     void SetPipelineStateCached(ID3D12PipelineState *pipelineState);
     void SetGraphicsRootConstantBufferViewCached(
@@ -236,9 +231,89 @@ class MeshRenderer {
                                   const D3D12_VERTEX_BUFFER_VIEW *views);
     void IASetIndexBufferCached(const D3D12_INDEX_BUFFER_VIEW &view);
     void IASetPrimitiveTopologyCached(D3D12_PRIMITIVE_TOPOLOGY topology);
+    void BindForwardMaterialDescriptors(const Material &drawMaterial,
+                                        uint32_t textureId,
+                                        uint32_t normalTextureId);
+    void BindForwardMaterialDescriptorHandles(
+        D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
+        D3D12_GPU_DESCRIPTOR_HANDLE normalTextureHandle);
+    void BindShadowMaterialDescriptor(const Material &drawMaterial,
+                                      uint32_t textureId);
+    void SubmitForwardMeshDraw(
+        const Mesh &mesh, const Material &drawMaterial,
+        D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS materialCbAddr,
+        const D3D12_VERTEX_BUFFER_VIEW *vertexViews, uint32_t vertexViewCount,
+        uint32_t instanceCount, uint32_t textureId, uint32_t normalTextureId);
+    void SubmitForwardMeshDrawWithHandles(
+        const Mesh &mesh, D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS materialCbAddr,
+        const D3D12_VERTEX_BUFFER_VIEW *vertexViews, uint32_t vertexViewCount,
+        uint32_t instanceCount, D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
+        D3D12_GPU_DESCRIPTOR_HANDLE normalTextureHandle);
+    void SubmitShadowMeshDraw(
+        const Mesh &mesh, const Material &drawMaterial,
+        D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS materialCbAddr,
+        const D3D12_VERTEX_BUFFER_VIEW *vertexViews, uint32_t vertexViewCount,
+        uint32_t instanceCount, uint32_t textureId);
     D3D12_GPU_VIRTUAL_ADDRESS WriteObjectConstants(
         const DirectX::XMMATRIX &wvp, const DirectX::XMMATRIX &world,
         const DirectX::XMMATRIX &worldInverseTranspose);
+    bool WriteForwardTransformedDrawConstants(
+        const Material &drawMaterial, const Transform &transform,
+        const Camera &camera, D3D12_GPU_VIRTUAL_ADDRESS &objectCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS &sceneCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS &materialCbAddr);
+    bool WriteForwardIdentityDrawConstants(
+        const Material &drawMaterial, const Camera &camera,
+        D3D12_GPU_VIRTUAL_ADDRESS &objectCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS &sceneCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS &materialCbAddr);
+    bool WriteShadowTransformedDrawConstants(
+        const Material &drawMaterial, const Transform &transform,
+        const DirectX::XMFLOAT4X4 &lightViewProjection,
+        D3D12_GPU_VIRTUAL_ADDRESS &objectCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS &sceneCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS &materialCbAddr);
+    bool WriteShadowIdentityDrawConstants(
+        const Material &drawMaterial,
+        const DirectX::XMFLOAT4X4 &lightViewProjection,
+        D3D12_GPU_VIRTUAL_ADDRESS &objectCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS &sceneCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS &materialCbAddr);
+    bool PrepareForwardMeshDrawConstants(
+        const Mesh &mesh, const Material &material,
+        const Transform &transform, const Camera &camera,
+        Material &drawMaterial, D3D12_GPU_VIRTUAL_ADDRESS &objectCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS &sceneCbAddr,
+        D3D12_GPU_VIRTUAL_ADDRESS &materialCbAddr);
+    bool DrawForwardMeshWithPipelineStates(
+        const Mesh &mesh, const Material &material,
+        const Transform &transform, const Camera &camera,
+        const PipelineStateArray *pipelineStates, uint32_t textureId,
+        uint32_t normalTextureId);
+    bool DrawForwardMeshWithPipelineHandles(
+        const Mesh &mesh, const Material &material,
+        const Transform &transform, const Camera &camera,
+        const PipelineStateArray &pipelineStates,
+        D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
+        D3D12_GPU_DESCRIPTOR_HANDLE normalTextureHandle);
+    bool DrawForwardInstancedWithPreparedBuffer(
+        const Mesh &mesh, const Material &drawMaterial,
+        const D3D12_VERTEX_BUFFER_VIEW &instanceView,
+        uint32_t instanceCount, const Camera &camera,
+        const PipelineStateArray *pipelineStates, uint32_t textureId,
+        uint32_t normalTextureId);
+    bool DrawShadowInstancedWithPreparedBuffer(
+        const Mesh &mesh, const Material &drawMaterial,
+        const D3D12_VERTEX_BUFFER_VIEW &instanceView,
+        uint32_t instanceCount,
+        const DirectX::XMFLOAT4X4 &lightViewProjection,
+        const PipelineStateArray *pipelineStates, uint32_t textureId);
     /// <summary>
     /// データを書き込む
     /// </summary>
@@ -257,6 +332,51 @@ class MeshRenderer {
                                 MeshGpuLodCullBuffer &buffer);
     bool RegisterGpuCullStateRollback(MeshGpuCullBuffer &buffer);
     bool RegisterGpuLodCullStateRollback(MeshGpuLodCullBuffer &buffer);
+    bool PrepareGpuCullDispatch(
+        const MeshInstanceBuffer &sourceInstances, MeshGpuCullBuffer &buffer,
+        ID3D12GraphicsCommandList *&commandList,
+        ID3D12DescriptorHeap *&descriptorHeap,
+        D3D12_GPU_DESCRIPTOR_HANDLE &occlusionHandle);
+    bool PrepareGpuLodCullDispatch(
+        const MeshInstanceBuffer &sourceInstances,
+        MeshGpuLodCullBuffer &buffer, ID3D12GraphicsCommandList *&commandList,
+        ID3D12DescriptorHeap *&descriptorHeap,
+        D3D12_GPU_DESCRIPTOR_HANDLE &occlusionHandle);
+    bool DispatchSingleGpuCull(
+        const Mesh &mesh, const MeshInstanceBuffer &sourceInstances,
+        MeshGpuCullBuffer &cullBuffer,
+        const MeshGpuCullBounds &localBounds,
+        const DirectX::XMMATRIX &cullViewProjection,
+        const DirectX::XMFLOAT3 &cullOrigin,
+        const DirectX::XMFLOAT4 &occlusionParams, float maxDistance,
+        ID3D12GraphicsCommandList *&commandList);
+    bool DispatchLodGpuCull(
+        const std::array<const Mesh *, kMeshGpuCullLodCount> &lodMeshes,
+        const MeshInstanceBuffer &sourceInstances,
+        MeshGpuLodCullBuffer &cullBuffer,
+        const MeshGpuCullBounds &localBounds,
+        const DirectX::XMMATRIX &cullViewProjection,
+        const DirectX::XMFLOAT3 &cullOrigin,
+        const DirectX::XMFLOAT3 &lodOrigin,
+        const std::array<float, kMeshGpuCullLodCount - 1u> &distanceBreaks,
+        const DirectX::XMFLOAT4 &occlusionParams, uint32_t lodBias,
+        float maxDistance, ID3D12GraphicsCommandList *&commandList);
+    bool BindGpuCulledForwardDrawState(uint32_t pipelineId,
+                                       const Material &material,
+                                       const Camera &camera,
+                                       uint32_t textureId,
+                                       uint32_t normalTextureId);
+    bool BindGpuCulledShadowDrawState(
+        uint32_t pipelineId, const Material &material,
+        const DirectX::XMFLOAT4X4 &lightViewProjection, uint32_t textureId,
+        bool opaqueShadow);
+    void ExecuteGpuCulledMeshDraw(ID3D12GraphicsCommandList *commandList,
+                                  const Mesh &mesh,
+                                  const MeshGpuCullBuffer &cullBuffer);
+    bool ExecuteGpuLodCulledMeshDraws(
+        ID3D12GraphicsCommandList *commandList,
+        const std::array<const Mesh *, kMeshGpuCullLodCount> &lodMeshes,
+        const MeshGpuLodCullBuffer &cullBuffer);
     bool DrawInstancedWithPreparedBuffer(
         uint32_t pipelineId, const Mesh &mesh, const Material &drawMaterial,
         const D3D12_VERTEX_BUFFER_VIEW &instanceView, uint32_t instanceCount,
@@ -264,95 +384,27 @@ class MeshRenderer {
     bool DrawInstancedShadowWithPreparedBuffer(
         uint32_t pipelineId, const Mesh &mesh, const Material &drawMaterial,
         const D3D12_VERTEX_BUFFER_VIEW &instanceView, uint32_t instanceCount,
-        const DirectX::XMFLOAT4X4 &lightViewProjection, uint32_t textureId);
+        const DirectX::XMFLOAT4X4 &lightViewProjection, uint32_t textureId,
+        bool opaqueShadow);
     /// <summary>
     /// PipelineForMaterialを設定する
     /// </summary>
     bool SetPipelineForMaterial(const Material &material);
-    bool SetPipelineForMaterial(
-        const std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
-                         kPipelineVariantCount> &pipelineStates,
-        const Material &material);
+    bool SetPipelineForMaterial(const PipelineStateArray &pipelineStates,
+                                const Material &material);
     /// <summary>
     /// InstancedPipelineForMaterialを設定する
     /// </summary>
     bool SetInstancedPipelineForMaterial(const Material &material);
     bool SetInstancedPipelineForMaterial(
-        const std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
-                         kPipelineVariantCount> &pipelineStates,
-        const Material &material);
+        const PipelineStateArray &pipelineStates, const Material &material);
+    bool SetInstancedShadowPipelineForMaterial(
+        const PipelineStateArray &pipelineStates, const Material &material);
+    bool SetPipelineStateForMaterial(const PipelineStateArray &pipelineStates,
+                                     const Material &material);
     D3D12_GPU_DESCRIPTOR_HANDLE GetCullOcclusionHandle() const;
 
-    DirectXCommon *dxCommon_ = nullptr;
-    SrvManager *srvManager_ = nullptr;
-    TextureManager *textureManager_ = nullptr;
-
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> shadowRootSignature_;
-    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
-               kPipelineVariantCount>
-        pipelineStates_;
-    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
-               kPipelineVariantCount>
-        instancedPipelineStates_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> shadowPSO_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> instancedShadowPSO_;
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> gpuCullRootSignature_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> gpuCullPSO_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> gpuCullArgsPSO_;
-    Microsoft::WRL::ComPtr<ID3D12CommandSignature> gpuCullCommandSignature_;
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> gpuLodCullRootSignature_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> gpuLodCullPSO_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> gpuLodCullArgsPSO_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> fallbackOcclusionTexture_;
-    uint32_t fallbackOcclusionSrvIndex_ = UINT32_MAX;
-    D3D12_GPU_DESCRIPTOR_HANDLE fallbackOcclusionGpuHandle_{};
-    struct InstancedPipelineSet {
-        std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
-                   kPipelineVariantCount>
-            pipelineStates;
-        Microsoft::WRL::ComPtr<ID3D12PipelineState> shadowPipelineState;
-    };
-    std::vector<MeshPipelineSet> customPipelines_;
-    std::vector<InstancedPipelineSet> customInstancedPipelines_;
-
-    UploadRingBuffer uploadBuffer_;
-    uint32_t drawIndex_ = 0;
-    ID3D12RootSignature *cachedRootSignature_ = nullptr;
-    ID3D12PipelineState *cachedPipelineState_ = nullptr;
-    std::array<RootParameterKind, 6> cachedRootParameterKinds_{};
-    std::array<uint64_t, 6> cachedRootParameterValues_{};
-    std::array<D3D12_VERTEX_BUFFER_VIEW, 2> cachedVertexBufferViews_{};
-    uint32_t cachedVertexBufferStartSlot_ = 0;
-    uint32_t cachedVertexBufferViewCount_ = 0;
-    bool cachedVertexBuffersValid_ = false;
-    D3D12_INDEX_BUFFER_VIEW cachedIndexBufferView_{};
-    bool cachedIndexBufferValid_ = false;
-    D3D12_PRIMITIVE_TOPOLOGY cachedPrimitiveTopology_ =
-        D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
-    ConstantCacheEntry sceneConstantsCache_{};
-    ConstantCacheEntry shadowSceneConstantsCache_{};
-    ConstantCacheEntry materialConstantsCache_{};
-    std::vector<InstanceData> instanceScratch_;
-
-    SceneLighting currentLighting_{};
-    SceneFog currentFog_{};
-    D3D12_GPU_DESCRIPTOR_HANDLE shadowMapGpuHandle_{};
-    DirectX::XMFLOAT4X4 shadowLightViewProjection_ = {
-        1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 1.0f};
-    DirectX::XMFLOAT4 shadowParams_{0.0f, 0.0015f, 0.45f, 0.0f};
-    DirectX::XMFLOAT4 shadowFilterParams_{1.45f, 2600.0f, 0.045f, 0.0f};
-    DirectX::XMFLOAT4 customSceneParams0_{1.0f, 0.0f, 0.0f, 0.0f};
-    DirectX::XMFLOAT4 customSceneParams1_{0.0f, 1.0f, 0.24f, 0.0f};
-    DirectX::XMFLOAT4X4 occlusionViewProjection_ = {
-        1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 1.0f};
-    DirectX::XMFLOAT4 occlusionParams_{0.0f, 0.0f, 0.0f, 0.006f};
-    D3D12_GPU_DESCRIPTOR_HANDLE occlusionPyramidGpuHandle_{};
-    bool occlusionPyramidEnabled_ = false;
+    struct InstancedPipelineSet;
+    struct State;
+    std::unique_ptr<State> state_;
 };

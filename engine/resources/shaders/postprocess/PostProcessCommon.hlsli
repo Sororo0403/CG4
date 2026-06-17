@@ -25,6 +25,7 @@ cbuffer PostProcessConstants : register(b0)
     float bloomThreshold;
     float bloomIntensity;
     float bloomRadius;
+    float bloomSoftKnee;
     int noiseEnabled;
     float noiseStrength;
     float noiseScale;
@@ -39,8 +40,8 @@ cbuffer PostProcessConstants : register(b0)
     float postEffectPadding;
     int lensFlareEnabled;
     float lensFlareVisibility;
-    float2 lensFlareSunUv;
-    float lensFlareSunDepth;
+    float2 lensFlareSourceUv;
+    float lensFlareSourceDepth;
     float lensFlareOcclusionBias;
     float lensFlareGlareRadius;
     float lensFlareGlareIntensity;
@@ -56,7 +57,7 @@ cbuffer PostProcessConstants : register(b0)
     float3 lensFlareGhostCoolColor;
     float lensFlareStreakAlpha;
     float3 lensFlareStreakColor;
-    float lensFlarePadding1;
+    float lensFlareShaftIntensity;
     int enableVignetting;
     int randomMode;
     int radialBlurSampleCount;
@@ -81,6 +82,7 @@ cbuffer PostProcessConstants : register(b0)
     float3 toonPadding;
     float toonPaddingFinal;
     float4 constantsPadding;
+    float3 constantsPaddingBloom;
 };
 
 float CalcLuminance(float3 color)

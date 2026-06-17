@@ -36,8 +36,5 @@ std::optional<PrimitiveMeshData> BuildCylinder(uint32_t textureId,
                                                float topRadius,
                                                float bottomRadius,
                                                float height);
-std::optional<PrimitiveMeshData> BuildLowPolyTerrain(
-    uint32_t textureId, const Material &material, uint32_t grid, float size,
-    float maxHeight, float flatRadius, uint32_t seed);
 
 } // namespace ModelPrimitiveFactory

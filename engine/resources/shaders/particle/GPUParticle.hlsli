@@ -15,6 +15,8 @@ struct Particle
     float4 params1;
     float4 params2;
     float4 params3;
+    float4 params4;
+    float4 params5;
 };
 
 struct ParticleVSOutput
@@ -24,6 +26,9 @@ struct ParticleVSOutput
     float4 color : COLOR0;
     float2 params : TEXCOORD1;
     float2 localUv : TEXCOORD2;
+    float3 worldPosition : TEXCOORD3;
+    float4 style : TEXCOORD4;
+    float4 shapeParams : TEXCOORD5;
 };
 
 #endif // GPU_PARTICLE_HLSLI

@@ -1,6 +1,7 @@
 #include "graphics/Culling.h"
 #include "camera/Camera.h"
 #include "core/Numeric.h"
+#include "FrustumPlaneUtils.h"
 #include <algorithm>
 #include <cmath>
 
@@ -9,43 +10,27 @@ using namespace DirectX;
 namespace {
 using Numeric::FiniteOr;
 
-XMFLOAT4 NormalizePlane(FXMVECTOR plane) {
-    const XMVECTOR normal = XMVectorSetW(plane, 0.0f);
-    const float length = XMVectorGetX(XMVector3Length(normal));
-    if (!std::isfinite(length) || length <= 0.000001f) {
-        return {0.0f, 1.0f, 0.0f, 0.0f};
-    }
-
-    XMFLOAT4 result{};
-    XMStoreFloat4(&result, plane / length);
-    if (!std::isfinite(result.x) || !std::isfinite(result.y) ||
-        !std::isfinite(result.z) || !std::isfinite(result.w)) {
-        return {0.0f, 1.0f, 0.0f, 0.0f};
-    }
-    return result;
-}
-
 } // namespace
 
 void Frustum::Build(const XMMATRIX &viewProjection) {
     XMFLOAT4X4 m{};
     XMStoreFloat4x4(&m, viewProjection);
 
-    planes_[0] = NormalizePlane(
+    planes_[0] = FrustumPlaneUtils::NormalizePlane(
         XMVectorSet(m._14 + m._11, m._24 + m._21, m._34 + m._31,
                     m._44 + m._41));
-    planes_[1] = NormalizePlane(
+    planes_[1] = FrustumPlaneUtils::NormalizePlane(
         XMVectorSet(m._14 - m._11, m._24 - m._21, m._34 - m._31,
                     m._44 - m._41));
-    planes_[2] = NormalizePlane(
+    planes_[2] = FrustumPlaneUtils::NormalizePlane(
         XMVectorSet(m._14 - m._12, m._24 - m._22, m._34 - m._32,
                     m._44 - m._42));
-    planes_[3] = NormalizePlane(
+    planes_[3] = FrustumPlaneUtils::NormalizePlane(
         XMVectorSet(m._14 + m._12, m._24 + m._22, m._34 + m._32,
                     m._44 + m._42));
-    planes_[4] = NormalizePlane(
+    planes_[4] = FrustumPlaneUtils::NormalizePlane(
         XMVectorSet(m._13, m._23, m._33, m._43));
-    planes_[5] = NormalizePlane(
+    planes_[5] = FrustumPlaneUtils::NormalizePlane(
         XMVectorSet(m._14 - m._13, m._24 - m._23, m._34 - m._33,
                     m._44 - m._43));
 }

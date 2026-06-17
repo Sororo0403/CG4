@@ -1,5 +1,7 @@
 #include "model/SkyboxRenderer.h"
+#include "SkyboxRendererInternal.h"
 #include "core/Numeric.h"
+#include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/GpuResourceHelpers.h"
@@ -7,12 +9,13 @@
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
+#include "../graphics/ConstantBufferUtils.h"
+#include "../graphics/RootSignatureUtils.h"
 #include "texture/TextureManager.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
-#include <limits>
 
 using namespace DirectX;
 
@@ -30,32 +33,34 @@ XMFLOAT3 SanitizeFloat3(const XMFLOAT3 &value) {
             FiniteOr(value.z, 0.0f)};
 }
 
-uint32_t ResolveSkyboxTextureId(TextureManager *textureManager,
+uint32_t ResolveSkyboxTextureId(const TextureManager *textureManager,
                                 uint32_t textureId) {
     if (textureManager == nullptr) {
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
-    if (textureId != UINT32_MAX &&
-        textureManager->IsCubeTextureId(textureId)) {
+    if (IsValidResourceId(textureId) && textureManager->IsCubeTextureId(textureId)) {
         return textureId;
     }
     const uint32_t fallbackTextureId = textureManager->GetWhiteCubeTextureId();
     return textureManager->IsCubeTextureId(fallbackTextureId)
                ? fallbackTextureId
-               : UINT32_MAX;
-}
-
-UINT Align256(size_t size) {
-    if (size > static_cast<size_t>((std::numeric_limits<UINT>::max)()) - 0xFFu) {
-        return 0;
-    }
-    return static_cast<UINT>((size + 0xFFu) & ~size_t{0xFFu});
+               : kInvalidResourceId;
 }
 
 } // namespace
 
+SkyboxRenderer::SkyboxRenderer() : state_(std::make_unique<State>()) {}
+
 SkyboxRenderer::~SkyboxRenderer() {
     Finalize(true);
+}
+
+bool SkyboxRenderer::IsReady() const {
+    return dxCommon_ != nullptr && srvManager_ != nullptr &&
+           textureManager_ != nullptr && state_->rootSignature &&
+           state_->pipelineState && state_->vertexBuffer &&
+           state_->indexBuffer && HasConstantBuffers() &&
+           state_->indexCount > 0;
 }
 
 void SkyboxRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
@@ -77,8 +82,8 @@ void SkyboxRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
     CreatePipelineState();
     CreateMesh();
     CreateConstantBuffer();
-    if (!rootSignature_ || !pipelineState_ || !vertexBuffer_ ||
-        !indexBuffer_ || !HasConstantBuffers() || indexCount_ == 0) {
+    if (!state_->rootSignature || !state_->pipelineState || !state_->vertexBuffer ||
+        !state_->indexBuffer || !HasConstantBuffers() || state_->indexCount == 0) {
         Finalize();
     }
 }
@@ -87,25 +92,25 @@ bool SkyboxRenderer::Finalize() { return Finalize(false); }
 
 bool SkyboxRenderer::Finalize(bool allowFrameAbort) {
     const bool hasGpuResources =
-        !constantFrames_.empty() || indexBuffer_ || vertexBuffer_ ||
-        pipelineState_ || rootSignature_;
+        !state_->constantFrames.empty() || state_->indexBuffer || state_->vertexBuffer ||
+        state_->pipelineState || state_->rootSignature;
     if (!CanReleaseGpuResources(dxCommon_, hasGpuResources,
                                 allowFrameAbort)) {
         return false;
     }
 
-    for (ConstantFrame &frame : constantFrames_) {
+    for (ConstantFrame &frame : state_->constantFrames) {
         frame.Reset();
     }
-    constantFrames_.clear();
+    state_->constantFrames.clear();
 
-    indexBuffer_.Reset();
-    vertexBuffer_.Reset();
-    pipelineState_.Reset();
-    rootSignature_.Reset();
-    vbView_ = {};
-    ibView_ = {};
-    indexCount_ = 0;
+    state_->indexBuffer.Reset();
+    state_->vertexBuffer.Reset();
+    state_->pipelineState.Reset();
+    state_->rootSignature.Reset();
+    state_->vbView = {};
+    state_->ibView = {};
+    state_->indexCount = 0;
     dxCommon_ = nullptr;
     srvManager_ = nullptr;
     textureManager_ = nullptr;
@@ -113,15 +118,15 @@ bool SkyboxRenderer::Finalize(bool allowFrameAbort) {
 }
 
 void SkyboxRenderer::Draw(uint32_t textureId, const Camera &camera) {
-    if (!dxCommon_ || !srvManager_ || !textureManager_ || !pipelineState_ ||
-        !rootSignature_ || !vertexBuffer_ || !indexBuffer_ ||
-        !HasConstantBuffers() || indexCount_ == 0) {
+    if (!dxCommon_ || !srvManager_ || !textureManager_ || !state_->pipelineState ||
+        !state_->rootSignature || !state_->vertexBuffer || !state_->indexBuffer ||
+        !HasConstantBuffers() || state_->indexCount == 0) {
         return;
     }
 
     const uint32_t boundTextureId =
         ResolveSkyboxTextureId(textureManager_, textureId);
-    if (boundTextureId == UINT32_MAX) {
+    if (!IsValidResourceId(boundTextureId)) {
         return;
     }
 
@@ -144,11 +149,11 @@ void SkyboxRenderer::Draw(uint32_t textureId, const Camera &camera) {
     ID3D12DescriptorHeap *heaps[] = {srvHeap};
     cmd->SetDescriptorHeaps(1, heaps);
 
-    cmd->SetPipelineState(pipelineState_.Get());
-    cmd->SetGraphicsRootSignature(rootSignature_.Get());
+    cmd->SetPipelineState(state_->pipelineState.Get());
+    cmd->SetGraphicsRootSignature(state_->rootSignature.Get());
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    cmd->IASetVertexBuffers(0, 1, &vbView_);
-    cmd->IASetIndexBuffer(&ibView_);
+    cmd->IASetVertexBuffers(0, 1, &state_->vbView);
+    cmd->IASetIndexBuffer(&state_->ibView);
 
     const XMFLOAT3 cameraPosition = SanitizeFloat3(camera.GetPosition());
     XMMATRIX world =
@@ -160,7 +165,7 @@ void SkyboxRenderer::Draw(uint32_t textureId, const Camera &camera) {
 
     cmd->SetGraphicsRootConstantBufferView(0, constBufferAddress);
     cmd->SetGraphicsRootDescriptorTable(1, textureHandle);
-    cmd->DrawIndexedInstanced(indexCount_, 1, 0, 0, 0);
+    cmd->DrawIndexedInstanced(state_->indexCount, 1, 0, 0, 0);
 }
 
 void SkyboxRenderer::CreateRootSignature() {
@@ -180,23 +185,12 @@ void SkyboxRenderer::CreateRootSignature() {
     desc.Init(_countof(params), params, 1, &sampler,
               D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
-    Microsoft::WRL::ComPtr<ID3DBlob> blob, error;
-
-    if (FAILED(D3D12SerializeRootSignature(
-            &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error)) ||
-        !blob) {
-        return;
-    }
-
-    if (FAILED(dxCommon_->GetDevice()->CreateRootSignature(
-            0, blob->GetBufferPointer(), blob->GetBufferSize(),
-            IID_PPV_ARGS(&rootSignature_)))) {
-        rootSignature_.Reset();
-    }
+    RootSignatureUtils::CreateRootSignature(dxCommon_->GetDevice(), desc,
+                                            state_->rootSignature);
 }
 
 void SkyboxRenderer::CreatePipelineState() {
-    if (!dxCommon_ || !dxCommon_->GetDevice() || !rootSignature_) {
+    if (!dxCommon_ || !dxCommon_->GetDevice() || !state_->rootSignature) {
         return;
     }
     auto vs =
@@ -213,7 +207,7 @@ void SkyboxRenderer::CreatePipelineState() {
     };
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
-    desc.pRootSignature = rootSignature_.Get();
+    desc.pRootSignature = state_->rootSignature.Get();
     desc.VS = {vs->GetBufferPointer(), vs->GetBufferSize()};
     desc.PS = {ps->GetBufferPointer(), ps->GetBufferSize()};
     desc.InputLayout = {layout, _countof(layout)};
@@ -237,8 +231,8 @@ void SkyboxRenderer::CreatePipelineState() {
     desc.DepthStencilState = depth;
 
     if (FAILED(dxCommon_->GetDevice()->CreateGraphicsPipelineState(
-            &desc, IID_PPV_ARGS(&pipelineState_)))) {
-        pipelineState_.Reset();
+            &desc, IID_PPV_ARGS(&state_->pipelineState)))) {
+        state_->pipelineState.Reset();
     }
 }
 
@@ -262,7 +256,7 @@ void SkyboxRenderer::CreateMesh() {
         3, 2, 6, 3, 6, 7, 1, 5, 6, 1, 6, 2, 4, 0, 3, 4, 3, 7,
     }};
 
-    indexCount_ = static_cast<uint32_t>(kIndices.size());
+    state_->indexCount = static_cast<uint32_t>(kIndices.size());
 
     const UINT vbSize = static_cast<UINT>(sizeof(kVertices));
     const UINT ibSize = static_cast<UINT>(sizeof(kIndices));
@@ -272,106 +266,91 @@ void SkyboxRenderer::CreateMesh() {
     auto vbDesc = CD3DX12_RESOURCE_DESC::Buffer(vbSize);
     if (!CreateCommittedResourceChecked(
             dxCommon_->GetDevice(), &heap, D3D12_HEAP_FLAG_NONE, &vbDesc,
-            D3D12_RESOURCE_STATE_GENERIC_READ, vertexBuffer_.GetAddressOf())) {
-        indexCount_ = 0;
+            D3D12_RESOURCE_STATE_GENERIC_READ, state_->vertexBuffer.GetAddressOf())) {
+        state_->indexCount = 0;
         return;
     }
 
     void *vbMapped = nullptr;
-    if (!MapResourceChecked(vertexBuffer_.Get(), &vbMapped)) {
-        indexCount_ = 0;
+    if (!MapResourceChecked(state_->vertexBuffer.Get(), &vbMapped)) {
+        state_->indexCount = 0;
         return;
     }
     memcpy(vbMapped, kVertices.data(), sizeof(kVertices));
-    vertexBuffer_->Unmap(0, nullptr);
+    state_->vertexBuffer->Unmap(0, nullptr);
 
-    vbView_.BufferLocation = vertexBuffer_->GetGPUVirtualAddress();
-    vbView_.SizeInBytes = vbSize;
-    vbView_.StrideInBytes = sizeof(SkyboxVertex);
+    state_->vbView.BufferLocation = state_->vertexBuffer->GetGPUVirtualAddress();
+    state_->vbView.SizeInBytes = vbSize;
+    state_->vbView.StrideInBytes = sizeof(SkyboxVertex);
 
     auto ibDesc = CD3DX12_RESOURCE_DESC::Buffer(ibSize);
     if (!CreateCommittedResourceChecked(
             dxCommon_->GetDevice(), &heap, D3D12_HEAP_FLAG_NONE, &ibDesc,
-            D3D12_RESOURCE_STATE_GENERIC_READ, indexBuffer_.GetAddressOf())) {
-        indexCount_ = 0;
+            D3D12_RESOURCE_STATE_GENERIC_READ, state_->indexBuffer.GetAddressOf())) {
+        state_->indexCount = 0;
         return;
     }
 
     void *ibMapped = nullptr;
-    if (!MapResourceChecked(indexBuffer_.Get(), &ibMapped)) {
-        indexCount_ = 0;
+    if (!MapResourceChecked(state_->indexBuffer.Get(), &ibMapped)) {
+        state_->indexCount = 0;
         return;
     }
     memcpy(ibMapped, kIndices.data(), sizeof(kIndices));
-    indexBuffer_->Unmap(0, nullptr);
+    state_->indexBuffer->Unmap(0, nullptr);
 
-    ibView_.BufferLocation = indexBuffer_->GetGPUVirtualAddress();
-    ibView_.SizeInBytes = ibSize;
-    ibView_.Format = DXGI_FORMAT_R32_UINT;
+    state_->ibView.BufferLocation = state_->indexBuffer->GetGPUVirtualAddress();
+    state_->ibView.SizeInBytes = ibSize;
+    state_->ibView.Format = DXGI_FORMAT_R32_UINT;
 }
 
 void SkyboxRenderer::CreateConstantBuffer() {
     if (!dxCommon_ || !dxCommon_->GetDevice()) {
         return;
     }
-    const UINT size = Align256(sizeof(ConstBufferData));
-    if (size == 0) {
+    const UINT frameCount = (std::max)(1u, dxCommon_->GetSwapChainBufferCount());
+    if (!ConstantBufferUtils::CreateUploadFrames(
+            dxCommon_->GetDevice(), frameCount, sizeof(ConstBufferData),
+            state_->constantFrames, &ConstantFrame::resource,
+            &ConstantFrame::mapped)) {
         return;
     }
-
-    CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
-    auto desc = CD3DX12_RESOURCE_DESC::Buffer(size);
-
-    const UINT frameCount = (std::max)(1u, dxCommon_->GetSwapChainBufferCount());
-    constantFrames_.resize(frameCount);
-    for (ConstantFrame &frame : constantFrames_) {
-        if (!CreateCommittedResourceChecked(
-                dxCommon_->GetDevice(), &heap, D3D12_HEAP_FLAG_NONE, &desc,
-                D3D12_RESOURCE_STATE_GENERIC_READ,
-                frame.resource.GetAddressOf())) {
-            return;
-        }
-
-        if (!MapResourceChecked(frame.resource.Get(), &frame.mapped)) {
-            return;
-        }
-
+    for (ConstantFrame &frame : state_->constantFrames) {
         XMStoreFloat4x4(&frame.mapped->matWVP,
                         XMMatrixTranspose(XMMatrixIdentity()));
     }
 }
 
 SkyboxRenderer::ConstantFrame *SkyboxRenderer::GetCurrentConstantFrame() {
-    if (constantFrames_.empty()) {
+    if (state_->constantFrames.empty()) {
         return nullptr;
     }
     const size_t frameIndex =
         dxCommon_ != nullptr
-            ? dxCommon_->GetBackBufferIndex() % constantFrames_.size()
+            ? dxCommon_->GetBackBufferIndex() % state_->constantFrames.size()
             : 0;
-    return &constantFrames_[frameIndex];
+    return &state_->constantFrames[frameIndex];
 }
 
 const SkyboxRenderer::ConstantFrame *
 SkyboxRenderer::GetCurrentConstantFrame() const {
-    if (constantFrames_.empty()) {
+    if (state_->constantFrames.empty()) {
         return nullptr;
     }
     const size_t frameIndex =
         dxCommon_ != nullptr
-            ? dxCommon_->GetBackBufferIndex() % constantFrames_.size()
+            ? dxCommon_->GetBackBufferIndex() % state_->constantFrames.size()
             : 0;
-    return &constantFrames_[frameIndex];
+    return &state_->constantFrames[frameIndex];
 }
 
 bool SkyboxRenderer::HasConstantBuffers() const {
-    if (constantFrames_.empty()) {
+    if (state_->constantFrames.empty()) {
         return false;
     }
-    for (const ConstantFrame &frame : constantFrames_) {
-        if (!frame.resource || frame.mapped == nullptr) {
-            return false;
-        }
-    }
-    return true;
+    return std::all_of(state_->constantFrames.begin(),
+                       state_->constantFrames.end(),
+                       [](const ConstantFrame &frame) {
+                           return frame.resource && frame.mapped != nullptr;
+                       });
 }

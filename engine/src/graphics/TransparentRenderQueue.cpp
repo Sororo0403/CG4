@@ -28,7 +28,7 @@ float SafeDistanceSquared(const XMFLOAT3 &worldPosition,
     const double dz = static_cast<double>(worldPosition.z) -
                       static_cast<double>(cameraPosition.z);
     const double distanceSquared = dx * dx + dy * dy + dz * dz;
-    const float maxDistanceSquared = (std::numeric_limits<float>::max)();
+    constexpr float maxDistanceSquared = (std::numeric_limits<float>::max)();
     if (!std::isfinite(distanceSquared) ||
         distanceSquared > static_cast<double>(maxDistanceSquared)) {
         return maxDistanceSquared;

@@ -25,9 +25,9 @@ float LensFlareDepthVisibility(Texture2D depthTex, SamplerState samplerState)
     [unroll]
     for (int i = 0; i < 9; ++i)
     {
-        float2 sampleUv = saturate(lensFlareSunUv + offsets[i] * texelSize);
+        float2 sampleUv = saturate(lensFlareSourceUv + offsets[i] * texelSize);
         float sampledDepth = depthTex.Sample(samplerState, sampleUv).r;
-        visible += step(lensFlareSunDepth - lensFlareOcclusionBias,
+        visible += step(lensFlareSourceDepth - lensFlareOcclusionBias,
                         sampledDepth);
     }
 
@@ -40,6 +40,25 @@ float SoftCircle(float2 uv, float2 center, float radius, float power)
     return pow(saturate(1.0f - d), power);
 }
 
+float SunRayVisibility(Texture2D depthTex, SamplerState samplerState,
+                       float2 uv)
+{
+    float2 rayToSun = lensFlareSourceUv - uv;
+    float visible = 0.0f;
+
+    [unroll]
+    for (int i = 0; i < 12; ++i)
+    {
+        float t = (float(i) + 0.5f) / 12.0f;
+        float2 sampleUv = saturate(uv + rayToSun * t);
+        float sampledDepth = depthTex.Sample(samplerState, sampleUv).r;
+        visible += step(lensFlareSourceDepth - lensFlareOcclusionBias,
+                        sampledDepth);
+    }
+
+    return visible / 12.0f;
+}
+
 float3 ApplyLensFlare(Texture2D depthTexture, SamplerState sourceSampler,
                       float3 color, float2 uv)
 {
@@ -50,9 +69,10 @@ float3 ApplyLensFlare(Texture2D depthTexture, SamplerState sourceSampler,
     }
 
     float2 center = float2(0.5f, 0.5f);
-    float2 sunVector = lensFlareSunUv - center;
+    float2 sourceVector = lensFlareSourceUv - center;
 
-    float glare = SoftCircle(uv, lensFlareSunUv, lensFlareGlareRadius, 2.35f);
+    float glare =
+        SoftCircle(uv, lensFlareSourceUv, lensFlareGlareRadius, 2.35f);
     float3 flare = lensFlareGlareColor * glare *
                    lensFlareGlareIntensity * lensFlareGlareAlpha;
 
@@ -64,7 +84,7 @@ float3 ApplyLensFlare(Texture2D depthTexture, SamplerState sourceSampler,
     [unroll]
     for (int i = 0; i < 5; ++i)
     {
-        float2 ghostUv = center - sunVector * ghostScales[i];
+        float2 ghostUv = center - sourceVector * ghostScales[i];
         float ghost = SoftCircle(uv, ghostUv, ghostRadii[i], 2.0f);
         float3 ghostColor =
             lerp(lensFlareGhostCoolColor, lensFlareGhostWarmColor,
@@ -73,7 +93,7 @@ float3 ApplyLensFlare(Texture2D depthTexture, SamplerState sourceSampler,
                  lensFlareGhostIntensity * lensFlareGhostAlpha;
     }
 
-    float2 delta = uv - lensFlareSunUv;
+    float2 delta = uv - lensFlareSourceUv;
     float horizontal = exp(-abs(delta.y) / max(lensFlareStreakWidth, 0.0001f));
     horizontal *= smoothstep(0.82f, 0.04f, abs(delta.x));
     float vertical = exp(-abs(delta.x) / max(lensFlareStreakWidth * 0.55f,
@@ -82,7 +102,30 @@ float3 ApplyLensFlare(Texture2D depthTexture, SamplerState sourceSampler,
     flare += lensFlareStreakColor * (horizontal + vertical * 0.25f) *
              lensFlareStreakIntensity * lensFlareStreakAlpha;
 
-    return saturate(color + flare * visibility);
+    if (lensFlareShaftIntensity > 0.001f)
+    {
+        float2 rayToSun = lensFlareSourceUv - uv;
+        float distanceToSun = length(rayToSun);
+        float2 rayDir = rayToSun / max(distanceToSun, 0.0001f);
+        float rayFalloff =
+            pow(saturate(1.0f - distanceToSun / 0.82f), 2.2f);
+        float shaftVisibility =
+            SunRayVisibility(depthTexture, sourceSampler, uv);
+        float broadBand =
+            0.52f + 0.48f *
+                        NoiseHash(floor(rayDir * 54.0f +
+                                        distanceToSun * 19.0f));
+        float fineBand =
+            0.88f + 0.12f *
+                        sin(dot(uv, float2(91.0f, 47.0f)) +
+                            dot(rayDir, float2(33.0f, 17.0f)));
+        float shaft = rayFalloff * shaftVisibility * broadBand * fineBand;
+        shaft *= smoothstep(0.02f, 0.22f, distanceToSun);
+        flare += lensFlareGlareColor * shaft *
+                 (lensFlareShaftIntensity * 0.42f);
+    }
+
+    return max(color + flare * visibility, 0.0f);
 }
 
 #endif // LENS_FLARE_PS_HLSLI

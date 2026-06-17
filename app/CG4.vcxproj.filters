@@ -1,34 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="include">
-      <UniqueIdentifier>{86e6a6b0-d74e-4aaa-92bf-f9646114076d}</UniqueIdentifier>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{C3D15084-84A4-4C1C-9028-3A2BC48B1348}</UniqueIdentifier>
     </Filter>
-    <Filter Include="include\scene">
-      <UniqueIdentifier>{edc77e8e-c3ca-4567-9f6d-afc6474c4827}</UniqueIdentifier>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{6E28D90A-E3EA-44B7-9680-8B1F4379498C}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src">
-      <UniqueIdentifier>{5301541f-af2b-4c39-9309-d90f5fd9039b}</UniqueIdentifier>
+    <Filter Include="Resources">
+      <UniqueIdentifier>{F07B73D4-2836-4F98-A337-C35291657A7F}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\scene">
-      <UniqueIdentifier>{6df06332-d393-4577-9a22-2260e6a5b501}</UniqueIdentifier>
+    <Filter Include="Resources\Textures">
+      <UniqueIdentifier>{06D4E7A4-80BC-405A-8479-6CBAE51C1D02}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Resources\Textures\Source">
+      <UniqueIdentifier>{965F3F98-C41B-4B95-A761-2B67D49E0A2E}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="$(SolutionDir)app\src\main.cpp">
-      <Filter>src</Filter>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\main.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)app\src\scene\GameScene.cpp">
-      <Filter>src\scene</Filter>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\ParticleDemoScene.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="$(SolutionDir)app\include\scene\GameScene.h">
-      <Filter>include\scene</Filter>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\ParticleDemoScene.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-  </ItemGroup>
-  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)resources\textures\flame_spread_atlas.png">
+      <Filter>Resources\Textures</Filter>
+    </None>
   </ItemGroup>
 </Project>

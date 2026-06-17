@@ -1,7 +1,9 @@
 #pragma once
+#include "core/ResourceHandle.h"
+#include <cstddef>
 #include <cstdint>
 #include <d3d12.h>
-#include <vector>
+#include <memory>
 #include <wrl.h>
 
 class DirectXCommon;
@@ -29,6 +31,7 @@ struct Mesh {
 /// </summary>
 class MeshManager {
   public:
+    MeshManager();
     ~MeshManager();
 
     /// <summary>
@@ -62,11 +65,21 @@ class MeshManager {
                         uint32_t indexCount,
                         D3D12_PRIMITIVE_TOPOLOGY primitiveTopology =
                             D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    MeshHandle CreateMeshHandle(
+        const void *vertexData, uint32_t vertexStride, uint32_t vertexCount,
+        const uint32_t *indexData, uint32_t indexCount,
+        D3D12_PRIMITIVE_TOPOLOGY primitiveTopology =
+            D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST) {
+        return MeshHandle(CreateMesh(vertexData, vertexStride, vertexCount,
+                                     indexData, indexCount,
+                                     primitiveTopology));
+    }
 
     /// <summary>
     /// 登録済みメッシュを破棄してIDを無効化する
     /// </summary>
     void DestroyMesh(uint32_t meshId);
+    void DestroyMesh(MeshHandle mesh) { DestroyMesh(mesh.Get()); }
 
     /// <summary>
     /// メッシュ情報を取得する
@@ -74,19 +87,23 @@ class MeshManager {
     /// <param name="meshId">メッシュID</param>
     /// <returns>メッシュ情報</returns>
     const Mesh &GetMesh(uint32_t meshId) const;
+    const Mesh &GetMesh(MeshHandle mesh) const { return GetMesh(mesh.Get()); }
 
     /// <summary>
     /// 指定IDが有効なメッシュを指しているかを取得する
     /// </summary>
     bool IsValidMeshId(uint32_t meshId) const;
+    bool IsValidMesh(MeshHandle mesh) const {
+        return IsValidMeshId(mesh.Get());
+    }
     size_t GetActiveMeshCount() const;
     uint64_t GetActiveGpuBytes() const;
     uint64_t GetDeferredGpuBytes() const;
     uint64_t GetUploadBytes() const;
 
   private:
+    struct State;
+
     DirectXCommon *dxCommon_ = nullptr;
-    std::vector<Mesh> meshes_;
-    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> uploadBuffers_;
-    std::vector<Mesh> deferredDestroyedMeshes_;
+    std::unique_ptr<State> state_;
 };

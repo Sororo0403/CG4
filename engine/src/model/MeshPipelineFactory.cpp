@@ -2,34 +2,14 @@
 
 #include "graphics/DxHelpers.h"
 #include "graphics/ShaderCompiler.h"
+#include "RendererPipelineVariantUtils.h"
+
+#include <algorithm>
+#include <iterator>
 
 using Microsoft::WRL::ComPtr;
 
 namespace {
-
-D3D12_CULL_MODE ToD3D12CullMode(const MaterialCullMode mode) {
-    switch (mode) {
-    case MaterialCullMode::None:
-        return D3D12_CULL_MODE_NONE;
-    case MaterialCullMode::Front:
-        return D3D12_CULL_MODE_FRONT;
-    case MaterialCullMode::Back:
-    default:
-        return D3D12_CULL_MODE_BACK;
-    }
-}
-
-D3D12_CULL_MODE ToD3D12CullMode(const MeshCullMode mode) {
-    switch (mode) {
-    case MeshCullMode::None:
-        return D3D12_CULL_MODE_NONE;
-    case MeshCullMode::Front:
-        return D3D12_CULL_MODE_FRONT;
-    case MeshCullMode::Back:
-    default:
-        return D3D12_CULL_MODE_BACK;
-    }
-}
 
 D3D12_BLEND_DESC MakeMeshBlendState(MeshBlendMode mode) {
     D3D12_BLEND_DESC blend = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
@@ -70,14 +50,6 @@ MeshBlendMode MaterialBlendMode(bool transparent) {
 
 MeshDepthMode MaterialDepthMode(bool depthWrite) {
     return depthWrite ? MeshDepthMode::TestWrite : MeshDepthMode::TestOnly;
-}
-
-size_t PipelineVariantIndex(bool transparent, MaterialCullMode cullMode,
-                            bool depthWrite) {
-    const size_t blendIndex = transparent ? 1 : 0;
-    const size_t cullIndex = static_cast<size_t>(cullMode);
-    const size_t depthIndex = depthWrite ? 1 : 0;
-    return blendIndex * 6 + cullIndex * 2 + depthIndex;
 }
 
 } // namespace
@@ -123,10 +95,10 @@ MeshPipelineSet MeshPipelineFactory::CreatePipelineSet(
 
     if (desc.variantMode == MeshPipelineVariantMode::Fixed) {
         ComPtr<ID3D12PipelineState> pso;
-        makePso(desc.blend, desc.depth, ToD3D12CullMode(desc.cull), pso);
-        for (auto &variant : pipelineSet.pipelineStates) {
-            variant = pso;
-        }
+        makePso(desc.blend, desc.depth,
+                RendererPipelineVariantUtils::ToD3D12CullMode(desc.cull), pso);
+        std::fill(std::begin(pipelineSet.pipelineStates),
+                  std::end(pipelineSet.pipelineStates), pso);
         return pipelineSet;
     }
 
@@ -136,10 +108,11 @@ MeshPipelineSet MeshPipelineFactory::CreatePipelineSet(
               MaterialCullMode::Back}) {
             for (bool depthWrite : {false, true}) {
                 const size_t index =
-                    PipelineVariantIndex(transparent, cullMode, depthWrite);
+                    RendererPipelineVariantUtils::MaterialPipelineVariantIndex(
+                        transparent, cullMode, depthWrite);
                 makePso(MaterialBlendMode(transparent),
                         MaterialDepthMode(depthWrite),
-                        ToD3D12CullMode(cullMode),
+                        RendererPipelineVariantUtils::ToD3D12CullMode(cullMode),
                         pipelineSet.pipelineStates[index]);
             }
         }

@@ -1,9 +1,10 @@
 #include "graphics/UploadRingBuffer.h"
 
+#include "core/Alignment.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/GpuResourceHelpers.h"
+#include <algorithm>
 #include <cassert>
-#include <exception>
 #include <limits>
 #include <utility>
 
@@ -12,7 +13,6 @@ UploadRingBuffer::~UploadRingBuffer() {
         assert(false &&
                "UploadRingBuffer::Reset must be called after GPU idle before "
                "destruction");
-        std::terminate();
     }
     Reset();
 }
@@ -108,14 +108,7 @@ size_t UploadRingBuffer::GetFrameOffset() const {
 }
 
 size_t UploadRingBuffer::AlignUp(size_t value, size_t alignment) {
-    if (alignment <= 1) {
-        return value;
-    }
-    const size_t addend = alignment - 1;
-    if (value > (std::numeric_limits<size_t>::max)() - addend) {
-        return (std::numeric_limits<size_t>::max)();
-    }
-    return ((value + addend) / alignment) * alignment;
+    return CoreAlignment::AlignUp(value, alignment);
 }
 
 bool UploadRingBuffer::CreateFrameResource(FrameResource &frame,
@@ -140,10 +133,8 @@ bool UploadRingBuffer::CreateFrameResource(FrameResource &frame,
 }
 
 bool UploadRingBuffer::HasResources() const noexcept {
-    for (const FrameResource &frame : frames_) {
-        if (frame.resource) {
-            return true;
-        }
-    }
-    return false;
+    return std::any_of(frames_.begin(), frames_.end(),
+                       [](const FrameResource &frame) {
+                           return frame.resource != nullptr;
+                       });
 }

@@ -1,4 +1,5 @@
 #include "core/AssetManager.h"
+#include <algorithm>
 #include <mutex>
 #include <system_error>
 
@@ -29,12 +30,10 @@ std::filesystem::path ResolveRoot(const std::filesystem::path &path) {
 
 bool HasParentTraversal(const std::filesystem::path &path) {
     const std::filesystem::path parent(L"..");
-    for (const std::filesystem::path &part : path) {
-        if (part == parent) {
-            return true;
-        }
-    }
-    return false;
+    return std::any_of(path.begin(), path.end(),
+                       [&parent](const std::filesystem::path &part) {
+                           return part == parent;
+                       });
 }
 
 bool IsWithinRoot(const std::filesystem::path &root,
@@ -52,9 +51,9 @@ bool ExistsNoThrow(const std::filesystem::path &path) {
 
 bool LooksLikeRepositoryAssetRoot(const std::filesystem::path &path) {
     return ExistsNoThrow(path / L"engine" / L"resources") &&
-           (ExistsNoThrow(path / L"1000.slnx") ||
-            ExistsNoThrow(path / L"build.cmd") ||
-            ExistsNoThrow(path / L"1000" / L"resources"));
+           (ExistsNoThrow(path / L"build.bat") ||
+            ExistsNoThrow(path / L"build.ps1") ||
+            ExistsNoThrow(path / L"build.cmd"));
 }
 
 bool HasLocalResources(const std::filesystem::path &path) {

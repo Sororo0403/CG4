@@ -134,23 +134,23 @@ class CollisionManager {
     /// <summary>
     /// レイヤーと有効状態から衝突判定対象かを判定する
     /// </summary>
-    bool CanCollide(const Body &a, const Body &b) const;
+    static bool CanCollide(const Body &a, const Body &b);
 
     /// <summary>
     /// Bodyの境界AABBを計算する
     /// </summary>
-    AABB ComputeBounds(const Shape &shape) const;
+    static AABB ComputeBounds(const Shape &shape);
 
     /// <summary>
     /// 2つの形状の衝突情報を計算する
     /// </summary>
-    CollisionUtil::CollisionResult TestShapes(const Shape &a,
-                                              const Shape &b) const;
+    static CollisionUtil::CollisionResult TestShapes(const Shape &a,
+                                                     const Shape &b);
 
     /// <summary>
     /// BodyDescから内部Bodyを作成する
     /// </summary>
-    Body CreateBody(const BodyDesc &desc);
+    static Body CreateBody(const BodyDesc &desc);
     BodyId AllocateBodyId();
 
   private:

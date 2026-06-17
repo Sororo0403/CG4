@@ -1,5 +1,8 @@
 #include "graphics/DepthPyramid.h"
 
+#include "DepthPyramidInternal.h"
+#include "RootSignatureUtils.h"
+#include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/GpuResourceHelpers.h"
@@ -18,7 +21,9 @@ using Microsoft::WRL::ComPtr;
 namespace {
 using GpuResourceHelpers::CreateCommittedResourceChecked;
 
-uint32_t HalfCeil(uint32_t value) { return (std::max)(1u, (value + 1u) / 2u); }
+uint32_t HalfCeil(uint32_t value) {
+    return (std::max)(1u, (value + 1u) / 2u);
+}
 
 uint32_t CalculateMipCount(uint32_t width, uint32_t height) {
     uint32_t count = 1u;
@@ -32,15 +37,40 @@ uint32_t CalculateMipCount(uint32_t width, uint32_t height) {
 
 } // namespace
 
-DepthPyramid::~DepthPyramid() { Release(true); }
+DepthPyramid::DepthPyramid() : resources_(std::make_unique<State>()) {}
 
-void DepthPyramid::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
-                              uint32_t width, uint32_t height) {
+DepthPyramid::~DepthPyramid() {
+    Release(true);
+}
+
+bool DepthPyramid::IsReady() const {
+    return dxCommon_ != nullptr && srvManager_ != nullptr && resources_->resource &&
+           resources_->rootSignature && resources_->pipelineState &&
+           resources_->srvGpuHandle.ptr != 0 && resources_->mipCount > 0;
+}
+
+D3D12_GPU_DESCRIPTOR_HANDLE DepthPyramid::GetGpuHandle() const {
+    return resources_->srvGpuHandle;
+}
+
+uint32_t DepthPyramid::GetWidth() const {
+    return resources_->width;
+}
+
+uint32_t DepthPyramid::GetHeight() const {
+    return resources_->height;
+}
+
+uint32_t DepthPyramid::GetMipCount() const {
+    return resources_->mipCount;
+}
+
+void DepthPyramid::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager, uint32_t width,
+                              uint32_t height) {
     if (!Release()) {
         return;
     }
-    if (dxCommon == nullptr || dxCommon->GetDevice() == nullptr ||
-        srvManager == nullptr) {
+    if (dxCommon == nullptr || dxCommon->GetDevice() == nullptr || srvManager == nullptr) {
         return;
     }
 
@@ -51,7 +81,9 @@ void DepthPyramid::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
     }
 }
 
-bool DepthPyramid::Release() { return Release(false); }
+bool DepthPyramid::Release() {
+    return Release(false);
+}
 
 bool DepthPyramid::Release(bool allowFrameAbort) {
     if (!ReleaseResources(allowFrameAbort)) {
@@ -61,15 +93,15 @@ bool DepthPyramid::Release(bool allowFrameAbort) {
         dxCommon_->UnregisterFrameRollbacks(this);
     }
     FreeDescriptors();
-    pipelineState_.Reset();
-    rootSignature_.Reset();
+    resources_->pipelineState.Reset();
+    resources_->rootSignature.Reset();
     dxCommon_ = nullptr;
     srvManager_ = nullptr;
-    sourceWidth_ = 1;
-    sourceHeight_ = 1;
-    width_ = 1;
-    height_ = 1;
-    mipCount_ = 0;
+    resources_->sourceWidth = 1;
+    resources_->sourceHeight = 1;
+    resources_->width = 1;
+    resources_->height = 1;
+    resources_->mipCount = 0;
     return true;
 }
 
@@ -82,9 +114,9 @@ bool DepthPyramid::Resize(uint32_t width, uint32_t height) {
     const uint32_t newSourceHeight = (std::max)(height, 1u);
     const uint32_t newWidth = HalfCeil(newSourceWidth);
     const uint32_t newHeight = HalfCeil(newSourceHeight);
-    if (resource_ && newSourceWidth == sourceWidth_ &&
-        newSourceHeight == sourceHeight_ && newWidth == width_ &&
-        newHeight == height_) {
+    if (resources_->resource && newSourceWidth == resources_->sourceWidth &&
+        newSourceHeight == resources_->sourceHeight && newWidth == resources_->width &&
+        newHeight == resources_->height) {
         return true;
     }
     if (dxCommon_->IsCommandListRecording()) {
@@ -93,8 +125,8 @@ bool DepthPyramid::Resize(uint32_t width, uint32_t height) {
     if (!CreateResources(newWidth, newHeight)) {
         return false;
     }
-    sourceWidth_ = newSourceWidth;
-    sourceHeight_ = newSourceHeight;
+    resources_->sourceWidth = newSourceWidth;
+    resources_->sourceHeight = newSourceHeight;
     return true;
 }
 
@@ -103,39 +135,37 @@ bool DepthPyramid::Build(D3D12_GPU_DESCRIPTOR_HANDLE sceneDepth) {
         return false;
     }
 
-    ID3D12GraphicsCommandList *commandList = dxCommon_->GetCommandList();
-    ID3D12DescriptorHeap *heap = srvManager_->GetHeap();
+    ID3D12GraphicsCommandList* commandList = dxCommon_->GetCommandList();
+    ID3D12DescriptorHeap* heap = srvManager_->GetHeap();
     if (commandList == nullptr || heap == nullptr) {
         return false;
     }
-    if (descriptorStart_ == UINT32_MAX) {
+    if (!IsValidResourceId(resources_->descriptorStart)) {
         return false;
     }
-    for (uint32_t mip = 0; mip < mipCount_; ++mip) {
+    for (uint32_t mip = 0; mip < resources_->mipCount; ++mip) {
         if (mip > 0u &&
-            srvManager_->GetGpuHandle(descriptorStart_ + 1u + mip - 1u).ptr ==
-                0) {
+            srvManager_->GetGpuHandle(resources_->descriptorStart + 1u + mip - 1u).ptr == 0) {
             return false;
         }
-        if (srvManager_->GetGpuHandle(descriptorStart_ + 1u + mipCount_ + mip)
+        if (srvManager_->GetGpuHandle(resources_->descriptorStart + 1u + resources_->mipCount + mip)
                 .ptr == 0) {
             return false;
         }
     }
 
-    ID3D12DescriptorHeap *heaps[] = {heap};
+    ID3D12DescriptorHeap* heaps[] = {heap};
     commandList->SetDescriptorHeaps(1, heaps);
-    commandList->SetComputeRootSignature(rootSignature_.Get());
-    commandList->SetPipelineState(pipelineState_.Get());
+    commandList->SetComputeRootSignature(resources_->rootSignature.Get());
+    commandList->SetPipelineState(resources_->pipelineState.Get());
 
-    uint32_t sourceWidth = sourceWidth_;
-    uint32_t sourceHeight = sourceHeight_;
-    uint32_t targetWidth = width_;
-    uint32_t targetHeight = height_;
+    uint32_t sourceWidth = resources_->sourceWidth;
+    uint32_t sourceHeight = resources_->sourceHeight;
+    uint32_t targetWidth = resources_->width;
+    uint32_t targetHeight = resources_->height;
 
-    for (uint32_t mip = 0; mip < mipCount_; ++mip) {
-        if (!TransitionSubresource(mip,
-                                   D3D12_RESOURCE_STATE_UNORDERED_ACCESS)) {
+    for (uint32_t mip = 0; mip < resources_->mipCount; ++mip) {
+        if (!TransitionSubresource(mip, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)) {
             return false;
         }
 
@@ -148,28 +178,23 @@ bool DepthPyramid::Build(D3D12_GPU_DESCRIPTOR_HANDLE sceneDepth) {
 
         D3D12_GPU_DESCRIPTOR_HANDLE sourceHandle = sceneDepth;
         if (mip > 0u) {
-            if (!TransitionSubresource(
-                    mip - 1u,
-                    D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)) {
+            if (!TransitionSubresource(mip - 1u, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)) {
                 return false;
             }
-            sourceHandle = srvManager_->GetGpuHandle(descriptorStart_ + 1u +
-                                                     (mip - 1u));
+            sourceHandle = srvManager_->GetGpuHandle(resources_->descriptorStart + 1u + (mip - 1u));
         }
-        const D3D12_GPU_DESCRIPTOR_HANDLE targetHandle =
-            srvManager_->GetGpuHandle(descriptorStart_ + 1u + mipCount_ + mip);
+        const D3D12_GPU_DESCRIPTOR_HANDLE targetHandle = srvManager_->GetGpuHandle(
+            resources_->descriptorStart + 1u + resources_->mipCount + mip);
         if (sourceHandle.ptr == 0 || targetHandle.ptr == 0) {
             return false;
         }
 
-        commandList->SetComputeRoot32BitConstants(
-            0, sizeof(BuildConstants) / sizeof(uint32_t), &constants, 0);
+        commandList->SetComputeRoot32BitConstants(0, sizeof(BuildConstants) / sizeof(uint32_t),
+                                                  &constants, 0);
         commandList->SetComputeRootDescriptorTable(1, sourceHandle);
         commandList->SetComputeRootDescriptorTable(2, targetHandle);
-        commandList->Dispatch((targetWidth + 7u) / 8u,
-                              (targetHeight + 7u) / 8u, 1u);
-        D3D12_RESOURCE_BARRIER uav =
-            CD3DX12_RESOURCE_BARRIER::UAV(resource_.Get());
+        commandList->Dispatch((targetWidth + 7u) / 8u, (targetHeight + 7u) / 8u, 1u);
+        D3D12_RESOURCE_BARRIER uav = CD3DX12_RESOURCE_BARRIER::UAV(resources_->resource.Get());
         commandList->ResourceBarrier(1, &uav);
 
         sourceWidth = targetWidth;
@@ -178,10 +203,9 @@ bool DepthPyramid::Build(D3D12_GPU_DESCRIPTOR_HANDLE sceneDepth) {
         targetHeight = HalfCeil(targetHeight);
     }
 
-    if (mipCount_ > 0u) {
-        if (!TransitionSubresource(
-                mipCount_ - 1u,
-                D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)) {
+    if (resources_->mipCount > 0u) {
+        if (!TransitionSubresource(resources_->mipCount - 1u,
+                                   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)) {
             return false;
         }
     }
@@ -207,53 +231,42 @@ bool DepthPyramid::CreatePipeline() {
     CD3DX12_ROOT_SIGNATURE_DESC rootDesc{};
     rootDesc.Init(_countof(params), params, 0, nullptr);
 
-    ComPtr<ID3DBlob> blob;
-    ComPtr<ID3DBlob> error;
-    if (FAILED(D3D12SerializeRootSignature(
-            &rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error)) ||
-        !blob) {
-        return false;
-    }
-    if (FAILED(dxCommon_->GetDevice()->CreateRootSignature(
-            0, blob->GetBufferPointer(), blob->GetBufferSize(),
-            IID_PPV_ARGS(&rootSignature_))) ||
-        !rootSignature_) {
-        rootSignature_.Reset();
+    if (!RootSignatureUtils::CreateRootSignature(dxCommon_->GetDevice(), rootDesc,
+                                                 resources_->rootSignature)) {
         return false;
     }
 
-    auto cs = ShaderCompiler::Compile(ShaderPaths::DepthPyramidCS, "main",
-                                      "cs_6_6");
+    auto cs = ShaderCompiler::Compile(ShaderPaths::DepthPyramidCS, "main", "cs_6_6");
     if (!cs) {
         return false;
     }
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{};
-    psoDesc.pRootSignature = rootSignature_.Get();
+    psoDesc.pRootSignature = resources_->rootSignature.Get();
     psoDesc.CS = {cs->GetBufferPointer(), cs->GetBufferSize()};
     if (FAILED(dxCommon_->GetDevice()->CreateComputePipelineState(
-            &psoDesc, IID_PPV_ARGS(&pipelineState_))) ||
-        !pipelineState_) {
-        pipelineState_.Reset();
+            &psoDesc, IID_PPV_ARGS(&resources_->pipelineState))) ||
+        !resources_->pipelineState) {
+        resources_->pipelineState.Reset();
         return false;
     }
     return true;
 }
 
 bool DepthPyramid::CreateResources(uint32_t width, uint32_t height) {
-    if (dxCommon_ == nullptr || dxCommon_->GetDevice() == nullptr ||
-        srvManager_ == nullptr || width == 0u || height == 0u) {
+    if (dxCommon_ == nullptr || dxCommon_->GetDevice() == nullptr || srvManager_ == nullptr ||
+        width == 0u || height == 0u) {
         return false;
     }
 
     const uint32_t newMipCount = CalculateMipCount(width, height);
     const uint32_t newDescriptorCount = 1u + newMipCount * 2u;
-    const bool needsNewDescriptors = descriptorCount_ < newDescriptorCount;
-    uint32_t nextDescriptorStart = descriptorStart_;
-    uint32_t nextDescriptorCount = descriptorCount_;
+    const bool needsNewDescriptors = resources_->descriptorCount < newDescriptorCount;
+    uint32_t nextDescriptorStart = resources_->descriptorStart;
+    uint32_t nextDescriptorCount = resources_->descriptorCount;
     if (needsNewDescriptors) {
         nextDescriptorStart = srvManager_->AllocateRange(newDescriptorCount);
-        if (nextDescriptorStart == UINT32_MAX) {
+        if (!IsValidResourceId(nextDescriptorStart)) {
             return false;
         }
         nextDescriptorCount = newDescriptorCount;
@@ -265,22 +278,14 @@ bool DepthPyramid::CreateResources(uint32_t width, uint32_t height) {
         }
     };
 
-    if (!CanReleaseGpuResources(dxCommon_, resource_ != nullptr ||
-                                               descriptorStart_ !=
-                                                   UINT32_MAX)) {
+    if (!CanReleaseGpuResources(dxCommon_, resources_->resource != nullptr ||
+                                               IsValidResourceId(resources_->descriptorStart))) {
         rollbackDescriptorAllocation();
         return false;
     }
 
     std::vector<D3D12_RESOURCE_STATES> nextSubresourceStates;
-    try {
-        nextSubresourceStates.assign(
-            newMipCount, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    } catch (...) {
-        rollbackDescriptorAllocation();
-        return false;
-    }
-
+    nextSubresourceStates.assign(newMipCount, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     D3D12_RESOURCE_DESC desc{};
     desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     desc.Width = width;
@@ -294,10 +299,9 @@ bool DepthPyramid::CreateResources(uint32_t width, uint32_t height) {
 
     CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
     ComPtr<ID3D12Resource> newResource;
-    if (!CreateCommittedResourceChecked(
-            dxCommon_->GetDevice(), &heapProps, D3D12_HEAP_FLAG_NONE, &desc,
-            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-            newResource.GetAddressOf())) {
+    if (!CreateCommittedResourceChecked(dxCommon_->GetDevice(), &heapProps, D3D12_HEAP_FLAG_NONE,
+                                        &desc, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+                                        newResource.GetAddressOf())) {
         rollbackDescriptorAllocation();
         return false;
     }
@@ -309,16 +313,14 @@ bool DepthPyramid::CreateResources(uint32_t width, uint32_t height) {
     fullSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     fullSrv.Texture2D.MipLevels = newMipCount;
     dxCommon_->GetDevice()->CreateShaderResourceView(
-        newResource.Get(), &fullSrv,
-        srvManager_->GetCpuHandle(nextDescriptorStart));
+        newResource.Get(), &fullSrv, srvManager_->GetCpuHandle(nextDescriptorStart));
 
     for (uint32_t mip = 0; mip < newMipCount; ++mip) {
         D3D12_SHADER_RESOURCE_VIEW_DESC mipSrv = fullSrv;
         mipSrv.Texture2D.MostDetailedMip = mip;
         mipSrv.Texture2D.MipLevels = 1;
         dxCommon_->GetDevice()->CreateShaderResourceView(
-            newResource.Get(), &mipSrv,
-            srvManager_->GetCpuHandle(nextDescriptorStart + 1u + mip));
+            newResource.Get(), &mipSrv, srvManager_->GetCpuHandle(nextDescriptorStart + 1u + mip));
 
         D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};
         uav.Format = DXGI_FORMAT_R32_FLOAT;
@@ -326,56 +328,43 @@ bool DepthPyramid::CreateResources(uint32_t width, uint32_t height) {
         uav.Texture2D.MipSlice = mip;
         dxCommon_->GetDevice()->CreateUnorderedAccessView(
             newResource.Get(), nullptr, &uav,
-            srvManager_->GetCpuHandle(nextDescriptorStart + 1u + newMipCount +
-                                      mip));
+            srvManager_->GetCpuHandle(nextDescriptorStart + 1u + newMipCount + mip));
     }
 
     if (needsNewDescriptors) {
         FreeDescriptors();
-        descriptorStart_ = nextDescriptorStart;
-        descriptorCount_ = nextDescriptorCount;
+        resources_->descriptorStart = nextDescriptorStart;
+        resources_->descriptorCount = nextDescriptorCount;
     }
-    resource_ = std::move(newResource);
-    width_ = width;
-    height_ = height;
-    mipCount_ = newMipCount;
-    subresourceStates_ = std::move(nextSubresourceStates);
-    srvGpuHandle_ = srvManager_->GetGpuHandle(descriptorStart_);
-    return srvGpuHandle_.ptr != 0;
+    resources_->resource = std::move(newResource);
+    resources_->width = width;
+    resources_->height = height;
+    resources_->mipCount = newMipCount;
+    resources_->subresourceStates = std::move(nextSubresourceStates);
+    resources_->srvGpuHandle = srvManager_->GetGpuHandle(resources_->descriptorStart);
+    return resources_->srvGpuHandle.ptr != 0;
 }
 
-bool DepthPyramid::ReleaseResources() { return ReleaseResources(false); }
+bool DepthPyramid::ReleaseResources() {
+    return ReleaseResources(false);
+}
 
 bool DepthPyramid::ReleaseResources(bool allowFrameAbort) {
-    if (!CanReleaseGpuResources(dxCommon_, resource_ != nullptr ||
-                                               descriptorStart_ !=
-                                                   UINT32_MAX,
+    if (!CanReleaseGpuResources(dxCommon_,
+                                resources_->resource != nullptr ||
+                                    IsValidResourceId(resources_->descriptorStart),
                                 allowFrameAbort)) {
         return false;
     }
-    resource_.Reset();
-    subresourceStates_.clear();
-    srvGpuHandle_ = {};
-    mipCount_ = 0;
-    return true;
-}
-
-bool DepthPyramid::AllocateDescriptors(uint32_t mipCount) {
-    if (srvManager_ == nullptr || mipCount == 0u) {
-        return false;
-    }
-    const uint32_t count = 1u + mipCount * 2u;
-    const uint32_t start = srvManager_->AllocateRange(count);
-    if (start == UINT32_MAX) {
-        return false;
-    }
-    descriptorStart_ = start;
-    descriptorCount_ = count;
+    resources_->resource.Reset();
+    resources_->subresourceStates.clear();
+    resources_->srvGpuHandle = {};
+    resources_->mipCount = 0;
     return true;
 }
 
 void DepthPyramid::FreeDescriptorRange(uint32_t start, uint32_t count) {
-    if (srvManager_ == nullptr || start == UINT32_MAX) {
+    if (srvManager_ == nullptr || !IsValidResourceId(start)) {
         return;
     }
     for (uint32_t offset = 0; offset < count; ++offset) {
@@ -384,39 +373,37 @@ void DepthPyramid::FreeDescriptorRange(uint32_t start, uint32_t count) {
 }
 
 void DepthPyramid::FreeDescriptors() {
-    FreeDescriptorRange(descriptorStart_, descriptorCount_);
-    descriptorStart_ = UINT32_MAX;
-    descriptorCount_ = 0;
-    srvGpuHandle_ = {};
+    FreeDescriptorRange(resources_->descriptorStart, resources_->descriptorCount);
+    resources_->descriptorStart = kInvalidResourceId;
+    resources_->descriptorCount = 0;
+    resources_->srvGpuHandle = {};
 }
 
-bool DepthPyramid::TransitionSubresource(uint32_t mip,
-                                         D3D12_RESOURCE_STATES state) {
-    if (mip >= subresourceStates_.size() || dxCommon_ == nullptr ||
-        resource_ == nullptr) {
+bool DepthPyramid::TransitionSubresource(uint32_t mip, D3D12_RESOURCE_STATES state) {
+    if (mip >= resources_->subresourceStates.size() || dxCommon_ == nullptr ||
+        resources_->resource == nullptr) {
         return false;
     }
-    if (subresourceStates_[mip] == state) {
+    if (resources_->subresourceStates[mip] == state) {
         return true;
     }
 
-    ID3D12GraphicsCommandList *commandList = dxCommon_->GetCommandList();
+    ID3D12GraphicsCommandList* commandList = dxCommon_->GetCommandList();
     if (commandList == nullptr) {
         return false;
     }
 
-    const D3D12_RESOURCE_STATES previousState = subresourceStates_[mip];
-    if (!dxCommon_->RegisterFrameRollback(
-            this, [this, mip, previousState]() {
-                if (mip < subresourceStates_.size()) {
-                    subresourceStates_[mip] = previousState;
-                }
-            })) {
+    const D3D12_RESOURCE_STATES previousState = resources_->subresourceStates[mip];
+    if (!dxCommon_->RegisterFrameRollback(this, [this, mip, previousState]() {
+            if (mip < resources_->subresourceStates.size()) {
+                resources_->subresourceStates[mip] = previousState;
+            }
+        })) {
         return false;
     }
-    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        resource_.Get(), previousState, state, mip);
+    auto barrier =
+        CD3DX12_RESOURCE_BARRIER::Transition(resources_->resource.Get(), previousState, state, mip);
     commandList->ResourceBarrier(1, &barrier);
-    subresourceStates_[mip] = state;
+    resources_->subresourceStates[mip] = state;
     return true;
 }

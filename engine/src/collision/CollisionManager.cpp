@@ -237,24 +237,18 @@ std::vector<CollisionManager::Hit> CollisionManager::FindPairs() const {
 }
 
 CollisionManager::Body *CollisionManager::FindBody(BodyId id) {
-    for (Body &body : bodies_) {
-        if (body.id == id) {
-            return &body;
-        }
-    }
-    return nullptr;
+    auto it = std::find_if(bodies_.begin(), bodies_.end(),
+                           [id](const Body &body) { return body.id == id; });
+    return it != bodies_.end() ? &*it : nullptr;
 }
 
 const CollisionManager::Body *CollisionManager::FindBody(BodyId id) const {
-    for (const Body &body : bodies_) {
-        if (body.id == id) {
-            return &body;
-        }
-    }
-    return nullptr;
+    auto it = std::find_if(bodies_.begin(), bodies_.end(),
+                           [id](const Body &body) { return body.id == id; });
+    return it != bodies_.end() ? &*it : nullptr;
 }
 
-bool CollisionManager::CanCollide(const Body &a, const Body &b) const {
+bool CollisionManager::CanCollide(const Body &a, const Body &b) {
     if (!a.desc.isActive || !b.desc.isActive || a.id == b.id) {
         return false;
     }
@@ -266,7 +260,7 @@ bool CollisionManager::CanCollide(const Body &a, const Body &b) const {
     return aAcceptsB && bAcceptsA;
 }
 
-AABB CollisionManager::ComputeBounds(const Shape &shape) const {
+AABB CollisionManager::ComputeBounds(const Shape &shape) {
     if (shape.type == ShapeType::AABB) {
         return NormalizeAABB(shape.aabb);
     }
@@ -324,7 +318,7 @@ AABB CollisionManager::ComputeBounds(const Shape &shape) const {
 }
 
 CollisionUtil::CollisionResult
-CollisionManager::TestShapes(const Shape &a, const Shape &b) const {
+CollisionManager::TestShapes(const Shape &a, const Shape &b) {
     return CollisionUtil::TestOBB(ToOBB(a), ToOBB(b));
 }
 

@@ -1,10 +1,10 @@
 #include "graphics/DynamicBuffer.h"
 
+#include "core/Alignment.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/GpuResourceHelpers.h"
 
 #include <cassert>
-#include <exception>
 #include <limits>
 #include <utility>
 
@@ -13,7 +13,6 @@ DynamicBuffer::~DynamicBuffer() {
         assert(false &&
                "DynamicBuffer::Reset must be called after GPU idle before "
                "destruction");
-        std::terminate();
     }
     Reset();
 }
@@ -91,14 +90,7 @@ D3D12_GPU_VIRTUAL_ADDRESS DynamicBuffer::GetGpuVirtualAddress() const {
 }
 
 size_t DynamicBuffer::AlignUp(size_t value, size_t alignment) {
-    if (alignment <= 1) {
-        return value;
-    }
-    const size_t addend = alignment - 1;
-    if (value > (std::numeric_limits<size_t>::max)() - addend) {
-        return (std::numeric_limits<size_t>::max)();
-    }
-    return ((value + addend) / alignment) * alignment;
+    return CoreAlignment::AlignUp(value, alignment);
 }
 
 bool DynamicBuffer::CreateResource(size_t capacity) {

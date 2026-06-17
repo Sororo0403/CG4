@@ -1,13 +1,8 @@
 #pragma once
-#include "graphics/UploadRingBuffer.h"
 #include "sprite/Sprite.h"
-#include <array>
-#include <DirectXMath.h>
 #include <cstddef>
 #include <cstdint>
-#include <vector>
-#include <d3d12.h>
-#include <wrl.h>
+#include <memory>
 
 class DirectXCommon;
 class TextureManager;
@@ -15,6 +10,7 @@ class SrvManager;
 
 class SpriteRenderer {
   public:
+    SpriteRenderer();
     ~SpriteRenderer();
 
     /// <summary>
@@ -56,13 +52,9 @@ class SpriteRenderer {
     /// </summary>
     void UpdateProjection(int width, int height);
     bool IsReady() const;
-    size_t GetUploadBytesPerFrame() const {
-        return uploadBuffer_.GetBytesPerFrame();
-    }
-    size_t GetUploadTotalBytes() const { return uploadBuffer_.GetTotalBytes(); }
-    size_t GetUploadFrameOffset() const {
-        return uploadBuffer_.GetFrameOffset();
-    }
+    size_t GetUploadBytesPerFrame() const;
+    size_t GetUploadTotalBytes() const;
+    size_t GetUploadFrameOffset() const;
 
   private:
     enum class PipelineKind : uint32_t {
@@ -82,17 +74,9 @@ class SpriteRenderer {
     static constexpr uint32_t kMaxSpriteDraws = 4096;
     static constexpr size_t kUploadBytesPerFrame = 1 * 1024 * 1024;
 
-    struct SpriteVertex {
-        DirectX::XMFLOAT3 pos;
-        DirectX::XMFLOAT2 uv;
-        DirectX::XMFLOAT4 color;
-    };
-
-    struct QueuedDraw {
-        PipelineKind pipelineKind = PipelineKind::Alpha;
-        uint32_t textureId = 0;
-        std::array<SpriteVertex, kVerticesPerSprite> vertices{};
-    };
+    struct SpriteVertex;
+    struct QueuedDraw;
+    struct State;
 
     /// <summary>
     /// ルートシグネチャを生成する
@@ -116,18 +100,5 @@ class SpriteRenderer {
     DirectXCommon *dxCommon_ = nullptr;
     TextureManager *textureManager_ = nullptr;
     SrvManager *srvManager_ = nullptr;
-
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineStates_
-        [static_cast<uint32_t>(RenderTargetKind::Count)]
-        [static_cast<uint32_t>(PipelineKind::Count)];
-
-    UploadRingBuffer uploadBuffer_;
-    uint32_t drawCursor_ = 0;
-    std::vector<QueuedDraw> queuedDraws_;
-    std::vector<SpriteVertex> batchVertices_;
-
-    DirectX::XMFLOAT4X4 matProjection_{};
-    PipelineKind activePipelineKind_ = PipelineKind::Alpha;
-    RenderTargetKind activeRenderTargetKind_ = RenderTargetKind::SceneColor;
+    std::unique_ptr<State> state_;
 };

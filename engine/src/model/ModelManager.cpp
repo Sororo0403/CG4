@@ -1,12 +1,15 @@
 #include "model/ModelManager.h"
+
+#include "ModelPrimitiveFactory.h"
 #include "core/AssetManager.h"
+#include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/GpuResourceLifetime.h"
 #include "graphics/SrvManager.h"
 #include "model/MaterialManager.h"
 #include "model/Vertex.h"
-#include "ModelPrimitiveFactory.h"
 #include "texture/TextureManager.h"
+
 #include <DirectXMath.h>
 #include <algorithm>
 #include <cwctype>
@@ -18,7 +21,7 @@
 
 namespace {
 
-std::filesystem::path ResolveModelPath(const std::filesystem::path &path) {
+std::filesystem::path ResolveModelPath(const std::filesystem::path& path) {
     return AssetManager::ResolvePathStrict(path);
 }
 
@@ -28,7 +31,7 @@ std::filesystem::path SafeCurrentPath() {
     return ec ? std::filesystem::path(L".") : path;
 }
 
-std::wstring NormalizeModelPathKey(const std::filesystem::path &path) {
+std::wstring NormalizeModelPathKey(const std::filesystem::path& path) {
     std::wstring key = path.lexically_normal().wstring();
 #ifdef _WIN32
     std::transform(key.begin(), key.end(), key.begin(),
@@ -37,7 +40,7 @@ std::wstring NormalizeModelPathKey(const std::filesystem::path &path) {
     return key;
 }
 
-std::string MakeAssimpModelPath(const std::filesystem::path &resolvedPath) {
+std::string MakeAssimpModelPath(const std::filesystem::path& resolvedPath) {
     std::error_code ec;
     const std::filesystem::path relative =
         std::filesystem::relative(resolvedPath, SafeCurrentPath(), ec);
@@ -51,7 +54,7 @@ std::string MakeAssimpModelPath(const std::filesystem::path &resolvedPath) {
     return resolvedPath.string();
 }
 
-void ResetModelPlayback(Model &model) {
+void ResetModelPlayback(Model& model) {
     if (!model.animations.empty()) {
         model.currentAnimation = model.animations.begin()->first;
         model.animationTime = 0.0f;
@@ -61,85 +64,68 @@ void ResetModelPlayback(Model &model) {
     }
 }
 
-bool CanAppendModel(const std::vector<Model> &models) {
-    if (models.size() >=
-        static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
+bool CanAppendModel(const std::vector<Model>& models) {
+    if (models.size() >= static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
         return false;
     }
     return true;
 }
 
-uint32_t AppendModel(std::vector<Model> &models, Model &&model) {
+uint32_t AppendModel(std::vector<Model>& models, Model&& model) {
     if (!CanAppendModel(models)) {
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
-    try {
-        models.reserve(models.size() + 1u);
-        models.push_back(std::move(model));
-    } catch (...) {
-        return UINT32_MAX;
-    }
+    models.reserve(models.size() + 1u);
+    models.push_back(std::move(model));
     return static_cast<uint32_t>(models.size() - 1);
 }
 
-bool ReserveSingleSubMesh(Model &model) {
-    try {
-        model.subMeshes.reserve(1u);
-    } catch (...) {
-        return false;
-    }
-    return true;
+void ReserveSingleSubMesh(Model& model) {
+    model.subMeshes.reserve(1u);
 }
 
-bool AppendSingleSubMesh(Model &model, const ModelSubMesh &subMesh) {
-    try {
-        model.subMeshes.push_back(subMesh);
-    } catch (...) {
-        return false;
-    }
-    return true;
+void AppendSingleSubMesh(Model& model, const ModelSubMesh& subMesh) {
+    model.subMeshes.push_back(subMesh);
 }
 
-void DestroyCreatedSubMesh(MeshManager &meshManager,
-                           MaterialManager &materialManager,
-                           ModelSubMesh &subMesh) {
-    if (subMesh.meshId != UINT32_MAX) {
+void DestroyCreatedSubMesh(MeshManager& meshManager, MaterialManager& materialManager,
+                           ModelSubMesh& subMesh) {
+    if (IsValidResourceId(subMesh.meshId)) {
         meshManager.DestroyMesh(subMesh.meshId);
-        subMesh.meshId = UINT32_MAX;
+        subMesh.meshId = kInvalidResourceId;
     }
     if (materialManager.IsValidMaterialId(subMesh.materialId)) {
         materialManager.DestroyMaterial(subMesh.materialId);
-        subMesh.materialId = UINT32_MAX;
+        subMesh.materialId = kInvalidResourceId;
     }
 }
 
-void DestroyModelMeshes(MeshManager &meshManager, Model &model) {
-    for (ModelSubMesh &subMesh : model.subMeshes) {
-        if (subMesh.meshId != UINT32_MAX) {
+void DestroyModelMeshes(MeshManager& meshManager, Model& model) {
+    for (ModelSubMesh& subMesh : model.subMeshes) {
+        if (IsValidResourceId(subMesh.meshId)) {
             meshManager.DestroyMesh(subMesh.meshId);
-            subMesh.meshId = UINT32_MAX;
+            subMesh.meshId = kInvalidResourceId;
         }
     }
-    model.meshId = UINT32_MAX;
+    model.meshId = kInvalidResourceId;
 }
 
-void DestroyModelMaterials(MaterialManager &materialManager, Model &model) {
-    for (ModelSubMesh &subMesh : model.subMeshes) {
+void DestroyModelMaterials(MaterialManager& materialManager, Model& model) {
+    for (ModelSubMesh& subMesh : model.subMeshes) {
         if (materialManager.IsValidMaterialId(subMesh.materialId)) {
             materialManager.DestroyMaterial(subMesh.materialId);
         }
-        subMesh.materialId = UINT32_MAX;
+        subMesh.materialId = kInvalidResourceId;
     }
     if (materialManager.IsValidMaterialId(model.materialId)) {
         materialManager.DestroyMaterial(model.materialId);
     }
-    model.materialId = UINT32_MAX;
+    model.materialId = kInvalidResourceId;
 }
 
-void DestroyModelSkinClusters(DirectXCommon *dxCommon, SrvManager *srvManager,
-                              Model &model) {
-    for (ModelSubMesh &subMesh : model.subMeshes) {
-        SkinCluster &skinCluster = subMesh.skinCluster;
+void DestroyModelSkinClusters(DirectXCommon* dxCommon, SrvManager* srvManager, Model& model) {
+    for (ModelSubMesh& subMesh : model.subMeshes) {
+        SkinCluster& skinCluster = subMesh.skinCluster;
 
         if (dxCommon != nullptr) {
             dxCommon->UnregisterFrameRollbacks(&skinCluster);
@@ -151,12 +137,11 @@ void DestroyModelSkinClusters(DirectXCommon *dxCommon, SrvManager *srvManager,
             srvManager->FreeIfAllocated(skinCluster.skinnedVertexUavIndex);
         }
 
-        if (skinCluster.influenceResource &&
-            skinCluster.mappedInfluence != nullptr) {
+        if (skinCluster.influenceResource && skinCluster.mappedInfluence != nullptr) {
             skinCluster.influenceResource->Unmap(0, nullptr);
             skinCluster.mappedInfluence = nullptr;
         }
-        for (SkinPaletteFrame &frame : skinCluster.paletteFrames) {
+        for (SkinPaletteFrame& frame : skinCluster.paletteFrames) {
             if (frame.resource && frame.mappedPalette != nullptr) {
                 frame.resource->Unmap(0, nullptr);
                 frame.mappedPalette = nullptr;
@@ -167,85 +152,70 @@ void DestroyModelSkinClusters(DirectXCommon *dxCommon, SrvManager *srvManager,
     }
 }
 
-void DestroyModelResources(MeshManager &meshManager,
-                           MaterialManager &materialManager,
-                           DirectXCommon *dxCommon, SrvManager *srvManager,
-                           Model &model) {
+void DestroyModelResources(MeshManager& meshManager, MaterialManager& materialManager,
+                           DirectXCommon* dxCommon, SrvManager* srvManager, Model& model) {
     DestroyModelSkinClusters(dxCommon, srvManager, model);
     DestroyModelMeshes(meshManager, model);
     DestroyModelMaterials(materialManager, model);
 }
 
-uint32_t AppendModelOrDestroyResources(std::vector<Model> &models,
-                                       MeshManager &meshManager,
-                                       MaterialManager &materialManager,
-                                       DirectXCommon *dxCommon,
-                                       SrvManager *srvManager,
-                                       Model &model) {
+uint32_t AppendModelOrDestroyResources(std::vector<Model>& models, MeshManager& meshManager,
+                                       MaterialManager& materialManager, DirectXCommon* dxCommon,
+                                       SrvManager* srvManager, Model& model) {
     const uint32_t modelId = AppendModel(models, std::move(model));
-    if (modelId == UINT32_MAX) {
-        DestroyModelResources(meshManager, materialManager, dxCommon,
-                              srvManager, model);
+    if (!IsValidResourceId(modelId)) {
+        DestroyModelResources(meshManager, materialManager, dxCommon, srvManager, model);
     }
     return modelId;
 }
 
-uint32_t AppendPrimitiveModel(
-    std::vector<Model> &models, MeshManager &meshManager,
-    MaterialManager &materialManager, ModelRenderer &modelRenderer,
-    DirectXCommon *dxCommon, SrvManager *srvManager, uint32_t textureId,
-    ModelPrimitiveFactory::PrimitiveMeshData &&primitive) {
+uint32_t AppendPrimitiveModel(std::vector<Model>& models, MeshManager& meshManager,
+                              MaterialManager& materialManager, ModelRenderer& modelRenderer,
+                              DirectXCommon* dxCommon, SrvManager* srvManager, uint32_t textureId,
+                              ModelPrimitiveFactory::PrimitiveMeshData&& primitive) {
     Model model{};
-    if (!ReserveSingleSubMesh(model)) {
-        return UINT32_MAX;
-    }
+    ReserveSingleSubMesh(model);
 
     ModelSubMesh subMesh{};
     subMesh.vertexCount = static_cast<uint32_t>(primitive.vertices.size());
     subMesh.meshId = meshManager.CreateMesh(
-        primitive.vertices.data(), sizeof(Vertex),
-        static_cast<uint32_t>(primitive.vertices.size()),
+        primitive.vertices.data(), sizeof(Vertex), static_cast<uint32_t>(primitive.vertices.size()),
         primitive.indices.data(), static_cast<uint32_t>(primitive.indices.size()));
-    if (subMesh.meshId == UINT32_MAX) {
-        return UINT32_MAX;
+    if (!IsValidResourceId(subMesh.meshId)) {
+        return kInvalidResourceId;
     }
     subMesh.textureId = textureId;
     subMesh.materialId = materialManager.CreateMaterial(primitive.material);
-    if (subMesh.materialId == UINT32_MAX) {
+    if (!IsValidResourceId(subMesh.materialId)) {
         meshManager.DestroyMesh(subMesh.meshId);
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
 
-    if (!AppendSingleSubMesh(model, subMesh)) {
-        DestroyCreatedSubMesh(meshManager, materialManager, subMesh);
-        return UINT32_MAX;
-    }
+    AppendSingleSubMesh(model, subMesh);
     model.meshId = subMesh.meshId;
     model.textureId = textureId;
     model.materialId = subMesh.materialId;
 
     if (!modelRenderer.CreateSkinClusters(model)) {
-        DestroyModelResources(meshManager, materialManager, dxCommon,
-                              srvManager, model);
-        return UINT32_MAX;
+        DestroyModelResources(meshManager, materialManager, dxCommon, srvManager, model);
+        return kInvalidResourceId;
     }
-    return AppendModelOrDestroyResources(models, meshManager, materialManager,
-                                         dxCommon, srvManager, model);
+    return AppendModelOrDestroyResources(models, meshManager, materialManager, dxCommon, srvManager,
+                                         model);
 }
-
 
 } // namespace
 
 namespace {
-ModelManager *gActiveModelManager = nullptr;
+ModelManager* gActiveModelManager = nullptr;
 }
 
-ModelManager &ModelManager::GetInstance() {
+ModelManager& ModelManager::GetInstance() {
     static ModelManager instance;
     return gActiveModelManager != nullptr ? *gActiveModelManager : instance;
 }
 
-void ModelManager::SetActiveInstance(ModelManager *instance) {
+void ModelManager::SetActiveInstance(ModelManager* instance) {
     gActiveModelManager = instance;
 }
 
@@ -253,8 +223,8 @@ ModelManager::~ModelManager() {
     Finalize(true);
 }
 
-void ModelManager::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
-                              TextureManager *textureManager) {
+void ModelManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager,
+                              TextureManager* textureManager) {
     if (!dxCommon || !srvManager || !textureManager) {
         Finalize();
         return;
@@ -273,15 +243,16 @@ void ModelManager::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
 
     assimpLoader_.Initialize(textureManager_, &meshManager_, &materialManager_);
 
-    modelRenderer_.Initialize(dxCommon_, srvManager, &meshManager_,
-                              textureManager_, &materialManager_);
+    modelRenderer_.Initialize(dxCommon_, srvManager, &meshManager_, textureManager_,
+                              &materialManager_);
 }
 
-bool ModelManager::Finalize() { return Finalize(false); }
+bool ModelManager::Finalize() {
+    return Finalize(false);
+}
 
 bool ModelManager::Finalize(bool allowFrameAbort) {
-    if (!CanReleaseGpuResources(dxCommon_, !models_.empty(),
-                                allowFrameAbort)) {
+    if (!CanReleaseGpuResources(dxCommon_, !models_.empty(), allowFrameAbort)) {
         return false;
     }
 
@@ -289,7 +260,7 @@ bool ModelManager::Finalize(bool allowFrameAbort) {
         return false;
     }
 
-    for (Model &model : models_) {
+    for (Model& model : models_) {
         DestroyModelSkinClusters(dxCommon_, srvManager_, model);
     }
 
@@ -314,11 +285,11 @@ void ModelManager::ReleaseUploadBuffers() {
     meshManager_.ReleaseUploadBuffers();
     materialManager_.ReleaseDeferredResources();
 }
-uint32_t ModelManager::Load(const std::wstring &path) {
+uint32_t ModelManager::Load(const std::wstring& path) {
     std::filesystem::path p = ResolveModelPath(path);
     std::error_code ec;
     if (!std::filesystem::exists(p, ec)) {
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
 
     const std::wstring pathKey = NormalizeModelPathKey(p);
@@ -327,7 +298,7 @@ uint32_t ModelManager::Load(const std::wstring &path) {
         if (it->second >= models_.size()) {
             modelPathToId_.erase(it);
         } else {
-            Model &cached = models_[it->second];
+            Model& cached = models_[it->second];
             ResetModelPlayback(cached);
             animator_.Update(cached, 0.0f);
             modelRenderer_.UpdateSkinClusters(cached);
@@ -339,12 +310,11 @@ uint32_t ModelManager::Load(const std::wstring &path) {
 
     Model model = assimpLoader_.Load(pathStr);
     if (model.subMeshes.empty()) {
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
     if (!modelRenderer_.CreateSkinClusters(model)) {
-        DestroyModelResources(meshManager_, materialManager_, dxCommon_,
-                              srvManager_, model);
-        return UINT32_MAX;
+        DestroyModelResources(meshManager_, materialManager_, dxCommon_, srvManager_, model);
+        return kInvalidResourceId;
     }
 
     ResetModelPlayback(model);
@@ -352,255 +322,72 @@ uint32_t ModelManager::Load(const std::wstring &path) {
     animator_.Update(model, 0.0f);
     modelRenderer_.UpdateSkinClusters(model);
 
-    uint32_t modelId =
-        AppendModelOrDestroyResources(models_, meshManager_, materialManager_,
-                                      dxCommon_, srvManager_, model);
-    if (modelId == UINT32_MAX) {
+    uint32_t modelId = AppendModelOrDestroyResources(models_, meshManager_, materialManager_,
+                                                     dxCommon_, srvManager_, model);
+    if (!IsValidResourceId(modelId)) {
         return modelId;
     }
-    try {
-        modelPathToId_[pathKey] = modelId;
-    } catch (...) {
-    }
-
+    modelPathToId_[pathKey] = modelId;
     return modelId;
 }
-uint32_t ModelManager::CreatePlane(uint32_t textureId,
-                                   const Material &material) {
+uint32_t ModelManager::CreatePlane(uint32_t textureId, const Material& material) {
     auto primitive = ModelPrimitiveFactory::BuildPlane(textureId, material);
     if (!primitive) {
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
-    return AppendPrimitiveModel(models_, meshManager_, materialManager_,
-                                modelRenderer_, dxCommon_, srvManager_,
-                                textureId, std::move(*primitive));
+    return AppendPrimitiveModel(models_, meshManager_, materialManager_, modelRenderer_, dxCommon_,
+                                srvManager_, textureId, std::move(*primitive));
 }
 
-uint32_t ModelManager::CreateBox(uint32_t textureId, const Material &material,
-                                 float width, float height, float depth) {
-    auto primitive = ModelPrimitiveFactory::BuildBox(textureId, material, width,
-                                                     height, depth);
+uint32_t ModelManager::CreateBox(uint32_t textureId, const Material& material, float width,
+                                 float height, float depth) {
+    auto primitive = ModelPrimitiveFactory::BuildBox(textureId, material, width, height, depth);
     if (!primitive) {
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
-    return AppendPrimitiveModel(models_, meshManager_, materialManager_,
-                                modelRenderer_, dxCommon_, srvManager_,
-                                textureId, std::move(*primitive));
+    return AppendPrimitiveModel(models_, meshManager_, materialManager_, modelRenderer_, dxCommon_,
+                                srvManager_, textureId, std::move(*primitive));
 }
 
-uint32_t ModelManager::CreateSphere(uint32_t textureId,
-                                    const Material &material, uint32_t slice,
+uint32_t ModelManager::CreateSphere(uint32_t textureId, const Material& material, uint32_t slice,
                                     uint32_t stack, float radius) {
-    auto primitive = ModelPrimitiveFactory::BuildSphere(textureId, material,
-                                                        slice, stack, radius);
+    auto primitive = ModelPrimitiveFactory::BuildSphere(textureId, material, slice, stack, radius);
     if (!primitive) {
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
-    return AppendPrimitiveModel(models_, meshManager_, materialManager_,
-                                modelRenderer_, dxCommon_, srvManager_,
-                                textureId, std::move(*primitive));
+    return AppendPrimitiveModel(models_, meshManager_, materialManager_, modelRenderer_, dxCommon_,
+                                srvManager_, textureId, std::move(*primitive));
 }
 
-uint32_t ModelManager::CreateRing(uint32_t textureId, const Material &material,
-                                  uint32_t divide, float outerRadius,
-                                  float innerRadius) {
-    auto primitive = ModelPrimitiveFactory::BuildRing(textureId, material,
-                                                      divide, outerRadius,
-                                                      innerRadius);
+uint32_t ModelManager::CreateRing(uint32_t textureId, const Material& material, uint32_t divide,
+                                  float outerRadius, float innerRadius) {
+    auto primitive =
+        ModelPrimitiveFactory::BuildRing(textureId, material, divide, outerRadius, innerRadius);
     if (!primitive) {
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
-    return AppendPrimitiveModel(models_, meshManager_, materialManager_,
-                                modelRenderer_, dxCommon_, srvManager_,
-                                textureId, std::move(*primitive));
+    return AppendPrimitiveModel(models_, meshManager_, materialManager_, modelRenderer_, dxCommon_,
+                                srvManager_, textureId, std::move(*primitive));
 }
 
-uint32_t ModelManager::CreateCylinder(uint32_t textureId,
-                                      const Material &material, uint32_t divide,
-                                      float topRadius, float bottomRadius,
-                                      float height) {
-    auto primitive = ModelPrimitiveFactory::BuildCylinder(
-        textureId, material, divide, topRadius, bottomRadius, height);
+uint32_t ModelManager::CreateCylinder(uint32_t textureId, const Material& material, uint32_t divide,
+                                      float topRadius, float bottomRadius, float height) {
+    auto primitive = ModelPrimitiveFactory::BuildCylinder(textureId, material, divide, topRadius,
+                                                          bottomRadius, height);
     if (!primitive) {
-        return UINT32_MAX;
+        return kInvalidResourceId;
     }
-    return AppendPrimitiveModel(models_, meshManager_, materialManager_,
-                                modelRenderer_, dxCommon_, srvManager_,
-                                textureId, std::move(*primitive));
+    return AppendPrimitiveModel(models_, meshManager_, materialManager_, modelRenderer_, dxCommon_,
+                                srvManager_, textureId, std::move(*primitive));
 }
 
-uint32_t ModelManager::CreateLowPolyTerrain(uint32_t textureId,
-                                            const Material &material,
-                                            uint32_t grid, float size,
-                                            float maxHeight, float flatRadius,
-                                            uint32_t seed) {
-    auto primitive = ModelPrimitiveFactory::BuildLowPolyTerrain(
-        textureId, material, grid, size, maxHeight, flatRadius, seed);
-    if (!primitive) {
-        return UINT32_MAX;
-    }
-    return AppendPrimitiveModel(models_, meshManager_, materialManager_,
-                                modelRenderer_, dxCommon_, srvManager_,
-                                textureId, std::move(*primitive));
-}
-uint32_t ModelManager::CreateMesh(
-    const void *vertexData, uint32_t vertexStride, uint32_t vertexCount,
-    const uint32_t *indexData, uint32_t indexCount,
-    D3D12_PRIMITIVE_TOPOLOGY primitiveTopology) {
-    return meshManager_.CreateMesh(vertexData, vertexStride, vertexCount,
-                                   indexData, indexCount, primitiveTopology);
+uint32_t ModelManager::CreateMesh(const void* vertexData, uint32_t vertexStride,
+                                  uint32_t vertexCount, const uint32_t* indexData,
+                                  uint32_t indexCount, D3D12_PRIMITIVE_TOPOLOGY primitiveTopology) {
+    return meshManager_.CreateMesh(vertexData, vertexStride, vertexCount, indexData, indexCount,
+                                   primitiveTopology);
 }
 
-const Mesh &ModelManager::GetMesh(uint32_t meshId) const {
+const Mesh& ModelManager::GetMesh(uint32_t meshId) const {
     return meshManager_.GetMesh(meshId);
-}
-void ModelManager::UpdateAnimation(uint32_t modelId, float deltaTime) {
-    if (modelId >= models_.size()) {
-        return;
-    }
-
-    animator_.Update(models_[modelId], deltaTime);
-    modelRenderer_.UpdateSkinClusters(models_[modelId]);
-}
-
-void ModelManager::PlayAnimation(uint32_t modelId,
-                                 const std::string &animationName, bool loop) {
-    if (modelId >= models_.size()) {
-        return;
-    }
-
-    animator_.Play(models_[modelId], animationName, loop);
-}
-
-bool ModelManager::IsAnimationFinished(uint32_t modelId) const {
-    if (modelId >= models_.size()) {
-        return false;
-    }
-
-    return animator_.IsFinished(models_[modelId]);
-}
-
-Model *ModelManager::GetModel(uint32_t modelId) {
-    if (modelId >= models_.size()) {
-        return nullptr;
-    }
-
-    return &models_[modelId];
-}
-
-const Model *ModelManager::GetModel(uint32_t modelId) const {
-    if (modelId >= models_.size()) {
-        return nullptr;
-    }
-
-    return &models_[modelId];
-}
-
-const Material &ModelManager::GetMaterial(uint32_t materialId) const {
-    return materialManager_.GetMaterial(materialId);
-}
-
-void ModelManager::SetMaterial(uint32_t materialId, const Material &material) {
-    materialManager_.SetMaterial(materialId, material);
-}
-void ModelManager::Draw(uint32_t modelId, const Transform &transform,
-                        const Camera &camera, uint32_t environmentTextureId) {
-    const Model *model = GetModel(modelId);
-    if (!model) {
-        return;
-    }
-
-    modelRenderer_.Draw(*model, transform, camera, environmentTextureId);
-}
-
-void ModelManager::DrawInstanced(uint32_t modelId, const Transform *transforms,
-                                 uint32_t instanceCount,
-                                 const Camera &camera,
-                                 uint32_t environmentTextureId) {
-    const Model *model = GetModel(modelId);
-    if (!model) {
-        return;
-    }
-
-    modelRenderer_.DrawInstanced(*model, transforms, instanceCount, camera,
-                                 environmentTextureId);
-}
-
-void ModelManager::DrawInstanced(uint32_t modelId,
-                                 const InstanceData *instances,
-                                 uint32_t instanceCount,
-                                 const Camera &camera,
-                                 uint32_t environmentTextureId) {
-    const Model *model = GetModel(modelId);
-    if (!model) {
-        return;
-    }
-
-    modelRenderer_.DrawInstanced(*model, instances, instanceCount, camera,
-                                 environmentTextureId);
-}
-
-void ModelManager::DrawShadow(
-    uint32_t modelId, const Transform &transform,
-    const DirectX::XMFLOAT4X4 &lightViewProjection) {
-    const Model *model = GetModel(modelId);
-    if (!model) {
-        return;
-    }
-
-    modelRenderer_.DrawShadow(*model, transform, lightViewProjection);
-}
-
-void ModelManager::DrawInstancedShadow(
-    uint32_t modelId, const Transform *transforms, uint32_t instanceCount,
-    const DirectX::XMFLOAT4X4 &lightViewProjection) {
-    const Model *model = GetModel(modelId);
-    if (!model) {
-        return;
-    }
-
-    modelRenderer_.DrawInstancedShadow(*model, transforms, instanceCount,
-                                       lightViewProjection);
-}
-
-void ModelManager::DrawInstancedShadow(
-    uint32_t modelId, const InstanceData *instances, uint32_t instanceCount,
-    const DirectX::XMFLOAT4X4 &lightViewProjection) {
-    const Model *model = GetModel(modelId);
-    if (!model) {
-        return;
-    }
-
-    modelRenderer_.DrawInstancedShadow(*model, instances, instanceCount,
-                                       lightViewProjection);
-}
-
-void ModelManager::PrepareSkinning(uint32_t modelId) {
-    const Model *model = GetModel(modelId);
-    if (!model) {
-        return;
-    }
-
-    modelRenderer_.PrepareSkinning(*model);
-}
-
-void ModelManager::PrepareSkinning(std::initializer_list<uint32_t> modelIds) {
-    std::vector<const Model *> models;
-    try {
-        models.reserve(modelIds.size());
-    } catch (...) {
-        return;
-    }
-    for (uint32_t modelId : modelIds) {
-        const Model *model = GetModel(modelId);
-        if (model) {
-            try {
-                models.push_back(model);
-            } catch (...) {
-                break;
-            }
-        }
-    }
-
-    modelRenderer_.PrepareSkinning(models);
 }

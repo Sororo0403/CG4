@@ -18,7 +18,7 @@ class SkeletonPoseBuilder {
     /// アニメーションを適用したローカル行列配列を構築する
     /// </summary>
     static void
-    BuildAnimatedLocals(Model &model, const AnimationClip &clip, float time,
+    BuildAnimatedLocals(const Model &model, const AnimationClip &clip, float time,
                         std::vector<DirectX::XMMATRIX> &localMatrices);
 
     /// <summary>

@@ -2,10 +2,16 @@
 #include <cstdint>
 #include <limits>
 
+inline constexpr uint32_t kInvalidResourceId =
+    (std::numeric_limits<uint32_t>::max)();
+
+constexpr bool IsValidResourceId(uint32_t id) noexcept {
+    return id != kInvalidResourceId;
+}
+
 template <typename Tag> class ResourceHandle {
   public:
-    static constexpr uint32_t kInvalidIndex =
-        (std::numeric_limits<uint32_t>::max)();
+    static constexpr uint32_t kInvalidIndex = kInvalidResourceId;
 
     /// <summary>
     /// ResourceHandleを実行する
@@ -32,14 +38,30 @@ template <typename Tag> class ResourceHandle {
     uint32_t index_ = kInvalidIndex;
 };
 
+template <typename Tag>
+constexpr ResourceHandle<Tag> MakeResourceHandle(uint32_t id) noexcept {
+    return ResourceHandle<Tag>(id);
+}
+
+template <typename Tag>
+constexpr uint32_t ToResourceId(ResourceHandle<Tag> handle) noexcept {
+    return handle.Get();
+}
+
 struct TextureHandleTag;
 struct MeshHandleTag;
 struct MaterialHandleTag;
 struct ModelHandleTag;
 struct DescriptorHandleTag;
+struct SoundHandleTag;
+struct VoiceHandleTag;
+struct FontHandleTag;
 
 using TextureHandle = ResourceHandle<TextureHandleTag>;
 using MeshHandle = ResourceHandle<MeshHandleTag>;
 using MaterialHandle = ResourceHandle<MaterialHandleTag>;
 using ModelHandle = ResourceHandle<ModelHandleTag>;
 using DescriptorHandle = ResourceHandle<DescriptorHandleTag>;
+using SoundHandle = ResourceHandle<SoundHandleTag>;
+using VoiceHandle = ResourceHandle<VoiceHandleTag>;
+using FontHandle = ResourceHandle<FontHandleTag>;

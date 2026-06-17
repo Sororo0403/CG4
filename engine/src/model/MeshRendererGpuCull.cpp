@@ -1,150 +1,96 @@
 #include "model/MeshRenderer.h"
+#include "MeshRendererInternal.h"
+#include "MeshRendererGpuCullInternal.h"
 
 #include "graphics/DirectXCommon.h"
-#include "graphics/DxHelpers.h"
 #include "graphics/SrvManager.h"
+#include "RendererMaterialUtils.h"
 #include "model/RendererMath.h"
 #include "texture/TextureManager.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <vector>
 
 using namespace DirectX;
 
 namespace {
 
-struct MeshGpuCullConstants {
-    XMFLOAT4 frustumPlanes[6];
-    XMFLOAT4 cameraAndMaxDistanceSq;
-    XMFLOAT4 localCenterAndRadius;
-    XMFLOAT4X4 occlusionViewProjection;
-    XMFLOAT4 occlusionParams;
-    uint32_t instanceCount = 0;
-    uint32_t enableDistanceCull = 0;
-    uint32_t padding[2]{};
-};
+using RendererMaterialUtils::IsDrawableMesh;
+using MeshRendererGpuCullInternal::BuildCameraAndMaxDistanceSq;
+using MeshRendererGpuCullInternal::BuildFrustumPlanes;
+using MeshRendererGpuCullInternal::BuildLocalCenterAndRadius;
+using MeshRendererGpuCullInternal::BuildLodCullArgs;
+using MeshRendererGpuCullInternal::BuildLodDistanceBreaks;
+using MeshRendererGpuCullInternal::BuildSingleCullArgs;
+using MeshRendererGpuCullInternal::ExecuteLodGpuCull;
+using MeshRendererGpuCullInternal::ExecuteSingleGpuCull;
+using MeshRendererGpuCullInternal::IsDistanceCullEnabled;
+using MeshRendererGpuCullInternal::MeshGpuCullArgsConstants;
+using MeshRendererGpuCullInternal::MeshGpuCullConstants;
+using MeshRendererGpuCullInternal::MeshGpuLodCullArgsConstants;
+using MeshRendererGpuCullInternal::MeshGpuLodCullConstants;
 
-struct MeshGpuCullArgsConstants {
-    uint32_t indexCountPerInstance = 0;
-    uint32_t maxInstanceCount = 0;
-    uint32_t startIndexLocation = 0;
-    int32_t baseVertexLocation = 0;
-    uint32_t startInstanceLocation = 0;
-    uint32_t padding[3]{};
-};
-
-struct MeshGpuLodCullConstants {
-    XMFLOAT4 frustumPlanes[6];
-    XMFLOAT4 cameraAndMaxDistanceSq;
-    XMFLOAT4 localCenterAndRadius;
-    XMFLOAT4 lodOriginAndBias;
-    XMFLOAT4 lodDistanceBreaks;
-    XMFLOAT4X4 occlusionViewProjection;
-    XMFLOAT4 occlusionParams;
-    uint32_t instanceCount = 0;
-    uint32_t enableDistanceCull = 0;
-    uint32_t lodBias = 0;
-    uint32_t paddingParam = 0;
-};
-
-struct MeshGpuLodCullArgsConstants {
-    XMUINT4 indexCountPerInstance{};
-    uint32_t maxInstanceCount = 0;
-    uint32_t startIndexLocation = 0;
-    int32_t baseVertexLocation = 0;
-    uint32_t startInstanceLocation = 0;
-};
-
-XMFLOAT4 NormalizePlane(FXMVECTOR plane) {
-    const XMVECTOR normal = XMVectorSetW(plane, 0.0f);
-    const float length = XMVectorGetX(XMVector3Length(normal));
-    if (!std::isfinite(length) || length <= 0.000001f) {
-        return {0.0f, 1.0f, 0.0f, 0.0f};
-    }
-
-    XMFLOAT4 result{};
-    XMStoreFloat4(&result, plane / length);
-    if (!std::isfinite(result.x) || !std::isfinite(result.y) ||
-        !std::isfinite(result.z) || !std::isfinite(result.w)) {
-        return {0.0f, 1.0f, 0.0f, 0.0f};
-    }
-    return result;
+XMFLOAT4 DefaultCullOcclusionParams() {
+    return {0.0f, 0.0f, 0.0f, 0.006f};
 }
 
-void BuildFrustumPlanes(const XMMATRIX &viewProjection,
-                        XMFLOAT4 (&planes)[6]) {
-    XMFLOAT4X4 m{};
-    XMStoreFloat4x4(&m, viewProjection);
-    planes[0] = NormalizePlane(
-        XMVectorSet(m._14 + m._11, m._24 + m._21, m._34 + m._31,
-                    m._44 + m._41));
-    planes[1] = NormalizePlane(
-        XMVectorSet(m._14 - m._11, m._24 - m._21, m._34 - m._31,
-                    m._44 - m._41));
-    planes[2] = NormalizePlane(
-        XMVectorSet(m._14 - m._12, m._24 - m._22, m._34 - m._32,
-                    m._44 - m._42));
-    planes[3] = NormalizePlane(
-        XMVectorSet(m._14 + m._12, m._24 + m._22, m._34 + m._32,
-                    m._44 + m._42));
-    planes[4] = NormalizePlane(XMVectorSet(m._13, m._23, m._33, m._43));
-    planes[5] = NormalizePlane(
-        XMVectorSet(m._14 - m._13, m._24 - m._23, m._34 - m._33,
-                    m._44 - m._43));
+XMFLOAT3 MakeFiniteOrigin(const XMFLOAT3 &origin) {
+    return {std::isfinite(origin.x) ? origin.x : 0.0f,
+            std::isfinite(origin.y) ? origin.y : 0.0f,
+            std::isfinite(origin.z) ? origin.z : 0.0f};
 }
 
-uint32_t ResolveTextureId(TextureManager *textureManager, uint32_t textureId,
-                          uint32_t fallbackTextureId) {
-    if (textureManager == nullptr) {
-        return UINT32_MAX;
-    }
-    if (textureId != UINT32_MAX &&
-        textureManager->IsValidTextureId(textureId)) {
-        return textureId;
-    }
-    if (fallbackTextureId != UINT32_MAX &&
-        textureManager->IsValidTextureId(fallbackTextureId)) {
-        return fallbackTextureId;
-    }
-    return textureManager->GetWhiteTextureId();
+MeshGpuCullConstants BuildSingleGpuCullConstants(
+    const XMMATRIX &cullViewProjection, const XMFLOAT3 &cullOrigin,
+    const MeshGpuCullBounds &localBounds,
+    const XMFLOAT4X4 &occlusionViewProjection,
+    const XMFLOAT4 &occlusionParams, uint32_t instanceCount,
+    float maxDistance) {
+    MeshGpuCullConstants constants{};
+    BuildFrustumPlanes(cullViewProjection, constants.frustumPlanes);
+    constants.cameraAndMaxDistanceSq =
+        BuildCameraAndMaxDistanceSq(cullOrigin, maxDistance);
+    constants.localCenterAndRadius = BuildLocalCenterAndRadius(localBounds);
+    constants.occlusionViewProjection = occlusionViewProjection;
+    constants.occlusionParams = occlusionParams;
+    constants.instanceCount = instanceCount;
+    constants.enableDistanceCull = IsDistanceCullEnabled(maxDistance);
+    return constants;
 }
 
-uint32_t ResolveNormalTextureId(TextureManager *textureManager,
-                                uint32_t normalTextureId) {
-    const uint32_t fallbackTextureId =
-        textureManager != nullptr ? textureManager->GetDefaultNormalTextureId()
-                                  : UINT32_MAX;
-    return ResolveTextureId(textureManager, normalTextureId,
-                            fallbackTextureId);
+MeshGpuLodCullConstants BuildLodGpuCullConstants(
+    const XMMATRIX &cullViewProjection, const XMFLOAT3 &cullOrigin,
+    const XMFLOAT3 &lodOrigin, const MeshGpuCullBounds &localBounds,
+    const std::array<float, kMeshGpuCullLodCount - 1u> &distanceBreaks,
+    const XMFLOAT4X4 &occlusionViewProjection,
+    const XMFLOAT4 &occlusionParams, uint32_t instanceCount, uint32_t lodBias,
+    float maxDistance) {
+    MeshGpuLodCullConstants constants{};
+    BuildFrustumPlanes(cullViewProjection, constants.frustumPlanes);
+    constants.cameraAndMaxDistanceSq =
+        BuildCameraAndMaxDistanceSq(cullOrigin, maxDistance);
+    constants.localCenterAndRadius = BuildLocalCenterAndRadius(localBounds);
+    constants.lodOriginAndBias = {lodOrigin.x, lodOrigin.y, lodOrigin.z,
+                                  static_cast<float>(lodBias)};
+    constants.lodDistanceBreaks = BuildLodDistanceBreaks(distanceBreaks);
+    constants.occlusionViewProjection = occlusionViewProjection;
+    constants.occlusionParams = occlusionParams;
+    constants.instanceCount = instanceCount;
+    constants.enableDistanceCull = IsDistanceCullEnabled(maxDistance);
+    constants.lodBias = (std::min)(lodBias, kMeshGpuCullLodCount - 1u);
+    return constants;
 }
 
-uint32_t ResolveBaseColorTextureId(TextureManager *textureManager,
-                                   const Material &material,
-                                   uint32_t fallbackTextureId) {
-    const uint32_t textureId = material.baseColorTextureId == UINT32_MAX
-                                   ? fallbackTextureId
-                                   : material.baseColorTextureId;
-    return ResolveTextureId(textureManager, textureId, fallbackTextureId);
-}
-
-uint32_t ResolveNormalTextureId(TextureManager *textureManager,
-                                const Material &material,
-                                uint32_t fallbackTextureId) {
-    const uint32_t textureId = material.normalTextureId == UINT32_MAX
-                                   ? fallbackTextureId
-                                   : material.normalTextureId;
-    return ResolveNormalTextureId(textureManager, textureId);
-}
-
-bool IsDrawableMesh(const Mesh &mesh) {
-    return mesh.vertexBuffer && mesh.indexBuffer && mesh.indexCount > 0 &&
-           mesh.vertexStride > 0 && mesh.vbView.BufferLocation != 0 &&
-           mesh.vbView.SizeInBytes > 0 &&
-           mesh.vbView.StrideInBytes > 0 &&
-           mesh.ibView.BufferLocation != 0 && mesh.ibView.SizeInBytes > 0 &&
-           mesh.primitiveTopology != D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
+template <typename TCullConstants, typename TArgsConstants>
+bool WriteGpuCullConstantBuffers(UploadRingBuffer &uploadBuffer,
+                                 const TCullConstants &cullConstants,
+                                 const TArgsConstants &argsConstants,
+                                 D3D12_GPU_VIRTUAL_ADDRESS &cullCb,
+                                 D3D12_GPU_VIRTUAL_ADDRESS &argsCb) {
+    cullCb = uploadBuffer.Write(cullConstants).gpu;
+    argsCb = uploadBuffer.Write(argsConstants).gpu;
+    return cullCb != 0 && argsCb != 0;
 }
 
 } // namespace
@@ -154,180 +100,30 @@ bool MeshRenderer::DrawMeshInstancedGpuCulledWithPipeline(
     const MeshInstanceBuffer &sourceInstances, MeshGpuCullBuffer &cullBuffer,
     const MeshGpuCullBounds &localBounds, const Camera &camera,
     float maxDistance, uint32_t textureId, uint32_t normalTextureId) {
-    if (!dxCommon_ || !textureManager_ || !srvManager_ || !rootSignature_ ||
-        !gpuCullRootSignature_ || !gpuCullPSO_ || !gpuCullArgsPSO_ ||
-        !gpuCullCommandSignature_ ||
-        pipelineId >= customInstancedPipelines_.size() ||
+    if (!state_->dxCommon || !state_->textureManager || !state_->srvManager || !state_->rootSignature ||
+        !state_->gpuCullRootSignature || !state_->gpuCullPSO || !state_->gpuCullArgsPSO ||
+        !state_->gpuCullCommandSignature ||
+        pipelineId >= state_->customInstancedPipelines.size() ||
         !IsDrawableMesh(mesh) || !sourceInstances.IsValid() ||
-        drawIndex_ >= kMaxDraws) {
+        state_->drawIndex >= kMaxDraws) {
         return false;
     }
-    if (!EnsureGpuCullBuffer(sourceInstances, cullBuffer)) {
-        return false;
-    }
-
-    auto *cmd = dxCommon_->GetCommandList();
-    ID3D12DescriptorHeap *heap = srvManager_->GetHeap();
-    const D3D12_GPU_DESCRIPTOR_HANDLE occlusionHandle =
-        GetCullOcclusionHandle();
-    if (cmd == nullptr || heap == nullptr || occlusionHandle.ptr == 0) {
-        return false;
-    }
-    if (!RegisterGpuCullStateRollback(cullBuffer)) {
-        return false;
-    }
-
-    MeshGpuCullConstants cullConstants{};
-    BuildFrustumPlanes(camera.GetViewProjection(), cullConstants.frustumPlanes);
     const XMFLOAT3 cameraPosition = camera.GetPosition();
-    const float safeMaxDistance =
-        std::isfinite(maxDistance) ? (std::max)(maxDistance, 0.0f) : 0.0f;
-    cullConstants.cameraAndMaxDistanceSq = {
-        cameraPosition.x, cameraPosition.y, cameraPosition.z,
-        safeMaxDistance * safeMaxDistance};
-    const float radius =
-        std::isfinite(localBounds.radius)
-            ? (std::max)(localBounds.radius, 0.0001f)
-            : 0.0001f;
-    cullConstants.localCenterAndRadius = {
-        std::isfinite(localBounds.center.x) ? localBounds.center.x : 0.0f,
-        std::isfinite(localBounds.center.y) ? localBounds.center.y : 0.0f,
-        std::isfinite(localBounds.center.z) ? localBounds.center.z : 0.0f,
-        radius};
-    cullConstants.occlusionViewProjection = occlusionViewProjection_;
-    cullConstants.occlusionParams =
-        occlusionPyramidEnabled_ ? occlusionParams_
-                                 : XMFLOAT4{0.0f, 0.0f, 0.0f, 0.006f};
-    cullConstants.instanceCount = sourceInstances.instanceCount;
-    cullConstants.enableDistanceCull = safeMaxDistance > 0.0f ? 1u : 0u;
-
-    MeshGpuCullArgsConstants argsConstants{};
-    argsConstants.indexCountPerInstance = mesh.indexCount;
-    argsConstants.maxInstanceCount = sourceInstances.instanceCount;
-    argsConstants.startIndexLocation = 0u;
-    argsConstants.baseVertexLocation = 0;
-    argsConstants.startInstanceLocation = 0u;
-
-    const D3D12_GPU_VIRTUAL_ADDRESS cullCb =
-        uploadBuffer_.Write(cullConstants).gpu;
-    const D3D12_GPU_VIRTUAL_ADDRESS argsCb =
-        uploadBuffer_.Write(argsConstants).gpu;
-    if (cullCb == 0 || argsCb == 0) {
+    ID3D12GraphicsCommandList *cmd = nullptr;
+    if (!DispatchSingleGpuCull(
+            mesh, sourceInstances, cullBuffer, localBounds,
+            camera.GetViewProjection(), cameraPosition,
+            state_->occlusionPyramidEnabled ? state_->occlusionParams
+                                            : DefaultCullOcclusionParams(),
+            maxDistance, cmd)) {
         return false;
     }
 
-    const UINT zeroValues[4] = {0u, 0u, 0u, 0u};
-    ID3D12DescriptorHeap *heaps[] = {heap};
-    cmd->SetDescriptorHeaps(1, heaps);
-
-    std::vector<D3D12_RESOURCE_BARRIER> beforeCullBarriers;
-    beforeCullBarriers.reserve(3);
-    beforeCullBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
-        sourceInstances.resource.Get(),
-        D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
-        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-    if (cullBuffer.outputState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
-        beforeCullBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
-            cullBuffer.outputResource.Get(), cullBuffer.outputState,
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
-        cullBuffer.outputState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    }
-    if (cullBuffer.drawArgsState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
-        beforeCullBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
-            cullBuffer.drawArgsResource.Get(), cullBuffer.drawArgsState,
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
-        cullBuffer.drawArgsState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    }
-    if (!beforeCullBarriers.empty()) {
-        cmd->ResourceBarrier(static_cast<UINT>(beforeCullBarriers.size()),
-                             beforeCullBarriers.data());
-    }
-
-    cmd->ClearUnorderedAccessViewUint(
-        cullBuffer.countUavGpuHandle, cullBuffer.countUavCpuHandle,
-        cullBuffer.countResource.Get(), zeroValues, 0, nullptr);
-    D3D12_RESOURCE_BARRIER countClearBarrier =
-        CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.countResource.Get());
-    cmd->ResourceBarrier(1, &countClearBarrier);
-
-    cmd->SetComputeRootSignature(gpuCullRootSignature_.Get());
-    cmd->SetPipelineState(gpuCullPSO_.Get());
-    cmd->SetComputeRootConstantBufferView(0, cullCb);
-    cmd->SetComputeRootDescriptorTable(1, cullBuffer.sourceSrvGpuHandle);
-    cmd->SetComputeRootDescriptorTable(2, occlusionHandle);
-    cmd->SetComputeRootDescriptorTable(3, cullBuffer.outputUavGpuHandle);
-    cmd->SetComputeRootDescriptorTable(4, cullBuffer.countUavGpuHandle);
-    cmd->SetComputeRootDescriptorTable(5, cullBuffer.drawArgsUavGpuHandle);
-    cmd->Dispatch((sourceInstances.instanceCount + 127u) / 128u, 1u, 1u);
-
-    D3D12_RESOURCE_BARRIER cullUavBarriers[] = {
-        CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.outputResource.Get()),
-        CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.countResource.Get())};
-    cmd->ResourceBarrier(_countof(cullUavBarriers), cullUavBarriers);
-
-    cmd->SetPipelineState(gpuCullArgsPSO_.Get());
-    cmd->SetComputeRootConstantBufferView(0, argsCb);
-    cmd->Dispatch(1u, 1u, 1u);
-
-    D3D12_RESOURCE_BARRIER drawArgsUav =
-        CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.drawArgsResource.Get());
-    cmd->ResourceBarrier(1, &drawArgsUav);
-
-    D3D12_RESOURCE_BARRIER drawBarriers[] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(
-            cullBuffer.outputResource.Get(),
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-            D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER),
-        CD3DX12_RESOURCE_BARRIER::Transition(
-            cullBuffer.drawArgsResource.Get(),
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-            D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT),
-        CD3DX12_RESOURCE_BARRIER::Transition(
-            sourceInstances.resource.Get(),
-            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-            D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)};
-    cmd->ResourceBarrier(_countof(drawBarriers), drawBarriers);
-    cullBuffer.outputState = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
-    cullBuffer.drawArgsState = D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
-
-    InvalidateCommandState();
-    const Material drawMaterial = NormalizeMaterialForDraw(material);
-    const D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr =
-        WriteObjectConstants(XMMatrixIdentity(), XMMatrixIdentity(),
-                             XMMatrixIdentity());
-    const D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr = WriteSceneConstants(camera);
-    const D3D12_GPU_VIRTUAL_ADDRESS materialCbAddr =
-        WriteMaterialConstants(drawMaterial);
-    if (objectCbAddr == 0 || sceneCbAddr == 0 || materialCbAddr == 0) {
+    if (!BindGpuCulledForwardDrawState(pipelineId, material, camera, textureId,
+                                       normalTextureId)) {
         return false;
     }
-
-    SetGraphicsRootSignatureCached(rootSignature_.Get());
-    if (!SetInstancedPipelineForMaterial(
-            customInstancedPipelines_[pipelineId].pipelineStates,
-            drawMaterial)) {
-        return false;
-    }
-    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
-    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
-    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
-    SetGraphicsRootDescriptorTableCached(
-        3, textureManager_->GetGpuHandle(
-               ResolveBaseColorTextureId(textureManager_, drawMaterial,
-                                         textureId)));
-    SetGraphicsRootDescriptorTableCached(4, shadowMapGpuHandle_);
-    SetGraphicsRootDescriptorTableCached(
-        5, textureManager_->GetGpuHandle(
-               ResolveNormalTextureId(textureManager_, drawMaterial,
-                                      normalTextureId)));
-    D3D12_VERTEX_BUFFER_VIEW views[] = {mesh.vbView, cullBuffer.outputView};
-    IASetVertexBuffersCached(0, 2, views);
-    IASetIndexBufferCached(mesh.ibView);
-    IASetPrimitiveTopologyCached(mesh.primitiveTopology);
-    cmd->ExecuteIndirect(gpuCullCommandSignature_.Get(), 1,
-                         cullBuffer.drawArgsResource.Get(), 0, nullptr, 0);
-
-    ++drawIndex_;
+    ExecuteGpuCulledMeshDraw(cmd, mesh, cullBuffer);
     return true;
 }
 
@@ -340,11 +136,11 @@ bool MeshRenderer::DrawMeshInstancedGpuLodCulledWithPipeline(
     const std::array<float, kMeshGpuCullLodCount - 1u> &distanceBreaks,
     uint32_t lodBias, float maxDistance, uint32_t textureId,
     uint32_t normalTextureId) {
-    if (!dxCommon_ || !textureManager_ || !srvManager_ || !rootSignature_ ||
-        !gpuLodCullRootSignature_ || !gpuLodCullPSO_ ||
-        !gpuLodCullArgsPSO_ || !gpuCullCommandSignature_ ||
-        pipelineId >= customInstancedPipelines_.size() ||
-        !sourceInstances.IsValid() || drawIndex_ >= kMaxDraws) {
+    if (!state_->dxCommon || !state_->textureManager || !state_->srvManager || !state_->rootSignature ||
+        !state_->gpuLodCullRootSignature || !state_->gpuLodCullPSO ||
+        !state_->gpuLodCullArgsPSO || !state_->gpuCullCommandSignature ||
+        pipelineId >= state_->customInstancedPipelines.size() ||
+        !sourceInstances.IsValid() || state_->drawIndex >= kMaxDraws) {
         return false;
     }
     for (const Mesh *mesh : lodMeshes) {
@@ -352,394 +148,55 @@ bool MeshRenderer::DrawMeshInstancedGpuLodCulledWithPipeline(
             return false;
         }
     }
-    if (!EnsureGpuLodCullBuffer(sourceInstances, cullBuffer)) {
-        return false;
-    }
-
-    auto *cmd = dxCommon_->GetCommandList();
-    ID3D12DescriptorHeap *heap = srvManager_->GetHeap();
-    const D3D12_GPU_DESCRIPTOR_HANDLE occlusionHandle =
-        GetCullOcclusionHandle();
-    if (cmd == nullptr || heap == nullptr || occlusionHandle.ptr == 0) {
-        return false;
-    }
-    if (!RegisterGpuLodCullStateRollback(cullBuffer)) {
-        return false;
-    }
-
-    MeshGpuLodCullConstants cullConstants{};
-    BuildFrustumPlanes(camera.GetViewProjection(), cullConstants.frustumPlanes);
     const XMFLOAT3 cameraPosition = camera.GetPosition();
-    const float safeMaxDistance =
-        std::isfinite(maxDistance) ? (std::max)(maxDistance, 0.0f) : 0.0f;
-    cullConstants.cameraAndMaxDistanceSq = {
-        cameraPosition.x, cameraPosition.y, cameraPosition.z,
-        safeMaxDistance * safeMaxDistance};
-    const float radius =
-        std::isfinite(localBounds.radius)
-            ? (std::max)(localBounds.radius, 0.0001f)
-            : 0.0001f;
-    cullConstants.localCenterAndRadius = {
-        std::isfinite(localBounds.center.x) ? localBounds.center.x : 0.0f,
-        std::isfinite(localBounds.center.y) ? localBounds.center.y : 0.0f,
-        std::isfinite(localBounds.center.z) ? localBounds.center.z : 0.0f,
-        radius};
-    cullConstants.lodOriginAndBias = {
-        cameraPosition.x, cameraPosition.y, cameraPosition.z,
-        static_cast<float>(lodBias)};
-    cullConstants.lodDistanceBreaks = {
-        std::isfinite(distanceBreaks[0]) ? distanceBreaks[0] : 0.0f,
-        std::isfinite(distanceBreaks[1]) ? distanceBreaks[1] : 0.0f, 0.0f,
-        0.0f};
-    cullConstants.occlusionViewProjection = occlusionViewProjection_;
-    cullConstants.occlusionParams =
-        occlusionPyramidEnabled_ ? occlusionParams_
-                                 : XMFLOAT4{0.0f, 0.0f, 0.0f, 0.006f};
-    cullConstants.instanceCount = sourceInstances.instanceCount;
-    cullConstants.enableDistanceCull = safeMaxDistance > 0.0f ? 1u : 0u;
-    cullConstants.lodBias =
-        (std::min)(lodBias, kMeshGpuCullLodCount - 1u);
-
-    MeshGpuLodCullArgsConstants argsConstants{};
-    argsConstants.indexCountPerInstance = {
-        lodMeshes[0]->indexCount, lodMeshes[1]->indexCount,
-        lodMeshes[2]->indexCount, 0u};
-    argsConstants.maxInstanceCount = sourceInstances.instanceCount;
-    argsConstants.startIndexLocation = 0u;
-    argsConstants.baseVertexLocation = 0;
-    argsConstants.startInstanceLocation = 0u;
-
-    const D3D12_GPU_VIRTUAL_ADDRESS cullCb =
-        uploadBuffer_.Write(cullConstants).gpu;
-    const D3D12_GPU_VIRTUAL_ADDRESS argsCb =
-        uploadBuffer_.Write(argsConstants).gpu;
-    if (cullCb == 0 || argsCb == 0) {
+    ID3D12GraphicsCommandList *cmd = nullptr;
+    if (!DispatchLodGpuCull(
+            lodMeshes, sourceInstances, cullBuffer, localBounds,
+            camera.GetViewProjection(), cameraPosition, cameraPosition,
+            distanceBreaks,
+            state_->occlusionPyramidEnabled ? state_->occlusionParams
+                                            : DefaultCullOcclusionParams(),
+            lodBias, maxDistance, cmd)) {
         return false;
     }
 
-    ID3D12DescriptorHeap *heaps[] = {heap};
-    cmd->SetDescriptorHeaps(1, heaps);
-
-    std::vector<D3D12_RESOURCE_BARRIER> beforeCullBarriers;
-    beforeCullBarriers.reserve(1u + kMeshGpuCullLodCount * 2u);
-    beforeCullBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
-        sourceInstances.resource.Get(),
-        D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
-        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        if (cullBuffer.outputStates[lod] !=
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
-            beforeCullBarriers.push_back(
-                CD3DX12_RESOURCE_BARRIER::Transition(
-                    cullBuffer.outputResources[lod].Get(),
-                    cullBuffer.outputStates[lod],
-                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
-            cullBuffer.outputStates[lod] =
-                D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-        }
-        if (cullBuffer.drawArgsStates[lod] !=
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
-            beforeCullBarriers.push_back(
-                CD3DX12_RESOURCE_BARRIER::Transition(
-                    cullBuffer.drawArgsResources[lod].Get(),
-                    cullBuffer.drawArgsStates[lod],
-                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
-            cullBuffer.drawArgsStates[lod] =
-                D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-        }
-    }
-    cmd->ResourceBarrier(static_cast<UINT>(beforeCullBarriers.size()),
-                         beforeCullBarriers.data());
-
-    const UINT zeroValues[4] = {0u, 0u, 0u, 0u};
-    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        cmd->ClearUnorderedAccessViewUint(
-            cullBuffer.countUavGpuHandles[lod],
-            cullBuffer.countUavCpuHandles[lod],
-            cullBuffer.countResources[lod].Get(), zeroValues, 0, nullptr);
-    }
-    std::array<D3D12_RESOURCE_BARRIER, kMeshGpuCullLodCount>
-        countClearBarriers{};
-    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        countClearBarriers[lod] =
-            CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.countResources[lod].Get());
-    }
-    cmd->ResourceBarrier(static_cast<UINT>(countClearBarriers.size()),
-                         countClearBarriers.data());
-
-    cmd->SetComputeRootSignature(gpuLodCullRootSignature_.Get());
-    cmd->SetPipelineState(gpuLodCullPSO_.Get());
-    cmd->SetComputeRootConstantBufferView(0, cullCb);
-    cmd->SetComputeRootDescriptorTable(1, cullBuffer.sourceSrvGpuHandle);
-    cmd->SetComputeRootDescriptorTable(2, occlusionHandle);
-    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        cmd->SetComputeRootDescriptorTable(
-            3 + lod, cullBuffer.outputUavGpuHandles[lod]);
-        cmd->SetComputeRootDescriptorTable(
-            6 + lod, cullBuffer.countUavGpuHandles[lod]);
-        cmd->SetComputeRootDescriptorTable(
-            9 + lod, cullBuffer.drawArgsUavGpuHandles[lod]);
-    }
-    cmd->Dispatch((sourceInstances.instanceCount + 127u) / 128u, 1u, 1u);
-
-    std::vector<D3D12_RESOURCE_BARRIER> countBarriers;
-    countBarriers.reserve(kMeshGpuCullLodCount * 2u);
-    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        countBarriers.push_back(
-            CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.outputResources[lod].Get()));
-        countBarriers.push_back(
-            CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.countResources[lod].Get()));
-    }
-    cmd->ResourceBarrier(static_cast<UINT>(countBarriers.size()),
-                         countBarriers.data());
-
-    cmd->SetPipelineState(gpuLodCullArgsPSO_.Get());
-    cmd->SetComputeRootConstantBufferView(0, argsCb);
-    cmd->Dispatch(1u, 1u, 1u);
-
-    std::array<D3D12_RESOURCE_BARRIER, kMeshGpuCullLodCount> drawArgsUav{};
-    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        drawArgsUav[lod] =
-            CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.drawArgsResources[lod].Get());
-    }
-    cmd->ResourceBarrier(static_cast<UINT>(drawArgsUav.size()),
-                         drawArgsUav.data());
-
-    std::vector<D3D12_RESOURCE_BARRIER> drawBarriers;
-    drawBarriers.reserve(1u + kMeshGpuCullLodCount * 2u);
-    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        drawBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
-            cullBuffer.outputResources[lod].Get(),
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-            D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
-        drawBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
-            cullBuffer.drawArgsResources[lod].Get(),
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-            D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT));
-        cullBuffer.outputStates[lod] =
-            D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
-        cullBuffer.drawArgsStates[lod] =
-            D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
-    }
-    drawBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
-        sourceInstances.resource.Get(),
-        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-        D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
-    cmd->ResourceBarrier(static_cast<UINT>(drawBarriers.size()),
-                         drawBarriers.data());
-
-    InvalidateCommandState();
-    const Material drawMaterial = NormalizeMaterialForDraw(material);
-    const D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr =
-        WriteObjectConstants(XMMatrixIdentity(), XMMatrixIdentity(),
-                             XMMatrixIdentity());
-    const D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr = WriteSceneConstants(camera);
-    const D3D12_GPU_VIRTUAL_ADDRESS materialCbAddr =
-        WriteMaterialConstants(drawMaterial);
-    if (objectCbAddr == 0 || sceneCbAddr == 0 || materialCbAddr == 0) {
+    if (!BindGpuCulledForwardDrawState(pipelineId, material, camera, textureId,
+                                       normalTextureId)) {
         return false;
     }
-
-    SetGraphicsRootSignatureCached(rootSignature_.Get());
-    if (!SetInstancedPipelineForMaterial(
-            customInstancedPipelines_[pipelineId].pipelineStates,
-            drawMaterial)) {
-        return false;
-    }
-    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
-    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
-    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
-    SetGraphicsRootDescriptorTableCached(
-        3, textureManager_->GetGpuHandle(
-               ResolveBaseColorTextureId(textureManager_, drawMaterial,
-                                         textureId)));
-    SetGraphicsRootDescriptorTableCached(4, shadowMapGpuHandle_);
-    SetGraphicsRootDescriptorTableCached(
-        5, textureManager_->GetGpuHandle(
-               ResolveNormalTextureId(textureManager_, drawMaterial,
-                                      normalTextureId)));
-
-    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        if (drawIndex_ >= kMaxDraws) {
-            return true;
-        }
-        D3D12_VERTEX_BUFFER_VIEW views[] = {lodMeshes[lod]->vbView,
-                                            cullBuffer.outputViews[lod]};
-        IASetVertexBuffersCached(0, 2, views);
-        IASetIndexBufferCached(lodMeshes[lod]->ibView);
-        IASetPrimitiveTopologyCached(lodMeshes[lod]->primitiveTopology);
-        cmd->ExecuteIndirect(gpuCullCommandSignature_.Get(), 1,
-                             cullBuffer.drawArgsResources[lod].Get(), 0,
-                             nullptr, 0);
-        ++drawIndex_;
-    }
-    return true;
+    return ExecuteGpuLodCulledMeshDraws(cmd, lodMeshes, cullBuffer);
 }
 
 bool MeshRenderer::DrawMeshInstancedGpuCulledShadowWithPipeline(
     uint32_t pipelineId, const Mesh &mesh, const Material &material,
     const MeshInstanceBuffer &sourceInstances, MeshGpuCullBuffer &cullBuffer,
     const MeshGpuCullBounds &localBounds,
-    const DirectX::XMFLOAT4X4 &lightViewProjection, uint32_t textureId) {
-    if (!dxCommon_ || !textureManager_ || !srvManager_ ||
-        !shadowRootSignature_ || !gpuCullRootSignature_ || !gpuCullPSO_ ||
-        !gpuCullArgsPSO_ || !gpuCullCommandSignature_ ||
-        pipelineId >= customInstancedPipelines_.size() ||
-        !customInstancedPipelines_[pipelineId].shadowPipelineState ||
+    const DirectX::XMFLOAT4X4 &lightViewProjection,
+    const DirectX::XMFLOAT3 &cullOrigin, float maxDistance,
+    uint32_t textureId, bool opaqueShadow) {
+    if (!state_->dxCommon || !state_->textureManager || !state_->srvManager ||
+        !state_->shadowRootSignature || !state_->gpuCullRootSignature || !state_->gpuCullPSO ||
+        !state_->gpuCullArgsPSO || !state_->gpuCullCommandSignature ||
+        pipelineId >= state_->customInstancedPipelines.size() ||
+        !state_->customInstancedPipelines[pipelineId].shadowPipelineStates[0] ||
         !IsDrawableMesh(mesh) || !sourceInstances.IsValid() ||
-        drawIndex_ >= kMaxDraws) {
+        state_->drawIndex >= kMaxDraws) {
         return false;
     }
-    if (!EnsureGpuCullBuffer(sourceInstances, cullBuffer)) {
-        return false;
-    }
-
-    auto *cmd = dxCommon_->GetCommandList();
-    ID3D12DescriptorHeap *heap = srvManager_->GetHeap();
-    const D3D12_GPU_DESCRIPTOR_HANDLE occlusionHandle =
-        GetCullOcclusionHandle();
-    if (cmd == nullptr || heap == nullptr || occlusionHandle.ptr == 0) {
-        return false;
-    }
-    if (!RegisterGpuCullStateRollback(cullBuffer)) {
+    ID3D12GraphicsCommandList *cmd = nullptr;
+    if (!DispatchSingleGpuCull(
+            mesh, sourceInstances, cullBuffer, localBounds,
+            XMLoadFloat4x4(&lightViewProjection), cullOrigin,
+            DefaultCullOcclusionParams(), maxDistance, cmd)) {
         return false;
     }
 
-    MeshGpuCullConstants cullConstants{};
-    BuildFrustumPlanes(XMLoadFloat4x4(&lightViewProjection),
-                       cullConstants.frustumPlanes);
-    cullConstants.cameraAndMaxDistanceSq = {};
-    const float radius =
-        std::isfinite(localBounds.radius)
-            ? (std::max)(localBounds.radius, 0.0001f)
-            : 0.0001f;
-    cullConstants.localCenterAndRadius = {
-        std::isfinite(localBounds.center.x) ? localBounds.center.x : 0.0f,
-        std::isfinite(localBounds.center.y) ? localBounds.center.y : 0.0f,
-        std::isfinite(localBounds.center.z) ? localBounds.center.z : 0.0f,
-        radius};
-    cullConstants.occlusionViewProjection = occlusionViewProjection_;
-    cullConstants.occlusionParams = {0.0f, 0.0f, 0.0f, 0.006f};
-    cullConstants.instanceCount = sourceInstances.instanceCount;
-    cullConstants.enableDistanceCull = 0u;
-
-    MeshGpuCullArgsConstants argsConstants{};
-    argsConstants.indexCountPerInstance = mesh.indexCount;
-    argsConstants.maxInstanceCount = sourceInstances.instanceCount;
-    argsConstants.startIndexLocation = 0u;
-    argsConstants.baseVertexLocation = 0;
-    argsConstants.startInstanceLocation = 0u;
-
-    const D3D12_GPU_VIRTUAL_ADDRESS cullCb =
-        uploadBuffer_.Write(cullConstants).gpu;
-    const D3D12_GPU_VIRTUAL_ADDRESS argsCb =
-        uploadBuffer_.Write(argsConstants).gpu;
-    if (cullCb == 0 || argsCb == 0) {
+    if (!BindGpuCulledShadowDrawState(pipelineId, material,
+                                      lightViewProjection, textureId,
+                                      opaqueShadow)) {
         return false;
     }
-
-    ID3D12DescriptorHeap *heaps[] = {heap};
-    cmd->SetDescriptorHeaps(1, heaps);
-
-    std::vector<D3D12_RESOURCE_BARRIER> beforeCullBarriers;
-    beforeCullBarriers.reserve(3);
-    beforeCullBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
-        sourceInstances.resource.Get(),
-        D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
-        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-    if (cullBuffer.outputState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
-        beforeCullBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
-            cullBuffer.outputResource.Get(), cullBuffer.outputState,
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
-        cullBuffer.outputState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    }
-    if (cullBuffer.drawArgsState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
-        beforeCullBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
-            cullBuffer.drawArgsResource.Get(), cullBuffer.drawArgsState,
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
-        cullBuffer.drawArgsState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    }
-    cmd->ResourceBarrier(static_cast<UINT>(beforeCullBarriers.size()),
-                         beforeCullBarriers.data());
-
-    const UINT zeroValues[4] = {0u, 0u, 0u, 0u};
-    cmd->ClearUnorderedAccessViewUint(
-        cullBuffer.countUavGpuHandle, cullBuffer.countUavCpuHandle,
-        cullBuffer.countResource.Get(), zeroValues, 0, nullptr);
-    D3D12_RESOURCE_BARRIER countClearBarrier =
-        CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.countResource.Get());
-    cmd->ResourceBarrier(1, &countClearBarrier);
-
-    cmd->SetComputeRootSignature(gpuCullRootSignature_.Get());
-    cmd->SetPipelineState(gpuCullPSO_.Get());
-    cmd->SetComputeRootConstantBufferView(0, cullCb);
-    cmd->SetComputeRootDescriptorTable(1, cullBuffer.sourceSrvGpuHandle);
-    cmd->SetComputeRootDescriptorTable(2, occlusionHandle);
-    cmd->SetComputeRootDescriptorTable(3, cullBuffer.outputUavGpuHandle);
-    cmd->SetComputeRootDescriptorTable(4, cullBuffer.countUavGpuHandle);
-    cmd->SetComputeRootDescriptorTable(5, cullBuffer.drawArgsUavGpuHandle);
-    cmd->Dispatch((sourceInstances.instanceCount + 127u) / 128u, 1u, 1u);
-
-    D3D12_RESOURCE_BARRIER cullUavBarriers[] = {
-        CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.outputResource.Get()),
-        CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.countResource.Get())};
-    cmd->ResourceBarrier(_countof(cullUavBarriers), cullUavBarriers);
-
-    cmd->SetPipelineState(gpuCullArgsPSO_.Get());
-    cmd->SetComputeRootConstantBufferView(0, argsCb);
-    cmd->Dispatch(1u, 1u, 1u);
-
-    D3D12_RESOURCE_BARRIER drawArgsUav =
-        CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.drawArgsResource.Get());
-    cmd->ResourceBarrier(1, &drawArgsUav);
-
-    D3D12_RESOURCE_BARRIER drawBarriers[] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(
-            cullBuffer.outputResource.Get(),
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-            D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER),
-        CD3DX12_RESOURCE_BARRIER::Transition(
-            cullBuffer.drawArgsResource.Get(),
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-            D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT),
-        CD3DX12_RESOURCE_BARRIER::Transition(
-            sourceInstances.resource.Get(),
-            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-            D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)};
-    cmd->ResourceBarrier(_countof(drawBarriers), drawBarriers);
-    cullBuffer.outputState = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
-    cullBuffer.drawArgsState = D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
-
-    InvalidateCommandState();
-    const Material drawMaterial = NormalizeMaterialForDraw(material);
-    const D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr =
-        WriteObjectConstants(XMMatrixIdentity(), XMMatrixIdentity(),
-                             XMMatrixIdentity());
-    const D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr =
-        WriteShadowSceneConstants(lightViewProjection);
-    const D3D12_GPU_VIRTUAL_ADDRESS materialCbAddr =
-        WriteMaterialConstants(drawMaterial);
-    if (objectCbAddr == 0 || sceneCbAddr == 0 || materialCbAddr == 0) {
-        return false;
-    }
-
-    SetGraphicsRootSignatureCached(shadowRootSignature_.Get());
-    SetPipelineStateCached(
-        customInstancedPipelines_[pipelineId].shadowPipelineState.Get());
-    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
-    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
-    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
-    SetGraphicsRootDescriptorTableCached(
-        3, textureManager_->GetGpuHandle(
-               ResolveBaseColorTextureId(textureManager_, drawMaterial,
-                                         textureId)));
-    D3D12_VERTEX_BUFFER_VIEW views[] = {mesh.vbView, cullBuffer.outputView};
-    IASetVertexBuffersCached(0, 2, views);
-    IASetIndexBufferCached(mesh.ibView);
-    IASetPrimitiveTopologyCached(mesh.primitiveTopology);
-    cmd->ExecuteIndirect(gpuCullCommandSignature_.Get(), 1,
-                         cullBuffer.drawArgsResource.Get(), 0, nullptr, 0);
-    ++drawIndex_;
+    ExecuteGpuCulledMeshDraw(cmd, mesh, cullBuffer);
     return true;
 }
 
@@ -751,14 +208,15 @@ bool MeshRenderer::DrawMeshInstancedGpuLodCulledShadowWithPipeline(
     const DirectX::XMFLOAT4X4 &lightViewProjection,
     const DirectX::XMFLOAT3 &lodOrigin,
     const std::array<float, kMeshGpuCullLodCount - 1u> &distanceBreaks,
-    uint32_t lodBias, uint32_t textureId) {
-    if (!dxCommon_ || !textureManager_ || !srvManager_ ||
-        !shadowRootSignature_ || !gpuLodCullRootSignature_ ||
-        !gpuLodCullPSO_ || !gpuLodCullArgsPSO_ ||
-        !gpuCullCommandSignature_ ||
-        pipelineId >= customInstancedPipelines_.size() ||
-        !customInstancedPipelines_[pipelineId].shadowPipelineState ||
-        !sourceInstances.IsValid() || drawIndex_ >= kMaxDraws) {
+    uint32_t lodBias, float maxDistance, uint32_t textureId,
+    bool opaqueShadow) {
+    if (!state_->dxCommon || !state_->textureManager || !state_->srvManager ||
+        !state_->shadowRootSignature || !state_->gpuLodCullRootSignature ||
+        !state_->gpuLodCullPSO || !state_->gpuLodCullArgsPSO ||
+        !state_->gpuCullCommandSignature ||
+        pipelineId >= state_->customInstancedPipelines.size() ||
+        !state_->customInstancedPipelines[pipelineId].shadowPipelineStates[0] ||
+        !sourceInstances.IsValid() || state_->drawIndex >= kMaxDraws) {
         return false;
     }
     for (const Mesh *mesh : lodMeshes) {
@@ -766,180 +224,169 @@ bool MeshRenderer::DrawMeshInstancedGpuLodCulledShadowWithPipeline(
             return false;
         }
     }
-    if (!EnsureGpuLodCullBuffer(sourceInstances, cullBuffer)) {
+    ID3D12GraphicsCommandList *cmd = nullptr;
+    if (!DispatchLodGpuCull(
+            lodMeshes, sourceInstances, cullBuffer, localBounds,
+            XMLoadFloat4x4(&lightViewProjection), lodOrigin,
+            MakeFiniteOrigin(lodOrigin), distanceBreaks,
+            DefaultCullOcclusionParams(), lodBias, maxDistance, cmd)) {
         return false;
     }
 
-    auto *cmd = dxCommon_->GetCommandList();
-    ID3D12DescriptorHeap *heap = srvManager_->GetHeap();
-    const D3D12_GPU_DESCRIPTOR_HANDLE occlusionHandle =
-        GetCullOcclusionHandle();
-    if (cmd == nullptr || heap == nullptr || occlusionHandle.ptr == 0) {
+    if (!BindGpuCulledShadowDrawState(pipelineId, material,
+                                      lightViewProjection, textureId,
+                                      opaqueShadow)) {
         return false;
     }
-    if (!RegisterGpuLodCullStateRollback(cullBuffer)) {
-        return false;
-    }
+    return ExecuteGpuLodCulledMeshDraws(cmd, lodMeshes, cullBuffer);
+}
 
-    MeshGpuLodCullConstants cullConstants{};
-    BuildFrustumPlanes(XMLoadFloat4x4(&lightViewProjection),
-                       cullConstants.frustumPlanes);
-    cullConstants.cameraAndMaxDistanceSq = {};
-    const float radius =
-        std::isfinite(localBounds.radius)
-            ? (std::max)(localBounds.radius, 0.0001f)
-            : 0.0001f;
-    cullConstants.localCenterAndRadius = {
-        std::isfinite(localBounds.center.x) ? localBounds.center.x : 0.0f,
-        std::isfinite(localBounds.center.y) ? localBounds.center.y : 0.0f,
-        std::isfinite(localBounds.center.z) ? localBounds.center.z : 0.0f,
-        radius};
-    cullConstants.lodOriginAndBias = {
-        std::isfinite(lodOrigin.x) ? lodOrigin.x : 0.0f,
-        std::isfinite(lodOrigin.y) ? lodOrigin.y : 0.0f,
-        std::isfinite(lodOrigin.z) ? lodOrigin.z : 0.0f,
-        static_cast<float>(lodBias)};
-    cullConstants.lodDistanceBreaks = {
-        std::isfinite(distanceBreaks[0]) ? distanceBreaks[0] : 0.0f,
-        std::isfinite(distanceBreaks[1]) ? distanceBreaks[1] : 0.0f, 0.0f,
-        0.0f};
-    cullConstants.occlusionViewProjection = occlusionViewProjection_;
-    cullConstants.occlusionParams = {0.0f, 0.0f, 0.0f, 0.006f};
-    cullConstants.instanceCount = sourceInstances.instanceCount;
-    cullConstants.enableDistanceCull = 0u;
-    cullConstants.lodBias =
-        (std::min)(lodBias, kMeshGpuCullLodCount - 1u);
-
-    MeshGpuLodCullArgsConstants argsConstants{};
-    argsConstants.indexCountPerInstance = {
-        lodMeshes[0]->indexCount, lodMeshes[1]->indexCount,
-        lodMeshes[2]->indexCount, 0u};
-    argsConstants.maxInstanceCount = sourceInstances.instanceCount;
-    argsConstants.startIndexLocation = 0u;
-    argsConstants.baseVertexLocation = 0;
-    argsConstants.startInstanceLocation = 0u;
-
-    const D3D12_GPU_VIRTUAL_ADDRESS cullCb =
-        uploadBuffer_.Write(cullConstants).gpu;
-    const D3D12_GPU_VIRTUAL_ADDRESS argsCb =
-        uploadBuffer_.Write(argsConstants).gpu;
-    if (cullCb == 0 || argsCb == 0) {
+bool MeshRenderer::DispatchSingleGpuCull(
+    const Mesh &mesh, const MeshInstanceBuffer &sourceInstances,
+    MeshGpuCullBuffer &cullBuffer, const MeshGpuCullBounds &localBounds,
+    const XMMATRIX &cullViewProjection, const XMFLOAT3 &cullOrigin,
+    const XMFLOAT4 &occlusionParams, float maxDistance,
+    ID3D12GraphicsCommandList *&commandList) {
+    ID3D12DescriptorHeap *heap = nullptr;
+    D3D12_GPU_DESCRIPTOR_HANDLE occlusionHandle{};
+    if (!PrepareGpuCullDispatch(sourceInstances, cullBuffer, commandList, heap,
+                                occlusionHandle)) {
         return false;
     }
 
-    ID3D12DescriptorHeap *heaps[] = {heap};
-    cmd->SetDescriptorHeaps(1, heaps);
+    const MeshGpuCullConstants cullConstants = BuildSingleGpuCullConstants(
+        cullViewProjection, cullOrigin, localBounds,
+        state_->occlusionViewProjection, occlusionParams,
+        sourceInstances.instanceCount, maxDistance);
+    const MeshGpuCullArgsConstants argsConstants =
+        BuildSingleCullArgs(mesh, sourceInstances.instanceCount);
 
-    std::vector<D3D12_RESOURCE_BARRIER> beforeCullBarriers;
-    beforeCullBarriers.reserve(1u + kMeshGpuCullLodCount * 2u);
-    beforeCullBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
-        sourceInstances.resource.Get(),
-        D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
-        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        if (cullBuffer.outputStates[lod] !=
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
-            beforeCullBarriers.push_back(
-                CD3DX12_RESOURCE_BARRIER::Transition(
-                    cullBuffer.outputResources[lod].Get(),
-                    cullBuffer.outputStates[lod],
-                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
-            cullBuffer.outputStates[lod] =
-                D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-        }
-        if (cullBuffer.drawArgsStates[lod] !=
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
-            beforeCullBarriers.push_back(
-                CD3DX12_RESOURCE_BARRIER::Transition(
-                    cullBuffer.drawArgsResources[lod].Get(),
-                    cullBuffer.drawArgsStates[lod],
-                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
-            cullBuffer.drawArgsStates[lod] =
-                D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-        }
+    D3D12_GPU_VIRTUAL_ADDRESS cullCb = 0;
+    D3D12_GPU_VIRTUAL_ADDRESS argsCb = 0;
+    if (!WriteGpuCullConstantBuffers(state_->uploadBuffer, cullConstants,
+                                     argsConstants, cullCb, argsCb)) {
+        return false;
     }
-    cmd->ResourceBarrier(static_cast<UINT>(beforeCullBarriers.size()),
-                         beforeCullBarriers.data());
 
-    const UINT zeroValues[4] = {0u, 0u, 0u, 0u};
-    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        cmd->ClearUnorderedAccessViewUint(
-            cullBuffer.countUavGpuHandles[lod],
-            cullBuffer.countUavCpuHandles[lod],
-            cullBuffer.countResources[lod].Get(), zeroValues, 0, nullptr);
+    ExecuteSingleGpuCull(commandList, heap, state_->gpuCullRootSignature.Get(),
+                         state_->gpuCullPSO.Get(), state_->gpuCullArgsPSO.Get(),
+                         occlusionHandle, sourceInstances, cullBuffer, cullCb,
+                         argsCb);
+    return true;
+}
+
+bool MeshRenderer::DispatchLodGpuCull(
+    const std::array<const Mesh *, kMeshGpuCullLodCount> &lodMeshes,
+    const MeshInstanceBuffer &sourceInstances,
+    MeshGpuLodCullBuffer &cullBuffer,
+    const MeshGpuCullBounds &localBounds,
+    const XMMATRIX &cullViewProjection, const XMFLOAT3 &cullOrigin,
+    const XMFLOAT3 &lodOrigin,
+    const std::array<float, kMeshGpuCullLodCount - 1u> &distanceBreaks,
+    const XMFLOAT4 &occlusionParams, uint32_t lodBias, float maxDistance,
+    ID3D12GraphicsCommandList *&commandList) {
+    ID3D12DescriptorHeap *heap = nullptr;
+    D3D12_GPU_DESCRIPTOR_HANDLE occlusionHandle{};
+    if (!PrepareGpuLodCullDispatch(sourceInstances, cullBuffer, commandList,
+                                   heap, occlusionHandle)) {
+        return false;
     }
-    std::array<D3D12_RESOURCE_BARRIER, kMeshGpuCullLodCount>
-        countClearBarriers{};
-    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        countClearBarriers[lod] =
-            CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.countResources[lod].Get());
+
+    const MeshGpuLodCullConstants cullConstants = BuildLodGpuCullConstants(
+        cullViewProjection, cullOrigin, lodOrigin, localBounds, distanceBreaks,
+        state_->occlusionViewProjection, occlusionParams,
+        sourceInstances.instanceCount, lodBias, maxDistance);
+    const MeshGpuLodCullArgsConstants argsConstants =
+        BuildLodCullArgs(lodMeshes, sourceInstances.instanceCount);
+
+    D3D12_GPU_VIRTUAL_ADDRESS cullCb = 0;
+    D3D12_GPU_VIRTUAL_ADDRESS argsCb = 0;
+    if (!WriteGpuCullConstantBuffers(state_->uploadBuffer, cullConstants,
+                                     argsConstants, cullCb, argsCb)) {
+        return false;
     }
-    cmd->ResourceBarrier(static_cast<UINT>(countClearBarriers.size()),
-                         countClearBarriers.data());
 
-    cmd->SetComputeRootSignature(gpuLodCullRootSignature_.Get());
-    cmd->SetPipelineState(gpuLodCullPSO_.Get());
-    cmd->SetComputeRootConstantBufferView(0, cullCb);
-    cmd->SetComputeRootDescriptorTable(1, cullBuffer.sourceSrvGpuHandle);
-    cmd->SetComputeRootDescriptorTable(2, occlusionHandle);
-    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        cmd->SetComputeRootDescriptorTable(
-            3 + lod, cullBuffer.outputUavGpuHandles[lod]);
-        cmd->SetComputeRootDescriptorTable(
-            6 + lod, cullBuffer.countUavGpuHandles[lod]);
-        cmd->SetComputeRootDescriptorTable(
-            9 + lod, cullBuffer.drawArgsUavGpuHandles[lod]);
+    ExecuteLodGpuCull(commandList, heap, state_->gpuLodCullRootSignature.Get(),
+                      state_->gpuLodCullPSO.Get(),
+                      state_->gpuLodCullArgsPSO.Get(), occlusionHandle,
+                      sourceInstances, cullBuffer, cullCb, argsCb);
+    return true;
+}
+
+bool MeshRenderer::PrepareGpuCullDispatch(
+    const MeshInstanceBuffer &sourceInstances, MeshGpuCullBuffer &buffer,
+    ID3D12GraphicsCommandList *&commandList,
+    ID3D12DescriptorHeap *&descriptorHeap,
+    D3D12_GPU_DESCRIPTOR_HANDLE &occlusionHandle) {
+    if (!EnsureGpuCullBuffer(sourceInstances, buffer)) {
+        return false;
     }
-    cmd->Dispatch((sourceInstances.instanceCount + 127u) / 128u, 1u, 1u);
 
-    std::vector<D3D12_RESOURCE_BARRIER> countBarriers;
-    countBarriers.reserve(kMeshGpuCullLodCount * 2u);
-    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        countBarriers.push_back(
-            CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.outputResources[lod].Get()));
-        countBarriers.push_back(
-            CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.countResources[lod].Get()));
+    commandList = state_->dxCommon->GetCommandList();
+    descriptorHeap = state_->srvManager->GetHeap();
+    occlusionHandle = GetCullOcclusionHandle();
+    if (commandList == nullptr || descriptorHeap == nullptr ||
+        occlusionHandle.ptr == 0) {
+        return false;
     }
-    cmd->ResourceBarrier(static_cast<UINT>(countBarriers.size()),
-                         countBarriers.data());
+    return RegisterGpuCullStateRollback(buffer);
+}
 
-    cmd->SetPipelineState(gpuLodCullArgsPSO_.Get());
-    cmd->SetComputeRootConstantBufferView(0, argsCb);
-    cmd->Dispatch(1u, 1u, 1u);
-
-    std::array<D3D12_RESOURCE_BARRIER, kMeshGpuCullLodCount> drawArgsUav{};
-    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        drawArgsUav[lod] =
-            CD3DX12_RESOURCE_BARRIER::UAV(cullBuffer.drawArgsResources[lod].Get());
+bool MeshRenderer::PrepareGpuLodCullDispatch(
+    const MeshInstanceBuffer &sourceInstances, MeshGpuLodCullBuffer &buffer,
+    ID3D12GraphicsCommandList *&commandList,
+    ID3D12DescriptorHeap *&descriptorHeap,
+    D3D12_GPU_DESCRIPTOR_HANDLE &occlusionHandle) {
+    if (!EnsureGpuLodCullBuffer(sourceInstances, buffer)) {
+        return false;
     }
-    cmd->ResourceBarrier(static_cast<UINT>(drawArgsUav.size()),
-                         drawArgsUav.data());
 
-    std::vector<D3D12_RESOURCE_BARRIER> drawBarriers;
-    drawBarriers.reserve(1u + kMeshGpuCullLodCount * 2u);
-    for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        drawBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
-            cullBuffer.outputResources[lod].Get(),
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-            D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
-        drawBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
-            cullBuffer.drawArgsResources[lod].Get(),
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-            D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT));
-        cullBuffer.outputStates[lod] =
-            D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
-        cullBuffer.drawArgsStates[lod] =
-            D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
+    commandList = state_->dxCommon->GetCommandList();
+    descriptorHeap = state_->srvManager->GetHeap();
+    occlusionHandle = GetCullOcclusionHandle();
+    if (commandList == nullptr || descriptorHeap == nullptr ||
+        occlusionHandle.ptr == 0) {
+        return false;
     }
-    drawBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
-        sourceInstances.resource.Get(),
-        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-        D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
-    cmd->ResourceBarrier(static_cast<UINT>(drawBarriers.size()),
-                         drawBarriers.data());
+    return RegisterGpuLodCullStateRollback(buffer);
+}
 
+bool MeshRenderer::BindGpuCulledForwardDrawState(
+    uint32_t pipelineId, const Material &material, const Camera &camera,
+    uint32_t textureId, uint32_t normalTextureId) {
     InvalidateCommandState();
-    const Material drawMaterial = NormalizeMaterialForDraw(material);
+    const Material drawMaterial =
+        NormalizeMaterialForDraw(material, state_->materialReflectionsEnabled);
+    const D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr =
+        WriteObjectConstants(XMMatrixIdentity(), XMMatrixIdentity(),
+                             XMMatrixIdentity());
+    const D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr = WriteSceneConstants(camera);
+    const D3D12_GPU_VIRTUAL_ADDRESS materialCbAddr =
+        WriteMaterialConstants(drawMaterial);
+    if (objectCbAddr == 0 || sceneCbAddr == 0 || materialCbAddr == 0) {
+        return false;
+    }
+
+    SetGraphicsRootSignatureCached(state_->rootSignature.Get());
+    if (!SetInstancedPipelineForMaterial(
+            state_->customInstancedPipelines[pipelineId].pipelineStates,
+            drawMaterial)) {
+        return false;
+    }
+    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
+    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
+    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
+    BindForwardMaterialDescriptors(drawMaterial, textureId, normalTextureId);
+    return true;
+}
+
+bool MeshRenderer::BindGpuCulledShadowDrawState(
+    uint32_t pipelineId, const Material &material,
+    const DirectX::XMFLOAT4X4 &lightViewProjection, uint32_t textureId,
+    bool opaqueShadow) {
+    InvalidateCommandState();
+    const Material drawMaterial =
+        NormalizeMaterialForDraw(material, state_->materialReflectionsEnabled);
     const D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr =
         WriteObjectConstants(XMMatrixIdentity(), XMMatrixIdentity(),
                              XMMatrixIdentity());
@@ -951,42 +398,65 @@ bool MeshRenderer::DrawMeshInstancedGpuLodCulledShadowWithPipeline(
         return false;
     }
 
-    SetGraphicsRootSignatureCached(shadowRootSignature_.Get());
-    SetPipelineStateCached(
-        customInstancedPipelines_[pipelineId].shadowPipelineState.Get());
+    SetGraphicsRootSignatureCached(state_->shadowRootSignature.Get());
+    const InstancedPipelineSet &pipelineSet =
+        state_->customInstancedPipelines[pipelineId];
+    const auto &shadowPipelineStates =
+        opaqueShadow ? pipelineSet.opaqueShadowPipelineStates
+                     : pipelineSet.shadowPipelineStates;
+    if (!SetInstancedShadowPipelineForMaterial(shadowPipelineStates,
+                                               drawMaterial)) {
+        return false;
+    }
     SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
     SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
     SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
-    SetGraphicsRootDescriptorTableCached(
-        3, textureManager_->GetGpuHandle(
-               ResolveBaseColorTextureId(textureManager_, drawMaterial,
-                                         textureId)));
+    BindShadowMaterialDescriptor(drawMaterial, textureId);
+    return true;
+}
 
+void MeshRenderer::ExecuteGpuCulledMeshDraw(
+    ID3D12GraphicsCommandList *commandList, const Mesh &mesh,
+    const MeshGpuCullBuffer &cullBuffer) {
+    const D3D12_VERTEX_BUFFER_VIEW views[] = {mesh.vbView, cullBuffer.outputView};
+    IASetVertexBuffersCached(0, 2, views);
+    IASetIndexBufferCached(mesh.ibView);
+    IASetPrimitiveTopologyCached(mesh.primitiveTopology);
+    commandList->ExecuteIndirect(state_->gpuCullCommandSignature.Get(), 1,
+                                 cullBuffer.drawArgsResource.Get(), 0,
+                                 nullptr, 0);
+    ++state_->drawIndex;
+}
+
+bool MeshRenderer::ExecuteGpuLodCulledMeshDraws(
+    ID3D12GraphicsCommandList *commandList,
+    const std::array<const Mesh *, kMeshGpuCullLodCount> &lodMeshes,
+    const MeshGpuLodCullBuffer &cullBuffer) {
     for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        if (drawIndex_ >= kMaxDraws) {
+        if (state_->drawIndex >= kMaxDraws) {
             return true;
         }
-        D3D12_VERTEX_BUFFER_VIEW views[] = {lodMeshes[lod]->vbView,
-                                            cullBuffer.outputViews[lod]};
+        const D3D12_VERTEX_BUFFER_VIEW views[] = {
+            lodMeshes[lod]->vbView, cullBuffer.outputViews[lod]};
         IASetVertexBuffersCached(0, 2, views);
         IASetIndexBufferCached(lodMeshes[lod]->ibView);
         IASetPrimitiveTopologyCached(lodMeshes[lod]->primitiveTopology);
-        cmd->ExecuteIndirect(gpuCullCommandSignature_.Get(), 1,
-                             cullBuffer.drawArgsResources[lod].Get(), 0,
-                             nullptr, 0);
-        ++drawIndex_;
+        commandList->ExecuteIndirect(state_->gpuCullCommandSignature.Get(), 1,
+                                     cullBuffer.drawArgsResources[lod].Get(),
+                                     0, nullptr, 0);
+        ++state_->drawIndex;
     }
     return true;
 }
 
 bool MeshRenderer::RegisterGpuCullStateRollback(MeshGpuCullBuffer &buffer) {
-    if (dxCommon_ == nullptr) {
+    if (state_->dxCommon == nullptr) {
         return false;
     }
     MeshGpuCullBuffer *target = &buffer;
     const D3D12_RESOURCE_STATES previousOutputState = buffer.outputState;
     const D3D12_RESOURCE_STATES previousDrawArgsState = buffer.drawArgsState;
-    return dxCommon_->RegisterFrameRollback(
+    return state_->dxCommon->RegisterFrameRollback(
         target, [target, previousOutputState, previousDrawArgsState]() {
             target->outputState = previousOutputState;
             target->drawArgsState = previousDrawArgsState;
@@ -995,13 +465,13 @@ bool MeshRenderer::RegisterGpuCullStateRollback(MeshGpuCullBuffer &buffer) {
 
 bool MeshRenderer::RegisterGpuLodCullStateRollback(
     MeshGpuLodCullBuffer &buffer) {
-    if (dxCommon_ == nullptr) {
+    if (state_->dxCommon == nullptr) {
         return false;
     }
     MeshGpuLodCullBuffer *target = &buffer;
     const auto previousOutputStates = buffer.outputStates;
     const auto previousDrawArgsStates = buffer.drawArgsStates;
-    return dxCommon_->RegisterFrameRollback(
+    return state_->dxCommon->RegisterFrameRollback(
         target, [target, previousOutputStates, previousDrawArgsStates]() {
             target->outputStates = previousOutputStates;
             target->drawArgsStates = previousDrawArgsStates;
@@ -1009,8 +479,8 @@ bool MeshRenderer::RegisterGpuLodCullStateRollback(
 }
 
 D3D12_GPU_DESCRIPTOR_HANDLE MeshRenderer::GetCullOcclusionHandle() const {
-    if (occlusionPyramidEnabled_ && occlusionPyramidGpuHandle_.ptr != 0) {
-        return occlusionPyramidGpuHandle_;
+    if (state_->occlusionPyramidEnabled && state_->occlusionPyramidGpuHandle.ptr != 0) {
+        return state_->occlusionPyramidGpuHandle;
     }
-    return fallbackOcclusionGpuHandle_;
+    return state_->fallbackOcclusionGpuHandle;
 }

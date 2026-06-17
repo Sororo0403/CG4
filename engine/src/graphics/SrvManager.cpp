@@ -1,63 +1,65 @@
 #include "graphics/SrvManager.h"
+
+#include "SrvManagerInternal.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
+
 #include <algorithm>
 #include <utility>
 
-void SrvManager::Initialize(DirectXCommon *dxCommon, UINT maxSrvCount) {
+SrvManager::SrvManager() : state_(std::make_unique<State>()) {}
+
+SrvManager::~SrvManager() = default;
+
+ID3D12DescriptorHeap* SrvManager::GetHeap() const {
+    return state_->heap.Get();
+}
+
+UINT SrvManager::GetDescriptorSize() const {
+    return state_->descriptorSize;
+}
+
+void SrvManager::Initialize(const DirectXCommon* dxCommon, UINT maxSrvCount) {
     if (!dxCommon || !dxCommon->GetDevice() || maxSrvCount == 0) {
-        heap_.Reset();
-        descriptorSize_ = 0;
-        maxSrvCount_ = 0;
-        currentIndex_ = 0;
-        freeList_.clear();
-        allocated_.clear();
+        state_->heap.Reset();
+        state_->descriptorSize = 0;
+        state_->maxSrvCount = 0;
+        state_->currentIndex = 0;
+        state_->freeList.clear();
+        state_->allocated.clear();
         return;
     }
 
     std::vector<bool> newAllocated;
     std::vector<UINT> newFreeList;
-    try {
-        newAllocated.assign(maxSrvCount, false);
-        newFreeList.reserve(maxSrvCount);
-    } catch (...) {
-        heap_.Reset();
-        descriptorSize_ = 0;
-        maxSrvCount_ = 0;
-        currentIndex_ = 0;
-        freeList_.clear();
-        allocated_.clear();
-        return;
-    }
-
+    newAllocated.assign(maxSrvCount, false);
+    newFreeList.reserve(maxSrvCount);
     D3D12_DESCRIPTOR_HEAP_DESC desc{};
     desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     desc.NumDescriptors = maxSrvCount;
     desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> newHeap;
-    if (FAILED(dxCommon->GetDevice()->CreateDescriptorHeap(
-            &desc, IID_PPV_ARGS(&newHeap))) ||
+    if (FAILED(dxCommon->GetDevice()->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&newHeap))) ||
         !newHeap) {
-        heap_.Reset();
-        descriptorSize_ = 0;
-        maxSrvCount_ = 0;
-        currentIndex_ = 0;
-        freeList_.clear();
-        allocated_.clear();
+        state_->heap.Reset();
+        state_->descriptorSize = 0;
+        state_->maxSrvCount = 0;
+        state_->currentIndex = 0;
+        state_->freeList.clear();
+        state_->allocated.clear();
         return;
     }
 
-    const UINT descriptorSize =
-        dxCommon->GetDevice()->GetDescriptorHandleIncrementSize(
+    const UINT descriptorSize = dxCommon->GetDevice()->GetDescriptorHandleIncrementSize(
         D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-    heap_ = std::move(newHeap);
-    descriptorSize_ = descriptorSize;
-    maxSrvCount_ = maxSrvCount;
-    currentIndex_ = 0;
-    freeList_ = std::move(newFreeList);
-    allocated_ = std::move(newAllocated);
+    state_->heap = std::move(newHeap);
+    state_->descriptorSize = descriptorSize;
+    state_->maxSrvCount = maxSrvCount;
+    state_->currentIndex = 0;
+    state_->freeList = std::move(newFreeList);
+    state_->allocated = std::move(newAllocated);
 }
 
 UINT SrvManager::Allocate() {
@@ -65,15 +67,15 @@ UINT SrvManager::Allocate() {
         return UINT_MAX;
     }
 
-    if (!freeList_.empty()) {
-        const UINT index = freeList_.back();
-        freeList_.pop_back();
-        allocated_[index] = true;
+    if (!state_->freeList.empty()) {
+        const UINT index = state_->freeList.back();
+        state_->freeList.pop_back();
+        state_->allocated[index] = true;
         return index;
     }
 
-    const UINT index = currentIndex_++;
-    allocated_[index] = true;
+    const UINT index = state_->currentIndex++;
+    state_->allocated[index] = true;
     return index;
 }
 
@@ -92,27 +94,27 @@ UINT SrvManager::AllocateRange(UINT count) {
 
     const UINT endIndex = startIndex + count;
     for (UINT index = startIndex; index < endIndex; ++index) {
-        allocated_[index] = true;
-        auto freeIt = std::find(freeList_.begin(), freeList_.end(), index);
-        if (freeIt != freeList_.end()) {
-            freeList_.erase(freeIt);
+        state_->allocated[index] = true;
+        auto freeIt = std::find(state_->freeList.begin(), state_->freeList.end(), index);
+        if (freeIt != state_->freeList.end()) {
+            state_->freeList.erase(freeIt);
         }
     }
-    currentIndex_ = (std::max)(currentIndex_, endIndex);
+    state_->currentIndex = (std::max)(state_->currentIndex, endIndex);
     return startIndex;
 }
 
 bool SrvManager::CanAllocateDescriptors(UINT count) const {
-    if (!heap_ || descriptorSize_ == 0 || count == 0) {
+    if (!state_->heap || state_->descriptorSize == 0 || count == 0) {
         return false;
     }
-    if (count > maxSrvCount_ || allocated_.size() < maxSrvCount_) {
+    if (count > state_->maxSrvCount || state_->allocated.size() < state_->maxSrvCount) {
         return false;
     }
 
     const UINT unusedTail =
-        currentIndex_ < maxSrvCount_ ? maxSrvCount_ - currentIndex_ : 0;
-    return count <= freeList_.size() + unusedTail;
+        state_->currentIndex < state_->maxSrvCount ? state_->maxSrvCount - state_->currentIndex : 0;
+    return count <= state_->freeList.size() + unusedTail;
 }
 
 bool SrvManager::CanAllocateRange(UINT count) const {
@@ -128,32 +130,28 @@ bool SrvManager::FreeIfAllocated(UINT index) {
         return false;
     }
 
-    try {
-        freeList_.push_back(index);
-    } catch (...) {
-        return false;
-    }
-    allocated_[index] = false;
+    state_->freeList.push_back(index);
+    state_->allocated[index] = false;
     return true;
 }
 
 bool SrvManager::IsAllocated(UINT index) const {
-    return index < currentIndex_ && index < allocated_.size() &&
-           allocated_[index];
+    return index < state_->currentIndex && index < state_->allocated.size() &&
+           state_->allocated[index];
 }
 
 UINT SrvManager::FindAvailableRange(UINT count) const {
-    if (!heap_ || descriptorSize_ == 0 || count == 0 ||
-        count > maxSrvCount_ || allocated_.size() < maxSrvCount_) {
+    if (!state_->heap || state_->descriptorSize == 0 || count == 0 || count > state_->maxSrvCount ||
+        state_->allocated.size() < state_->maxSrvCount) {
         return UINT_MAX;
     }
 
-    const UINT lastStartIndex = maxSrvCount_ - count;
+    const UINT lastStartIndex = state_->maxSrvCount - count;
     for (UINT startIndex = 0; startIndex <= lastStartIndex; ++startIndex) {
         bool available = true;
         for (UINT offset = 0; offset < count; ++offset) {
             const UINT index = startIndex + offset;
-            if (index < currentIndex_ && allocated_[index]) {
+            if (index < state_->currentIndex && state_->allocated[index]) {
                 available = false;
                 startIndex += offset;
                 break;
@@ -168,28 +166,27 @@ UINT SrvManager::FindAvailableRange(UINT count) const {
     return UINT_MAX;
 }
 
-void SrvManager::ValidateAllocatedIndex(UINT index,
-                                        const char *operation) const {
+void SrvManager::ValidateAllocatedIndex(UINT index, const char* operation) {
     (void)index;
     (void)operation;
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE
 SrvManager::GetCpuHandle(UINT index) const {
-    if (!IsAllocated(index) || !heap_ || descriptorSize_ == 0) {
+    if (!IsAllocated(index) || !state_->heap || state_->descriptorSize == 0) {
         return {};
     }
 
-    return CD3DX12_CPU_DESCRIPTOR_HANDLE(
-        heap_->GetCPUDescriptorHandleForHeapStart(), index, descriptorSize_);
+    return CD3DX12_CPU_DESCRIPTOR_HANDLE(state_->heap->GetCPUDescriptorHandleForHeapStart(), index,
+                                         state_->descriptorSize);
 }
 
 D3D12_GPU_DESCRIPTOR_HANDLE
 SrvManager::GetGpuHandle(UINT index) const {
-    if (!IsAllocated(index) || !heap_ || descriptorSize_ == 0) {
+    if (!IsAllocated(index) || !state_->heap || state_->descriptorSize == 0) {
         return {};
     }
 
-    return CD3DX12_GPU_DESCRIPTOR_HANDLE(
-        heap_->GetGPUDescriptorHandleForHeapStart(), index, descriptorSize_);
+    return CD3DX12_GPU_DESCRIPTOR_HANDLE(state_->heap->GetGPUDescriptorHandleForHeapStart(), index,
+                                         state_->descriptorSize);
 }

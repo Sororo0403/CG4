@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -17,6 +17,7 @@
     <RootNamespace>Engine</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectName>Engine</ProjectName>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props">
   </Import>
@@ -50,14 +51,14 @@
   <PropertyGroup Label="UserMacros">
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <OutDir>$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
-    <IntDir>$(SolutionDir)generated\intermediate\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <OutDir>$(MSBuildThisFileDirectory)..\generated\outputs\$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)..\generated\intermediate\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
     <IncludePath>$(IncludePath)</IncludePath>
     <LibraryPath>$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <OutDir>$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
-    <IntDir>$(SolutionDir)generated\intermediate\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <OutDir>$(MSBuildThisFileDirectory)..\generated\outputs\$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)..\generated\intermediate\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
     <IncludePath>$(IncludePath)</IncludePath>
     <LibraryPath>$(LibraryPath)</LibraryPath>
   </PropertyGroup>
@@ -74,22 +75,22 @@
       <AdditionalOptions>/utf-8 /FS %(AdditionalOptions)</AdditionalOptions>
       <ProgramDataBaseFileName>$(IntDir)$(ProjectName).pdb</ProgramDataBaseFileName>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <TreatWarningAsError>false</TreatWarningAsError>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)include;$(MSBuildThisFileDirectory)externals;$(MSBuildThisFileDirectory)externals\assimp\include;$(MSBuildThisFileDirectory)externals\assimp\include\assimp;$(MSBuildThisFileDirectory)externals\DirectX-Headers;$(MSBuildThisFileDirectory)externals\DirectXTex;$(MSBuildThisFileDirectory)externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /FS %(AdditionalOptions)</AdditionalOptions>
       <ProgramDataBaseFileName>$(IntDir)$(ProjectName).pdb</ProgramDataBaseFileName>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -97,59 +98,92 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\Culling.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\DepthPyramid.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\DynamicBuffer.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\FrameHistory.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\GpuProfiler.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\LightingScene.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\RenderGraph.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\RenderScene.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PipelineManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PostEffectManager.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PostProcessSystemBloom.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PostProcessSystem.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PostProcessSystemConstants.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PostProcessSystemPipeline.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\RenderPassController.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\RenderTexture.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\ShadowMapRenderer.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\TransparentRenderQueue.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\AdvancedGpuRenderer.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\VolumetricLightingSystem.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\SkyboxRenderer.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MaterialManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\animation\Animator.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\animation\AnimationSampler.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\animation\AssimpAnimationLoader.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\AssimpLoader.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\AssimpMeshLoaderBones.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\AssimpMeshLoaderMaterial.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\AssimpMeshLoader.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\collision\CollisionManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\collision\CollisionUtil.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleSystem.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleEmitterUtils.cpp" />
-    <ClCompile Include="$(MSBuildThisFileDirectory)src\physics\CharacterController.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\SceneManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\EditorGizmo.cpp" />
-    <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\WorldStateStore.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\input\Input.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\input\InputReplay.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\input\InputReplaySerialization.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\sound\AudioFileLoader.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\sound\SoundFormatUtils.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\sound\SoundManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\sound\SoundManagerAnalysis.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\sound\SoundManagerLifecycle.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\sound\SoundManagerResources.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\sound\SoundManagerSpatial.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\sound\SoundManagerStreaming.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\imgui\ImguiManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelManager.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelManagerRuntime.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelPrimitiveFactory.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelPrimitiveFactoryBasic.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelPrimitiveFactoryRound.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\camera\Camera.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\camera\CameraManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshPipelineFactory.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRenderer.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRendererBuffers.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRendererCommands.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRendererGpuCull.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRendererGpuCullBuffers.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRendererGpuCullInternal.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRendererGpuCullResources.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRendererPipeline.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRendererLifecycle.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\MeshRendererShadow.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelRenderer.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelRendererLifecycle.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelRendererBuffers.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelRendererPipeline.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelRendererShadow.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelRendererSkinClusters.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelRendererSkinning.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelRendererSkinningPipeline.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\model\ModelRendererSubmit.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\sprite\SpriteManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\sprite\SpriteRenderer.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\sprite\SpriteRendererLifecycle.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\sprite\SpriteRendererPipeline.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\DirectXCommon.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\DirectXCommonFrameRecovery.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\DirectXCommonPasses.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\DirectXCommonResources.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\DirectXCommonSync.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\UploadRingBuffer.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleSystemDispatch.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleSystemDraw.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleSystemPipeline.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleSystemRelease.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleSystemResources.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleSystemShared.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\core\AssetManager.cpp" />
@@ -157,11 +191,17 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\core\CpuProfiler.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\core\DebugSettingsStore.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\core\EngineRuntime.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\core\EngineRuntimeRenderGraph.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\core\FrameTimer.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\core\WinApp.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\font\FontManager.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\font\TextRenderer.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\SrvManager.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\texture\CpuTextureLoader.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\texture\TextureManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\texture\TextureManagerAsync.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\texture\TextureManagerCreation.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\texture\TextureManagerDecoding.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\texture\TextureManagerDynamic.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\animation\SkeletonPoseBuilder.cpp" />
   </ItemGroup>
@@ -175,6 +215,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)public\Engine.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)public\EngineAnimation.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)public\EngineAudio.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)public\EngineCore.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)public\EngineRendering.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)public\EngineScene.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)public\EngineUi.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\animation\Animator.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\animation\AnimationSampler.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\animation\AssimpAnimationLoader.h" />
@@ -188,7 +234,6 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\particle\GPUParticleSystem.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleSystemShared.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\particle\ParticleEmitterSettings.h" />
-    <ClInclude Include="$(MSBuildThisFileDirectory)include\physics\CharacterController.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\Transform.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\BaseScene.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\imgui\ImguiManager.h" />
@@ -197,11 +242,26 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\DxHelpers.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\DxUtils.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\DirectXCommon.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\FrameHistory.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\graphics\DirectXCommonDiagnostics.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\graphics\DirectXCommonInternal.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\graphics\ConstantBufferUtils.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\graphics\RootSignatureUtils.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\model\AssimpMeshLoaderMaterial.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\model\AssimpMeshLoaderUtils.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\model\ModelPrimitiveFactory.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\model\MeshRendererCommandCache.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\model\MeshRendererGpuCullInternal.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\model\RendererInputLayouts.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\model\RendererMaterialUtils.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\model\RendererPipelineVariantUtils.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\model\RendererObjectConstants.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\model\RendererUploadUtils.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleEmitterUtils.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\particle\GPUParticleSystemInternal.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\FrameRollbackRegistry.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\font\FontManager.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\font\TextRenderer.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\GpuResourceLifetime.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\Culling.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\DepthPyramid.h" />
@@ -210,16 +270,21 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\GpuResourceHelpers.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\RenderGraph.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\Lighting.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\SkyAtmosphere.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\PipelineManager.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\PostEffectManager.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\PostProcessSystem.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\PostProcessSettings.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\LightingScene.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\RenderContext.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\RenderPass.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\RenderPassController.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\RenderScene.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\RenderTexture.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\ShadowMapRenderer.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\TransparentRenderQueue.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\AdvancedGpuRenderer.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\VolumetricLightingSystem.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\SkyboxRenderer.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\AssetManager.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\AssetHotReloader.h" />
@@ -227,7 +292,10 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\CpuProfiler.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\DebugSettingsStore.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\EngineRuntime.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\core\EngineRuntimeInternal.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\core\EngineRuntimeSystems.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\FrameTimer.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\core\HashUtils.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\MathUtils.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\Numeric.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\PathUtils.h" />
@@ -235,17 +303,22 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\core\WinApp.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\Model.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MeshGeometry.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MeshGeometryUtils.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\Vertex.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\model\VertexInfluence.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\SceneContext.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\SceneServices.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\EditorGizmo.h" />
-    <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\WorldStateStore.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\sprite\Sprite.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\ShaderCompiler.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\ShaderPaths.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\SrvManager.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\graphics\UploadRingBuffer.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\texture\CpuTextureLoader.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\texture\Texture.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\texture\TextureManager.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\texture\TextureManagerAsyncState.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\texture\TextureManagerDecoding.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\texture\TextureLimits.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\sprite\SpriteRenderer.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\sprite\SpriteManager.h" />
@@ -264,6 +337,7 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\sound\AudioLimits.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\sound\AudioFileLoader.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\sound\SoundFormatUtils.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\sound\SoundManagerInternal.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\sound\SoundManager.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\sound\SoundVoiceCallback.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\input\Input.h" />
@@ -272,40 +346,9 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\AbstractSceneFactory.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\SceneManager.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\Material.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MaterialFeatures.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\MaterialManager.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\animation\SkeletonPoseBuilder.h" />
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\model\ModelPS.hlsl">
@@ -428,6 +471,30 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
+    <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\BloomExtractPS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\BloomDownsamplePS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\BloomUpsamplePS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\VolumetricLightingPS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
     <FxCompile Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\PostProcessVS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
@@ -480,11 +547,23 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
+    <None Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\BloomPassCommon.hlsli">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
     <None Include="$(MSBuildThisFileDirectory)resources\shaders\model\Model.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
     <None Include="$(MSBuildThisFileDirectory)resources\shaders\mesh\Mesh.hlsli">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
+    <None Include="$(MSBuildThisFileDirectory)resources\shaders\mesh\MeshLighting.hlsli">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
+    <None Include="$(MSBuildThisFileDirectory)resources\shaders\common\PbrLighting.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>

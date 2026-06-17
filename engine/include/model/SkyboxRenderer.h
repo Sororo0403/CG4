@@ -1,10 +1,7 @@
 #pragma once
 #include "camera/Camera.h"
-#include <DirectXMath.h>
 #include <cstdint>
-#include <d3d12.h>
-#include <vector>
-#include <wrl.h>
+#include <memory>
 
 class DirectXCommon;
 class TextureManager;
@@ -15,6 +12,7 @@ class SrvManager;
 /// </summary>
 class SkyboxRenderer {
   public:
+    SkyboxRenderer();
     ~SkyboxRenderer();
 
     /// <summary>
@@ -42,12 +40,7 @@ class SkyboxRenderer {
     /// 描画を実行する
     /// </summary>
     void Draw(uint32_t textureId, const Camera &camera);
-    bool IsReady() const {
-        return dxCommon_ != nullptr && srvManager_ != nullptr &&
-               textureManager_ != nullptr && rootSignature_ &&
-               pipelineState_ && vertexBuffer_ && indexBuffer_ &&
-               HasConstantBuffers() && indexCount_ > 0;
-    }
+    bool IsReady() const;
 
   private:
     /// <summary>
@@ -71,22 +64,9 @@ class SkyboxRenderer {
     void CreateConstantBuffer();
 
   private:
-    struct ConstBufferData {
-        DirectX::XMFLOAT4X4 matWVP{};
-    };
-
-    struct ConstantFrame {
-        Microsoft::WRL::ComPtr<ID3D12Resource> resource;
-        ConstBufferData *mapped = nullptr;
-
-        void Reset() {
-            if (resource && mapped != nullptr) {
-                resource->Unmap(0, nullptr);
-                mapped = nullptr;
-            }
-            resource.Reset();
-        }
-    };
+    struct ConstBufferData;
+    struct ConstantFrame;
+    struct State;
 
     ConstantFrame *GetCurrentConstantFrame();
     const ConstantFrame *GetCurrentConstantFrame() const;
@@ -95,15 +75,5 @@ class SkyboxRenderer {
     DirectXCommon *dxCommon_ = nullptr;
     SrvManager *srvManager_ = nullptr;
     TextureManager *textureManager_ = nullptr;
-
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> vertexBuffer_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> indexBuffer_;
-    std::vector<ConstantFrame> constantFrames_;
-
-    D3D12_VERTEX_BUFFER_VIEW vbView_{};
-    D3D12_INDEX_BUFFER_VIEW ibView_{};
-
-    uint32_t indexCount_ = 0;
+    std::unique_ptr<State> state_;
 };

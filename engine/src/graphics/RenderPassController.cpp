@@ -75,6 +75,8 @@ std::string_view RenderPassController::GetPassName(RenderPass pass) {
         return "Foreground3D";
     case RenderPass::Transparent:
         return "Transparent";
+    case RenderPass::VolumetricLighting:
+        return "VolumetricLighting";
     case RenderPass::PostProcess:
         return "PostProcess";
     case RenderPass::Debug:

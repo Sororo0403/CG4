@@ -2,6 +2,7 @@
 
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
+#include "../graphics/RootSignatureUtils.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 
@@ -17,6 +18,14 @@ ID3D12Device *gCachedParticleDrawDevice = nullptr;
 ComPtr<ID3D12RootSignature> gCachedParticleDrawRootSignature;
 ComPtr<ID3D12CommandSignature> gCachedParticleDrawCommandSignature;
 std::map<std::wstring, ComPtr<ID3D12PipelineState>> gParticleDrawPsoCache;
+
+std::wstring MakePipelineCacheKey(
+    const std::wstring &pixelShaderPath,
+    GPUParticleMaterialSettings::BlendMode blendMode) {
+    return pixelShaderPath + (blendMode == GPUParticleMaterialSettings::BlendMode::Additive
+                                  ? L"#additive"
+                                  : L"#alpha");
+}
 
 void ResetDrawCacheIfDeviceChanged(ID3D12Device *device) {
     if (gCachedParticleDrawDevice == device) {
@@ -70,16 +79,8 @@ ID3D12RootSignature *GetDrawRootSignature(ID3D12Device *device) {
     desc.Init(_countof(params), params, 1, &sampler,
               D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
-    ComPtr<ID3DBlob> blob, error;
-    if (FAILED(D3D12SerializeRootSignature(
-            &desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error)) ||
-        !blob) {
-        return nullptr;
-    }
-    if (FAILED(device->CreateRootSignature(
-            0, blob->GetBufferPointer(), blob->GetBufferSize(),
-            IID_PPV_ARGS(&gCachedParticleDrawRootSignature))) ||
-        !gCachedParticleDrawRootSignature) {
+    if (!RootSignatureUtils::CreateRootSignature(
+            device, desc, gCachedParticleDrawRootSignature)) {
         return nullptr;
     }
     return gCachedParticleDrawRootSignature.Get();
@@ -87,13 +88,15 @@ ID3D12RootSignature *GetDrawRootSignature(ID3D12Device *device) {
 
 ID3D12PipelineState *GetOrCreateDrawPipeline(
     ID3D12Device *device, ID3D12RootSignature *rootSignature,
-    const std::wstring &pixelShaderPath) {
+    const std::wstring &pixelShaderPath,
+    GPUParticleMaterialSettings::BlendMode blendMode) {
     if (device == nullptr || rootSignature == nullptr) {
         return nullptr;
     }
     ResetDrawCacheIfDeviceChanged(device);
 
-    auto found = gParticleDrawPsoCache.find(pixelShaderPath);
+    const std::wstring cacheKey = MakePipelineCacheKey(pixelShaderPath, blendMode);
+    auto found = gParticleDrawPsoCache.find(cacheKey);
     if (found != gParticleDrawPsoCache.end()) {
         return found->second.Get();
     }
@@ -123,11 +126,19 @@ ID3D12PipelineState *GetOrCreateDrawPipeline(
 
     D3D12_BLEND_DESC blend = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     blend.RenderTarget[0].BlendEnable = TRUE;
-    blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-    blend.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+    if (blendMode == GPUParticleMaterialSettings::BlendMode::Additive) {
+        blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+        blend.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+    } else {
+        blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+        blend.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+    }
     blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
     blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-    blend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
+    blend.RenderTarget[0].DestBlendAlpha =
+        blendMode == GPUParticleMaterialSettings::BlendMode::Additive
+            ? D3D12_BLEND_ONE
+            : D3D12_BLEND_INV_SRC_ALPHA;
     blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
     blend.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
     drawPso.BlendState = blend;
@@ -146,7 +157,7 @@ ID3D12PipelineState *GetOrCreateDrawPipeline(
     }
 
     ID3D12PipelineState *result = pso.Get();
-    gParticleDrawPsoCache[pixelShaderPath] = std::move(pso);
+    gParticleDrawPsoCache[cacheKey] = std::move(pso);
     return result;
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 #include "animation/Animator.h"
+#include "core/ResourceHandle.h"
 #include "model/AssimpLoader.h"
 #include "model/MaterialManager.h"
 #include "model/MeshManager.h"
@@ -58,6 +59,7 @@ class ModelManager {
     /// <param name="path">モデルファイルのパス</param>
     /// <returns>モデルID</returns>
     uint32_t Load(const std::wstring &path);
+    ModelHandle LoadHandle(const std::wstring &path);
 
     /// <summary>
     /// XY平面の基本形状を生成する
@@ -69,6 +71,10 @@ class ModelManager {
     /// Planeを生成する
     /// </summary>
     uint32_t CreatePlane(uint32_t textureId, const Material &material);
+    ModelHandle CreatePlaneHandle(uint32_t textureId,
+                                  const Material &material);
+    ModelHandle CreatePlaneHandle(TextureHandle texture,
+                                  const Material &material);
 
     /// <summary>
     /// Y軸方向に伸びる直方体Primitiveを生成する
@@ -76,6 +82,13 @@ class ModelManager {
     uint32_t CreateBox(uint32_t textureId, const Material &material,
                        float width = 1.0f, float height = 1.0f,
                        float depth = 1.0f);
+    ModelHandle CreateBoxHandle(uint32_t textureId, const Material &material,
+                                float width = 1.0f, float height = 1.0f,
+                                float depth = 1.0f);
+    ModelHandle CreateBoxHandle(TextureHandle texture,
+                                const Material &material,
+                                float width = 1.0f, float height = 1.0f,
+                                float depth = 1.0f);
 
     /// <summary>
     /// 球体Primitiveを生成する
@@ -83,6 +96,16 @@ class ModelManager {
     uint32_t CreateSphere(uint32_t textureId, const Material &material,
                           uint32_t slice = 24, uint32_t stack = 12,
                           float radius = 1.0f);
+    ModelHandle CreateSphereHandle(uint32_t textureId,
+                                   const Material &material,
+                                   uint32_t slice = 24,
+                                   uint32_t stack = 12,
+                                   float radius = 1.0f);
+    ModelHandle CreateSphereHandle(TextureHandle texture,
+                                   const Material &material,
+                                   uint32_t slice = 24,
+                                   uint32_t stack = 12,
+                                   float radius = 1.0f);
 
     /// <summary>
     /// XY平面のリング形状を生成する
@@ -96,6 +119,15 @@ class ModelManager {
     uint32_t CreateRing(uint32_t textureId, const Material &material,
                         uint32_t divide = 32, float outerRadius = 1.0f,
                         float innerRadius = 0.2f);
+    ModelHandle CreateRingHandle(uint32_t textureId, const Material &material,
+                                 uint32_t divide = 32,
+                                 float outerRadius = 1.0f,
+                                 float innerRadius = 0.2f);
+    ModelHandle CreateRingHandle(TextureHandle texture,
+                                 const Material &material,
+                                 uint32_t divide = 32,
+                                 float outerRadius = 1.0f,
+                                 float innerRadius = 0.2f);
 
     /// <summary>
     /// Y軸方向に伸びる筒形状を生成する
@@ -110,15 +142,18 @@ class ModelManager {
     uint32_t CreateCylinder(uint32_t textureId, const Material &material,
                             uint32_t divide = 32, float topRadius = 1.0f,
                             float bottomRadius = 1.0f, float height = 3.0f);
-
-    /// <summary>
-    /// 三角面を強調した低ポリ地形Primitiveを生成する
-    /// </summary>
-    uint32_t CreateLowPolyTerrain(uint32_t textureId, const Material &material,
-                                  uint32_t grid = 36, float size = 72.0f,
-                                  float maxHeight = 6.0f,
-                                  float flatRadius = 13.0f,
-                                  uint32_t seed = 0x5A17u);
+    ModelHandle CreateCylinderHandle(uint32_t textureId,
+                                     const Material &material,
+                                     uint32_t divide = 32,
+                                     float topRadius = 1.0f,
+                                     float bottomRadius = 1.0f,
+                                     float height = 3.0f);
+    ModelHandle CreateCylinderHandle(TextureHandle texture,
+                                     const Material &material,
+                                     uint32_t divide = 32,
+                                     float topRadius = 1.0f,
+                                     float bottomRadius = 1.0f,
+                                     float height = 3.0f);
 
     /// <summary>
     /// 頂点配列とインデックス配列から汎用メッシュを作成する
@@ -128,11 +163,17 @@ class ModelManager {
                         uint32_t indexCount,
                         D3D12_PRIMITIVE_TOPOLOGY primitiveTopology =
                             D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    MeshHandle CreateMeshHandle(
+        const void *vertexData, uint32_t vertexStride, uint32_t vertexCount,
+        const uint32_t *indexData, uint32_t indexCount,
+        D3D12_PRIMITIVE_TOPOLOGY primitiveTopology =
+            D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     /// <summary>
     /// 作成済みメッシュを取得する
     /// </summary>
     const Mesh &GetMesh(uint32_t meshId) const;
+    const Mesh &GetMesh(MeshHandle meshId) const;
 
     /// <summary>
     /// モデルのアニメーションを更新する
@@ -140,6 +181,7 @@ class ModelManager {
     /// <param name="modelId">更新するモデルID</param>
     /// <param name="deltaTime">前フレームからの経過時間(秒)</param>
     void UpdateAnimation(uint32_t modelId, float deltaTime);
+    void UpdateAnimation(ModelHandle modelId, float deltaTime);
 
     /// <summary>
     /// 指定したアニメーションを再生する
@@ -149,6 +191,9 @@ class ModelManager {
     /// <param name="loop">ループ再生するか</param>
     void PlayAnimation(uint32_t modelId, const std::string &animationName,
                        bool loop = true);
+    void PlayAnimation(ModelHandle modelId,
+                       const std::string &animationName,
+                       bool loop = true);
 
     /// <summary>
     /// アニメーションが終了したか判定する
@@ -156,6 +201,7 @@ class ModelManager {
     /// <param name="modelId">対象モデルID</param>
     /// <returns>アニメーション終了ならtrue</returns>
     bool IsAnimationFinished(uint32_t modelId) const;
+    bool IsAnimationFinished(ModelHandle modelId) const;
 
     /// <summary>
     /// モデルデータを取得する
@@ -163,6 +209,7 @@ class ModelManager {
     /// <param name="modelId">モデルID</param>
     /// <returns>Modelポインタ</returns>
     Model *GetModel(uint32_t modelId);
+    Model *GetModel(ModelHandle modelId);
 
     /// <summary>
     /// モデルデータを読み取り専用で取得する
@@ -170,6 +217,7 @@ class ModelManager {
     /// <param name="modelId">モデルID</param>
     /// <returns>Modelポインタ</returns>
     const Model *GetModel(uint32_t modelId) const;
+    const Model *GetModel(ModelHandle modelId) const;
 
     /// <summary>
     /// マテリアル情報を取得する
@@ -177,6 +225,7 @@ class ModelManager {
     /// <param name="materialId">マテリアルID</param>
     /// <returns>マテリアル情報</returns>
     const Material &GetMaterial(uint32_t materialId) const;
+    const Material &GetMaterial(MaterialHandle materialId) const;
 
     /// <summary>
     /// 既存マテリアルを更新する
@@ -184,31 +233,44 @@ class ModelManager {
     /// <param name="materialId">更新対象のマテリアルID</param>
     /// <param name="material">設定するマテリアル値</param>
     void SetMaterial(uint32_t materialId, const Material &material);
+    void SetMaterial(MaterialHandle materialId, const Material &material);
 
     /// <summary>
     /// モデルIDから描画する互換ヘルパー
     /// </summary>
     void Draw(uint32_t modelId, const Transform &transform,
-              const Camera &camera, uint32_t environmentTextureId = UINT32_MAX);
+              const Camera &camera,
+              uint32_t environmentTextureId = kInvalidResourceId);
+    void Draw(ModelHandle modelId, const Transform &transform,
+              const Camera &camera,
+              TextureHandle environmentTexture = TextureHandle());
 
     /// <summary>
     /// 同一モデルを複数Transformでまとめて描画する
     /// </summary>
     void DrawInstanced(uint32_t modelId, const Transform *transforms,
                        uint32_t instanceCount, const Camera &camera,
-                       uint32_t environmentTextureId = UINT32_MAX);
+                       uint32_t environmentTextureId = kInvalidResourceId);
+    void DrawInstanced(ModelHandle modelId, const Transform *transforms,
+                       uint32_t instanceCount, const Camera &camera,
+                       TextureHandle environmentTexture = TextureHandle());
 
     /// <summary>
     /// 同一モデルを複数InstanceDataでまとめて描画する
     /// </summary>
     void DrawInstanced(uint32_t modelId, const InstanceData *instances,
                        uint32_t instanceCount, const Camera &camera,
-                       uint32_t environmentTextureId = UINT32_MAX);
+                       uint32_t environmentTextureId = kInvalidResourceId);
+    void DrawInstanced(ModelHandle modelId, const InstanceData *instances,
+                       uint32_t instanceCount, const Camera &camera,
+                       TextureHandle environmentTexture = TextureHandle());
 
     /// <summary>
     /// モデルIDからShadowMapへ描画する
     /// </summary>
     void DrawShadow(uint32_t modelId, const Transform &transform,
+                    const DirectX::XMFLOAT4X4 &lightViewProjection);
+    void DrawShadow(ModelHandle modelId, const Transform &transform,
                     const DirectX::XMFLOAT4X4 &lightViewProjection);
 
     /// <summary>
@@ -217,6 +279,10 @@ class ModelManager {
     void DrawInstancedShadow(uint32_t modelId, const Transform *transforms,
                              uint32_t instanceCount,
                              const DirectX::XMFLOAT4X4 &lightViewProjection);
+    void DrawInstancedShadow(
+        ModelHandle modelId, const Transform *transforms,
+        uint32_t instanceCount,
+        const DirectX::XMFLOAT4X4 &lightViewProjection);
 
     /// <summary>
     /// 同一モデルを複数InstanceDataでShadowMapへまとめて描画する
@@ -224,75 +290,74 @@ class ModelManager {
     void DrawInstancedShadow(uint32_t modelId, const InstanceData *instances,
                              uint32_t instanceCount,
                              const DirectX::XMFLOAT4X4 &lightViewProjection);
+    void DrawInstancedShadow(
+        ModelHandle modelId, const InstanceData *instances,
+        uint32_t instanceCount,
+        const DirectX::XMFLOAT4X4 &lightViewProjection);
 
     /// <summary>
     /// モデルIDから描画前のGPUスキニングだけを実行する
     /// </summary>
     void PrepareSkinning(uint32_t modelId);
+    void PrepareSkinning(ModelHandle modelId);
     void PrepareSkinning(std::initializer_list<uint32_t> modelIds);
+    void PrepareSkinningHandles(std::initializer_list<ModelHandle> modelIds);
 
     /// <summary>
     /// 毎フレーム変わる描画用Upload領域をリセットする
     /// </summary>
-    void BeginFrame() { modelRenderer_.BeginFrame(); }
+    void BeginFrame();
 
     /// <summary>
     /// モデル描画用パイプラインを描画前に設定する
     /// </summary>
-    void PreDraw() { modelRenderer_.PreDraw(); }
+    void PreDraw();
 
     /// <summary>
     /// ShadowPass用パイプラインを描画前に設定する
     /// </summary>
-    void PreDrawShadow() { modelRenderer_.PreDrawShadow(); }
+    void PreDrawShadow();
 
     /// <summary>
     /// モデル描画後の状態を整理する
     /// </summary>
-    void PostDraw() { modelRenderer_.PostDraw(); }
+    void PostDraw();
 
     /// <summary>
     /// シーンライティングを設定する
     /// </summary>
-    void SetSceneLighting(const SceneLighting &lighting) {
-        modelRenderer_.SetSceneLighting(lighting);
-    }
+    void SetSceneLighting(const SceneLighting &lighting);
 
     /// <summary>
     /// 現在フレームの描画エフェクトを設定する
     /// </summary>
-    void SetDrawEffect(const ModelDrawEffect &effect) {
-        modelRenderer_.SetDrawEffect(effect);
-    }
+    void SetDrawEffect(const ModelDrawEffect &effect);
 
     /// <summary>
     /// 描画エフェクトを初期状態へ戻す
     /// </summary>
-    void ClearDrawEffect() { modelRenderer_.ClearDrawEffect(); }
+    void ClearDrawEffect();
 
     /// <summary>
     /// シーンフォグを設定する
     /// </summary>
-    void SetSceneFog(const SceneFog &fog) { modelRenderer_.SetSceneFog(fog); }
+    void SetSceneFog(const SceneFog &fog);
 
     /// <summary>
     /// 描画に使用するModelRendererを取得する
     /// </summary>
     /// <returns>ModelRendererへのポインタ</returns>
-    ModelRenderer *GetRenderer() { return &modelRenderer_; }
+    ModelRenderer *GetRenderer();
 
     /// <summary>
     /// 描画に使用するModelRendererを読み取り専用で取得する
     /// </summary>
     /// <returns>ModelRendererへのポインタ</returns>
-    const ModelRenderer *GetRenderer() const { return &modelRenderer_; }
+    const ModelRenderer *GetRenderer() const;
 
-    MeshManager *GetMeshManager() { return &meshManager_; }
-    const MeshManager *GetMeshManager() const { return &meshManager_; }
-    bool IsReady() const {
-        return dxCommon_ != nullptr && srvManager_ != nullptr &&
-               textureManager_ != nullptr && modelRenderer_.IsReady();
-    }
+    MeshManager *GetMeshManager();
+    const MeshManager *GetMeshManager() const;
+    bool IsReady() const;
 
   private:
     DirectXCommon *dxCommon_ = nullptr;

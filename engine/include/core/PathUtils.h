@@ -22,7 +22,8 @@ inline std::wstring NormalizePathKey(const std::filesystem::path &path) {
     return key;
 }
 
-inline std::wstring NormalizeKey(std::wstring key) {
+inline std::wstring NormalizeKey(const std::wstring &source) {
+    std::wstring key = source;
 #ifdef _WIN32
     std::transform(key.begin(), key.end(), key.begin(),
                    [](wchar_t c) { return static_cast<wchar_t>(towlower(c)); });

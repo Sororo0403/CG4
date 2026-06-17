@@ -1,17 +1,17 @@
 #pragma once
 #include <Windows.h>
 #include <DirectXMath.h>
-#include "graphics/FrameRollbackRegistry.h"
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <functional>
+#include <memory>
 #include <string>
-#include <vector>
-#include <wrl.h>
 
+#include "graphics/GpuFeatureCaps.h"
+
+class DirectXCommonGpuDiagnostics;
 class SrvManager;
 
 /// <summary>
@@ -36,7 +36,7 @@ class DirectXCommon {
     static constexpr DXGI_FORMAT kDepthSrvFormat =
         DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
 
-    DirectXCommon() = default;
+    DirectXCommon();
     ~DirectXCommon();
 
     DirectXCommon(const DirectXCommon &) = delete;
@@ -91,6 +91,11 @@ class DirectXCommon {
     /// RestoreSceneRenderStateを実行する
     /// </summary>
     void RestoreSceneRenderState(bool clearDepth = false);
+
+    /// <summary>
+    /// 深度をSRVとして読んだまま、シーンカラーRTへ加算描画できる状態へ戻す
+    /// </summary>
+    void BeginSceneColorOverlayPass();
 
     /// <summary>
     /// 現在の描画先を維持したまま深度だけをクリアする
@@ -180,40 +185,53 @@ class DirectXCommon {
     /// <summary>
     /// GPU同期に必要なD3D12オブジェクトが初期化済みかを取得する
     /// </summary>
-    bool IsInitialized() const {
-        return commandQueue_ && fence_ && fenceEvent_ != nullptr;
-    }
+    bool IsInitialized() const;
 
-    bool IsReadyForRendering() const {
-        return IsInitialized() && commandList_ && swapChain_ &&
-               HasFrameResources();
-    }
+    bool IsReadyForRendering() const;
 
     /// <summary>
     /// D3D12デバイスを取得する
     /// </summary>
     /// <returns>D3D12デバイス</returns>
-    ID3D12Device *GetDevice() const { return device_.Get(); }
+    ID3D12Device *GetDevice() const;
 
     /// <summary>
     /// コマンドキューを取得する
     /// </summary>
     /// <returns>コマンドキュー</returns>
-    ID3D12CommandQueue *GetCommandQueue() const { return commandQueue_.Get(); }
+    ID3D12CommandQueue *GetCommandQueue() const;
 
     /// <summary>
     /// 記録中のグラフィックスコマンドリストを取得する
     /// </summary>
     /// <returns>記録中でない場合はnullptr</returns>
-    ID3D12GraphicsCommandList *GetCommandList() const {
-        return isCommandListRecording_ ? commandList_.Get() : nullptr;
-    }
+    ID3D12GraphicsCommandList *GetCommandList() const;
+
+    /// <summary>
+    /// GPU/ドライバが対応している高度描画機能を取得する
+    /// </summary>
+    const GpuFeatureCaps &GetGpuFeatureCaps() const;
+
+    /// <summary>
+    /// DXR対応デバイスを取得する。未対応環境ではnullptr。
+    /// </summary>
+    ID3D12Device5 *GetRaytracingDevice() const;
+
+    /// <summary>
+    /// DXR用コマンドリストを取得する。未対応または未記録時はnullptr。
+    /// </summary>
+    ID3D12GraphicsCommandList4 *GetRaytracingCommandList() const;
+
+    /// <summary>
+    /// Mesh Shader用コマンドリストを取得する。未対応または未記録時はnullptr。
+    /// </summary>
+    ID3D12GraphicsCommandList6 *GetMeshShaderCommandList() const;
 
     /// <summary>
     /// コマンドリストが記録中かを取得する
     /// </summary>
-    bool IsCommandListRecording() const { return isCommandListRecording_; }
-    bool IsUploadPassActive() const { return uploadPassActive_; }
+    bool IsCommandListRecording() const;
+    bool IsUploadPassActive() const;
 
     /// <summary>
     /// スワップチェーンのバッファ数を取得する
@@ -224,7 +242,10 @@ class DirectXCommon {
     /// <summary>
     /// 現在記録中のバックバッファインデックスを取得する
     /// </summary>
-    UINT GetBackBufferIndex() const { return backBufferIndex_; }
+    UINT GetBackBufferIndex() const;
+
+    uint32_t GetSceneWidth() const;
+    uint32_t GetSceneHeight() const;
 
     /// <summary>
     /// 深度ステンシルビューのCPUハンドルを取得する
@@ -239,14 +260,12 @@ class DirectXCommon {
     /// <summary>
     /// シーンカラー用リソースを取得する
     /// </summary>
-    ID3D12Resource *GetSceneColorBuffer() const {
-        return sceneColorBuffer_.Get();
-    }
+    ID3D12Resource *GetSceneColorBuffer() const;
 
     /// <summary>
     /// シーンカラーSRVのインデックスを取得する
     /// </summary>
-    UINT GetSceneSrvIndex() const { return sceneSrvIndex_; }
+    UINT GetSceneSrvIndex() const;
 
     /// <summary>
     /// シーンカラーSRVのGPUハンドルを取得する
@@ -262,19 +281,17 @@ class DirectXCommon {
     /// <summary>
     /// 選択されたGPUアダプタのベンダIDを取得する
     /// </summary>
-    UINT GetAdapterVendorId() const { return adapterDesc_.VendorId; }
+    UINT GetAdapterVendorId() const;
 
     /// <summary>
     /// Intel GPU上で動作しているかを取得する
     /// </summary>
-    bool IsIntelAdapter() const { return adapterDesc_.VendorId == 0x8086; }
+    bool IsIntelAdapter() const;
 
     /// <summary>
     /// 選択されたGPUアダプタ名を取得する
     /// </summary>
-    std::wstring GetAdapterDescription() const {
-        return adapterDesc_.Description;
-    }
+    std::wstring GetAdapterDescription() const;
 
   private:
     /// <summary>
@@ -348,6 +365,11 @@ class DirectXCommon {
     void ApplySceneViewportAndScissor();
 
     /// <summary>
+    /// シーンカラーRTと深度ステンシルを描画先に設定する
+    /// </summary>
+    void BindSceneRenderTarget(bool clearColor, bool clearDepth);
+
+    /// <summary>
     /// シーンカラーRTのリソース状態を必要な状態へ遷移する
     /// </summary>
     /// <remarks>
@@ -393,58 +415,9 @@ class DirectXCommon {
 
   private:
     static constexpr UINT kSwapChainBufferCount = 2;
-    static constexpr uint32_t kRecentGpuPhaseCount = 64;
     static constexpr UINT kSceneRtvIndex = kSwapChainBufferCount;
     static constexpr float kClearColor[4] = {0.030f, 0.026f, 0.055f, 1.0f};
-    float clearColor_[4] = {kClearColor[0], kClearColor[1], kClearColor[2],
-                            kClearColor[3]};
 
-    Microsoft::WRL::ComPtr<IDXGIFactory7> factory_;
-    Microsoft::WRL::ComPtr<IDXGISwapChain4> swapChain_;
-    Microsoft::WRL::ComPtr<ID3D12Device> device_;
-    DXGI_ADAPTER_DESC1 adapterDesc_{};
-    Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue_;
-    Microsoft::WRL::ComPtr<ID3D12CommandAllocator>
-        commandAllocators_[kSwapChainBufferCount];
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList_;
-    bool isCommandListRecording_ = false;
-    bool uploadPassActive_ = false;
-    UINT uploadPassDepth_ = 0;
-
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> backBuffers_[kSwapChainBufferCount];
-    D3D12_RESOURCE_STATES backBufferStates_[kSwapChainBufferCount]{};
-    D3D12_RESOURCE_STATES
-        frameBackBufferStates_[kSwapChainBufferCount]{};
-    Microsoft::WRL::ComPtr<ID3D12Resource> sceneColorBuffer_;
-    D3D12_RESOURCE_STATES sceneColorState_ =
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    D3D12_RESOURCE_STATES frameSceneColorState_ =
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    UINT sceneSrvIndex_ = UINT_MAX;
-    UINT rtvDescriptorSize_ = 0;
-    UINT backBufferIndex_ = 0;
-
-    Microsoft::WRL::ComPtr<ID3D12Fence> fence_;
-    UINT64 fenceValue_ = 0;
-    UINT64 frameFenceValues_[kSwapChainBufferCount]{};
-    HANDLE fenceEvent_ = nullptr;
-    uint64_t diagnosticFrameId_ = 0;
-    std::array<const char *, kRecentGpuPhaseCount> recentGpuPhases_{};
-    uint32_t recentGpuPhaseCursor_ = 0;
-    uint32_t recentGpuPhaseSize_ = 0;
-
-    D3D12_VIEWPORT sceneViewport_{};
-    D3D12_RECT sceneScissorRect_{};
-
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> depthBuffer_;
-    SrvManager *srvManager_ = nullptr;
-    UINT depthSrvIndex_ = UINT_MAX;
-    D3D12_GPU_DESCRIPTOR_HANDLE depthSrvGpuHandle_{};
-    D3D12_RESOURCE_STATES depthState_ = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-    D3D12_RESOURCE_STATES frameDepthState_ =
-        D3D12_RESOURCE_STATE_DEPTH_WRITE;
-    bool hasFrameStateSnapshot_ = false;
-    FrameRollbackRegistry frameRollbacks_;
+    struct State;
+    std::unique_ptr<State> state_;
 };

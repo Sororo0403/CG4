@@ -13,10 +13,11 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{2d2b4186-642f-41bf-97c8-74ab151638ec}</ProjectGuid>
+    <ProjectGuid>{2D2B4186-642F-41BF-97C8-74AB151638EC}</ProjectGuid>
     <RootNamespace>CG4</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectName>CG4</ProjectName>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
@@ -33,10 +34,8 @@
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-  <ImportGroup Label="ExtensionSettings">
-  </ImportGroup>
-  <ImportGroup Label="Shared">
-  </ImportGroup>
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
@@ -45,16 +44,12 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <OutDir>$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
-    <IntDir>$(SolutionDir)generated\intermediate\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
-    <IncludePath>$(IncludePath)</IncludePath>
-    <LibraryPath>$(LibraryPath)</LibraryPath>
+    <OutDir>$(MSBuildThisFileDirectory)..\generated\outputs\$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)..\generated\intermediate\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <OutDir>$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
-    <IntDir>$(SolutionDir)generated\intermediate\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
-    <IncludePath>$(IncludePath)</IncludePath>
-    <LibraryPath>$(LibraryPath)</LibraryPath>
+    <OutDir>$(MSBuildThisFileDirectory)..\generated\outputs\$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)..\generated\intermediate\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -64,97 +59,67 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir)include\scene;$(SolutionDir)engine\include;$(SolutionDir)engine\include\scene;$(SolutionDir)engine\public;$(SolutionDir)engine\externals;$(SolutionDir)engine\externals\assimp\include;$(SolutionDir)engine\externals\assimp\include\assimp;$(SolutionDir)engine\externals\DirectX-Headers;$(SolutionDir)engine\externals\DirectXTex;$(SolutionDir)engine\externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalOptions>/utf-8 /FS %(AdditionalOptions)</AdditionalOptions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/utf-8 /FS %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)include;$(MSBuildThisFileDirectory)..\engine\public;$(MSBuildThisFileDirectory)..\engine\include;$(MSBuildThisFileDirectory)..\engine\externals;$(MSBuildThisFileDirectory)..\engine\externals\assimp\include;$(MSBuildThisFileDirectory)..\engine\externals\assimp\include\assimp;$(MSBuildThisFileDirectory)..\engine\externals\DirectX-Headers;$(MSBuildThisFileDirectory)..\engine\externals\DirectXTex;$(MSBuildThisFileDirectory)..\engine\externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
-      <AdditionalDependencies>assimp-vc145-mt.lib;d3d12.lib;dxgi.lib;d3dcompiler.lib;dxcompiler.lib;dinput8.lib;dxguid.lib;xinput.lib;xaudio2.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;windowscodecs.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)engine\externals\assimp\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)..\engine\externals\assimp\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>dxcompiler.lib;dinput8.lib;dxguid.lib;d3d12.lib;dxgi.lib;dwrite.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;assimp-vc145-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>REM JoyShockLibrary
-if exist "$(SolutionDir)engine\externals\JoyShockLibrary\lib\JoyShockLibrary.dll" (
-    xcopy /Y /D "$(SolutionDir)engine\externals\JoyShockLibrary\lib\JoyShockLibrary.dll" "$(TargetDir)"
-)
-
-REM assimp
-if exist "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" (
-    xcopy /Y /D "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" "$(TargetDir)"
-)
-
-REM DirectX Shader Compiler
-if exist "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" (
-    xcopy /Y /D "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" "$(TargetDir)"
-)
-if exist "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" (
-    xcopy /Y /D "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" "$(TargetDir)"
-)</Command>
+      <Command>xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" "$(OutDir)" || if exist "$(OutDir)dxcompiler.dll" (echo Warning: dxcompiler.dll is locked; keeping existing copy.) else (exit /b 1)
+xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" "$(OutDir)" || if exist "$(OutDir)dxil.dll" (echo Warning: dxil.dll is locked; keeping existing copy.) else (exit /b 1)
+if exist "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" xcopy /Y /I "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" "$(OutDir)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
-      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <TreatWarningAsError>false</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir)include\scene;$(SolutionDir)engine\include;$(SolutionDir)engine\include\scene;$(SolutionDir)engine\public;$(SolutionDir)engine\externals;$(SolutionDir)engine\externals\assimp\include;$(SolutionDir)engine\externals\assimp\include\assimp;$(SolutionDir)engine\externals\DirectX-Headers;$(SolutionDir)engine\externals\DirectXTex;$(SolutionDir)engine\externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalOptions>/utf-8 /FS %(AdditionalOptions)</AdditionalOptions>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/utf-8 /FS %(AdditionalOptions)</AdditionalOptions>
+      <ProgramDataBaseFileName>$(IntDir)$(ProjectName).pdb</ProgramDataBaseFileName>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)include;$(MSBuildThisFileDirectory)..\engine\public;$(MSBuildThisFileDirectory)..\engine\include;$(MSBuildThisFileDirectory)..\engine\externals;$(MSBuildThisFileDirectory)..\engine\externals\assimp\include;$(MSBuildThisFileDirectory)..\engine\externals\assimp\include\assimp;$(MSBuildThisFileDirectory)..\engine\externals\DirectX-Headers;$(MSBuildThisFileDirectory)..\engine\externals\DirectXTex;$(MSBuildThisFileDirectory)..\engine\externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <TreatLinkerWarningAsErrors>false</TreatLinkerWarningAsErrors>
-      <AdditionalDependencies>assimp-vc145-mt.lib;d3d12.lib;dxgi.lib;d3dcompiler.lib;dxcompiler.lib;dinput8.lib;dxguid.lib;xinput.lib;xaudio2.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;windowscodecs.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)engine\externals\assimp\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)..\engine\externals\assimp\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>dxcompiler.lib;dinput8.lib;dxguid.lib;d3d12.lib;dxgi.lib;dwrite.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;assimp-vc145-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>REM JoyShockLibrary
-if exist "$(SolutionDir)engine\externals\JoyShockLibrary\lib\JoyShockLibrary.dll" (
-    xcopy /Y /D "$(SolutionDir)engine\externals\JoyShockLibrary\lib\JoyShockLibrary.dll" "$(TargetDir)"
-)
-
-REM assimp
-if exist "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" (
-    xcopy /Y /D "$(SolutionDir)engine\externals\assimp\bin\assimp-vc145-mt.dll" "$(TargetDir)"
-)
-
-REM DirectX Shader Compiler
-if exist "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" (
-    xcopy /Y /D "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" "$(TargetDir)"
-)
-if exist "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" (
-    xcopy /Y /D "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" "$(TargetDir)"
-)</Command>
+      <Command>xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" "$(OutDir)" || if exist "$(OutDir)dxcompiler.dll" (echo Warning: dxcompiler.dll is locked; keeping existing copy.) else (exit /b 1)
+xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" "$(OutDir)" || if exist "$(OutDir)dxil.dll" (echo Warning: dxil.dll is locked; keeping existing copy.) else (exit /b 1)
+if exist "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" xcopy /Y /I "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" "$(OutDir)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="$(SolutionDir)app\src\scene\GameScene.cpp" />
-    <ClCompile Include="$(SolutionDir)app\src\main.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\main.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\ParticleDemoScene.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="$(SolutionDir)app\include\scene\GameScene.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\ParticleDemoScene.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)resources\textures\flame_spread_atlas.png" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\engine\Engine.vcxproj">
-      <Project>{8d69c2b4-4f39-47f0-9a40-4cb78ec442a1}</Project>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\engine\Engine.vcxproj">
+      <Project>{8D69C2B4-4F39-47F0-9A40-4CB78EC442A1}</Project>
     </ProjectReference>
   </ItemGroup>
-  <ItemGroup>
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets">
-  </ImportGroup>
 </Project>

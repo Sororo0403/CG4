@@ -11,7 +11,9 @@ struct Vertex {
     DirectX::XMFLOAT2 uv{};
     DirectX::XMFLOAT4 color{1.0f, 1.0f, 1.0f, 1.0f};
     DirectX::XMFLOAT4 tangent{1.0f, 0.0f, 0.0f, 1.0f};
-    float custom0 = 0.0f;
-    DirectX::XMFLOAT3 bindPosition{};
-    DirectX::XMFLOAT4 custom1{};
+    float customScalar0 = 0.0f;
+    DirectX::XMFLOAT3 customPosition0{};
+    DirectX::XMFLOAT4 customVector0{};
+    DirectX::XMFLOAT3 customPosition1{};
+    DirectX::XMFLOAT4 customVector1{};
 };

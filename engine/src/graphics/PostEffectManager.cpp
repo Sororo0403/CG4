@@ -1,30 +1,19 @@
 #include "graphics/PostEffectManager.h"
+#include "PostEffectManagerInternal.h"
+#include "PostProcessProfileUtils.h"
 #include "graphics/PostProcessSystem.h"
 #include <algorithm>
 #include <limits>
 
 namespace {
-bool HasSpecial(const PostProcessProfile &profile) {
-    return profile.special.mode == PostProcessSpecialMode::Vignette ||
-           profile.special.mode == PostProcessSpecialMode::Dissolve;
-}
+using PostProcessProfileUtils::EnsureFinalToneMapEnabled;
+using PostProcessProfileUtils::HasRandomNoise;
+using PostProcessProfileUtils::HasSpecial;
+using PostProcessProfileUtils::HasToon;
+using PostProcessProfileUtils::HasVignette;
 
-bool HasVignette(const PostProcessProfile &profile) {
-    return (profile.vignette.enabled && profile.vignette.strength > 0.0f) ||
-           profile.vignette.primaryTintStrength > 0.0f ||
-           profile.vignette.secondaryTintStrength > 0.0f;
-}
-
-bool HasRandomNoise(const PostProcessProfile &profile) {
-    return profile.randomNoise.mode != PostProcessRandomMode::None &&
-           profile.randomNoise.strength > 0.0f;
-}
-
-bool HasToon(const PostProcessProfile &profile) {
-    return profile.toon.enabled && profile.toon.strength > 0.0f;
-}
-
-void MergeOverlay(PostProcessProfile &dst, const PostProcessProfile &overlay) {
+void ApplyEnabledPostEffects(PostProcessProfile &dst,
+                             const PostProcessProfile &overlay) {
     if (overlay.colorGrade.mode != PostProcessColorMode::None) {
         dst.colorGrade = overlay.colorGrade;
     }
@@ -52,7 +41,10 @@ void MergeOverlay(PostProcessProfile &dst, const PostProcessProfile &overlay) {
     if (overlay.lensFlare.enabled) {
         dst.lensFlare = overlay.lensFlare;
     }
+}
 
+void MergeOverlay(PostProcessProfile &dst, const PostProcessProfile &overlay) {
+    ApplyEnabledPostEffects(dst, overlay);
     if (overlay.radialBlur.strength > dst.radialBlur.strength) {
         dst.radialBlur = overlay.radialBlur;
     }
@@ -97,33 +89,7 @@ void MergeOverlay(PostProcessProfile &dst, const PostProcessProfile &overlay) {
 }
 
 void MergeOverride(PostProcessProfile &dst, const PostProcessProfile &overlay) {
-    if (overlay.colorGrade.mode != PostProcessColorMode::None) {
-        dst.colorGrade = overlay.colorGrade;
-    }
-    if (overlay.filter.mode != PostProcessFilterMode::None) {
-        dst.filter = overlay.filter;
-    }
-    if (overlay.edge.mode != PostProcessEdgeMode::None) {
-        dst.edge = overlay.edge;
-    }
-    if (overlay.tonemap.enabled) {
-        dst.tonemap = overlay.tonemap;
-    }
-    if (overlay.bloom.enabled) {
-        dst.bloom = overlay.bloom;
-    }
-    if (overlay.noise.enabled) {
-        dst.noise = overlay.noise;
-    }
-    if (HasSpecial(overlay)) {
-        dst.special = overlay.special;
-        if (overlay.special.mode == PostProcessSpecialMode::Dissolve) {
-            dst.dissolve = overlay.dissolve;
-        }
-    }
-    if (overlay.lensFlare.enabled) {
-        dst.lensFlare = overlay.lensFlare;
-    }
+    ApplyEnabledPostEffects(dst, overlay);
     if (overlay.radialBlur.strength > 0.0f) {
         dst.radialBlur = overlay.radialBlur;
     }
@@ -155,8 +121,22 @@ void MergeLayer(PostProcessProfile &dst, const PostProcessProfile &overlay,
 }
 } // namespace
 
+PostEffectManager::PostEffectManager() : state_(std::make_unique<State>()) {}
+
+PostEffectManager::~PostEffectManager() = default;
+
+const PostProcessProfile &PostEffectManager::GetBaseProfile() const {
+    return state_->baseProfile;
+}
+
+const PostProcessProfile &PostEffectManager::GetComposedProfile() const {
+    return state_->composedProfile;
+}
+
+bool PostEffectManager::IsReady() const { return state_->system != nullptr; }
+
 void PostEffectManager::Initialize(PostProcessSystem *system) {
-    system_ = system;
+    state_->system = system;
     Rebuild();
 }
 
@@ -169,24 +149,24 @@ PostEffectManager::CreateLayer(const PostEffectLayerDesc &desc) {
     }
     layer.priority = desc.priority;
     layer.blendMode = desc.blendMode;
-    layers_.push_back(layer);
+    state_->layers.push_back(layer);
     Rebuild();
     return layer.id;
 }
 
 void PostEffectManager::DestroyLayer(PostEffectLayerId id) {
     const auto newEnd =
-        std::remove_if(layers_.begin(), layers_.end(),
+        std::remove_if(state_->layers.begin(), state_->layers.end(),
                        [id](const Layer &layer) { return layer.id == id; });
-    if (newEnd == layers_.end()) {
+    if (newEnd == state_->layers.end()) {
         return;
     }
-    layers_.erase(newEnd, layers_.end());
+    state_->layers.erase(newEnd, state_->layers.end());
     Rebuild();
 }
 
 void PostEffectManager::SetBaseProfile(const PostProcessProfile &profile) {
-    baseProfile_ = profile;
+    state_->baseProfile = profile;
     Rebuild();
 }
 
@@ -212,7 +192,7 @@ void PostEffectManager::ClearLayer(PostEffectLayerId id) {
 }
 
 void PostEffectManager::ClearLayers() {
-    for (Layer &layer : layers_) {
+    for (Layer &layer : state_->layers) {
         layer.profile = {};
         layer.hasProfile = false;
     }
@@ -230,31 +210,31 @@ void PostEffectManager::SetLayerEnabled(PostEffectLayerId id, bool enabled) {
 
 PostEffectManager::Layer *PostEffectManager::FindLayer(PostEffectLayerId id) {
     const auto it =
-        std::find_if(layers_.begin(), layers_.end(),
+        std::find_if(state_->layers.begin(), state_->layers.end(),
                      [id](const Layer &layer) { return layer.id == id; });
-    return it != layers_.end() ? &*it : nullptr;
+    return it != state_->layers.end() ? &*it : nullptr;
 }
 
 const PostEffectManager::Layer *
 PostEffectManager::FindLayer(PostEffectLayerId id) const {
     const auto it =
-        std::find_if(layers_.begin(), layers_.end(),
+        std::find_if(state_->layers.begin(), state_->layers.end(),
                      [id](const Layer &layer) { return layer.id == id; });
-    return it != layers_.end() ? &*it : nullptr;
+    return it != state_->layers.end() ? &*it : nullptr;
 }
 
 PostEffectLayerId PostEffectManager::AllocateLayerId() {
-    if (layers_.size() >=
+    if (state_->layers.size() >=
         static_cast<size_t>((std::numeric_limits<PostEffectLayerId>::max)()) -
             1u) {
         return 0;
     }
 
     for (;;) {
-        if (nextLayerId_ == 0) {
-            nextLayerId_ = 1;
+        if (state_->nextLayerId == 0) {
+            state_->nextLayerId = 1;
         }
-        const PostEffectLayerId candidate = nextLayerId_++;
+        const PostEffectLayerId candidate = state_->nextLayerId++;
         if (FindLayer(candidate) == nullptr) {
             return candidate;
         }
@@ -262,11 +242,11 @@ PostEffectLayerId PostEffectManager::AllocateLayerId() {
 }
 
 void PostEffectManager::Rebuild() {
-    composedProfile_ = baseProfile_;
+    state_->composedProfile = state_->baseProfile;
 
     std::vector<const Layer *> activeLayers;
-    activeLayers.reserve(layers_.size());
-    for (const Layer &layer : layers_) {
+    activeLayers.reserve(state_->layers.size());
+    for (const Layer &layer : state_->layers) {
         if (layer.enabled && layer.hasProfile) {
             activeLayers.push_back(&layer);
         }
@@ -280,10 +260,12 @@ void PostEffectManager::Rebuild() {
               });
 
     for (const Layer *layer : activeLayers) {
-        MergeLayer(composedProfile_, layer->profile, layer->blendMode);
+        MergeLayer(state_->composedProfile, layer->profile, layer->blendMode);
     }
 
-    if (system_) {
-        system_->SetProfile(composedProfile_);
+    EnsureFinalToneMapEnabled(state_->composedProfile);
+
+    if (state_->system) {
+        state_->system->SetProfile(state_->composedProfile);
     }
 }

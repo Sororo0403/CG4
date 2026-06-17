@@ -1,7 +1,7 @@
 #pragma once
 #include "graphics/PostProcessSettings.h"
 #include <cstdint>
-#include <vector>
+#include <memory>
 
 class PostProcessSystem;
 
@@ -19,6 +19,9 @@ struct PostEffectLayerDesc {
 
 class PostEffectManager {
   public:
+    PostEffectManager();
+    ~PostEffectManager();
+
     /// <summary>
     /// 必要なリソースを初期化する
     /// </summary>
@@ -40,21 +43,13 @@ class PostEffectManager {
     void ClearLayers();
     void SetLayerEnabled(PostEffectLayerId id, bool enabled);
 
-    const PostProcessProfile &GetBaseProfile() const { return baseProfile_; }
-    const PostProcessProfile &GetComposedProfile() const {
-        return composedProfile_;
-    }
-    bool IsReady() const { return system_ != nullptr; }
+    const PostProcessProfile &GetBaseProfile() const;
+    const PostProcessProfile &GetComposedProfile() const;
+    bool IsReady() const;
 
   private:
-    struct Layer {
-        PostEffectLayerId id = 0;
-        int priority = 0;
-        PostEffectLayerBlendMode blendMode = PostEffectLayerBlendMode::Overlay;
-        bool enabled = true;
-        bool hasProfile = false;
-        PostProcessProfile profile{};
-    };
+    struct Layer;
+    struct State;
 
     Layer *FindLayer(PostEffectLayerId id);
     const Layer *FindLayer(PostEffectLayerId id) const;
@@ -64,9 +59,5 @@ class PostEffectManager {
     /// </summary>
     void Rebuild();
 
-    PostProcessSystem *system_ = nullptr;
-    PostProcessProfile baseProfile_{};
-    PostProcessProfile composedProfile_{};
-    std::vector<Layer> layers_;
-    PostEffectLayerId nextLayerId_ = 1;
+    std::unique_ptr<State> state_;
 };

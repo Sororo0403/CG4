@@ -6,18 +6,17 @@
 
 namespace {
 
-bool IsFloatArray(const nlohmann::json &value, size_t expectedSize) {
+bool IsFloatArray(const nlohmann::json& value, size_t expectedSize) {
     if (!value.is_array() || value.size() != expectedSize) {
         return false;
     }
-    return std::all_of(value.begin(), value.end(), [](const auto &element) {
-        return element.is_number();
-    });
+    return std::all_of(value.begin(), value.end(),
+                       [](const auto& element) { return element.is_number(); });
 }
 
 } // namespace
 
-bool DebugSettingsStore::Load(const std::filesystem::path &path) {
+bool DebugSettingsStore::Load(const std::filesystem::path& path) {
     std::ifstream in(path);
     if (!in) {
         return false;
@@ -26,7 +25,7 @@ bool DebugSettingsStore::Load(const std::filesystem::path &path) {
     nlohmann::json loaded;
     try {
         in >> loaded;
-    } catch (const nlohmann::json::exception &) {
+    } catch (const nlohmann::json::exception&) {
         return false;
     }
     if (!loaded.is_object()) {
@@ -36,7 +35,7 @@ bool DebugSettingsStore::Load(const std::filesystem::path &path) {
     return true;
 }
 
-bool DebugSettingsStore::Save(const std::filesystem::path &path) const {
+bool DebugSettingsStore::Save(const std::filesystem::path& path) const {
     std::error_code error;
     if (path.has_parent_path()) {
         std::filesystem::create_directories(path.parent_path(), error);
@@ -53,99 +52,93 @@ bool DebugSettingsStore::Save(const std::filesystem::path &path) const {
     return true;
 }
 
-void DebugSettingsStore::Clear() { values_ = nlohmann::json::object(); }
+void DebugSettingsStore::Clear() {
+    values_ = nlohmann::json::object();
+}
 
-bool DebugSettingsStore::Has(const std::string &key) const {
+bool DebugSettingsStore::Has(const std::string& key) const {
     return values_.contains(key);
 }
 
-void DebugSettingsStore::Remove(const std::string &key) { values_.erase(key); }
+void DebugSettingsStore::Remove(const std::string& key) {
+    values_.erase(key);
+}
 
-void DebugSettingsStore::SetBool(const std::string &key, bool value) {
+void DebugSettingsStore::SetBool(const std::string& key, bool value) {
     values_[key] = value;
 }
 
-void DebugSettingsStore::SetInt(const std::string &key, int value) {
+void DebugSettingsStore::SetInt(const std::string& key, int value) {
     values_[key] = value;
 }
 
-void DebugSettingsStore::SetFloat(const std::string &key, float value) {
+void DebugSettingsStore::SetFloat(const std::string& key, float value) {
     values_[key] = value;
 }
 
-void DebugSettingsStore::SetString(const std::string &key,
-                                   const std::string &value) {
+void DebugSettingsStore::SetString(const std::string& key, const std::string& value) {
     values_[key] = value;
 }
 
-void DebugSettingsStore::SetFloat3(const std::string &key,
-                                   const DirectX::XMFLOAT3 &value) {
+void DebugSettingsStore::SetFloat3(const std::string& key, const DirectX::XMFLOAT3& value) {
     values_[key] = {value.x, value.y, value.z};
 }
 
-void DebugSettingsStore::SetFloat4(const std::string &key,
-                                   const DirectX::XMFLOAT4 &value) {
+void DebugSettingsStore::SetFloat4(const std::string& key, const DirectX::XMFLOAT4& value) {
     values_[key] = {value.x, value.y, value.z, value.w};
 }
 
-std::optional<bool> DebugSettingsStore::GetBool(const std::string &key) const {
-    const nlohmann::json *value = Find(key);
+std::optional<bool> DebugSettingsStore::GetBool(const std::string& key) const {
+    const nlohmann::json* value = Find(key);
     if (!value || !value->is_boolean()) {
         return std::nullopt;
     }
     return value->get<bool>();
 }
 
-std::optional<int> DebugSettingsStore::GetInt(const std::string &key) const {
-    const nlohmann::json *value = Find(key);
+std::optional<int> DebugSettingsStore::GetInt(const std::string& key) const {
+    const nlohmann::json* value = Find(key);
     if (!value || !value->is_number_integer()) {
         return std::nullopt;
     }
     return value->get<int>();
 }
 
-std::optional<float>
-DebugSettingsStore::GetFloat(const std::string &key) const {
-    const nlohmann::json *value = Find(key);
+std::optional<float> DebugSettingsStore::GetFloat(const std::string& key) const {
+    const nlohmann::json* value = Find(key);
     if (!value || !value->is_number()) {
         return std::nullopt;
     }
     return value->get<float>();
 }
 
-std::optional<std::string>
-DebugSettingsStore::GetString(const std::string &key) const {
-    const nlohmann::json *value = Find(key);
+std::optional<std::string> DebugSettingsStore::GetString(const std::string& key) const {
+    const nlohmann::json* value = Find(key);
     if (!value || !value->is_string()) {
         return std::nullopt;
     }
     return value->get<std::string>();
 }
 
-std::optional<DirectX::XMFLOAT3>
-DebugSettingsStore::GetFloat3(const std::string &key) const {
-    const nlohmann::json *value = Find(key);
+std::optional<DirectX::XMFLOAT3> DebugSettingsStore::GetFloat3(const std::string& key) const {
+    const nlohmann::json* value = Find(key);
     if (!value || !IsFloatArray(*value, 3u)) {
         return std::nullopt;
     }
-    return DirectX::XMFLOAT3{(*value)[0].get<float>(),
-                             (*value)[1].get<float>(),
+    return DirectX::XMFLOAT3{(*value)[0].get<float>(), (*value)[1].get<float>(),
                              (*value)[2].get<float>()};
 }
 
-std::optional<DirectX::XMFLOAT4>
-DebugSettingsStore::GetFloat4(const std::string &key) const {
-    const nlohmann::json *value = Find(key);
+std::optional<DirectX::XMFLOAT4> DebugSettingsStore::GetFloat4(const std::string& key) const {
+    const nlohmann::json* value = Find(key);
     if (!value || !IsFloatArray(*value, 4u)) {
         return std::nullopt;
     }
-    return DirectX::XMFLOAT4{(*value)[0].get<float>(),
-                             (*value)[1].get<float>(),
-                             (*value)[2].get<float>(),
-                             (*value)[3].get<float>()};
+    return DirectX::XMFLOAT4{(*value)[0].get<float>(), (*value)[1].get<float>(),
+                             (*value)[2].get<float>(), (*value)[3].get<float>()};
 }
 
-const nlohmann::json *DebugSettingsStore::Find(const std::string &key) const {
+const nlohmann::json* DebugSettingsStore::Find(const std::string& key) const {
     const auto it = values_.find(key);
     return it == values_.end() ? nullptr : &(*it);
 }

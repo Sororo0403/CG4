@@ -6,8 +6,8 @@
 #include <vector>
 
 class FrameRollbackRegistry {
-  public:
-    bool Add(const void *owner, std::function<void()> rollback) {
+public:
+    bool Add(const void* owner, std::function<void()> rollback) {
         if (!rollback) {
             return true;
         }
@@ -34,16 +34,13 @@ class FrameRollbackRegistry {
         return true;
     }
 
-    void RemoveOwner(const void *owner) noexcept {
+    void RemoveOwner(const void* owner) noexcept {
         if (owner == nullptr) {
             return;
         }
-        entries_.erase(
-            std::remove_if(entries_.begin(), entries_.end(),
-                           [owner](const Entry &entry) {
-                               return entry.owner == owner;
-                           }),
-            entries_.end());
+        entries_.erase(std::remove_if(entries_.begin(), entries_.end(),
+                                      [owner](const Entry& entry) { return entry.owner == owner; }),
+                       entries_.end());
     }
 
     void Restore() noexcept {
@@ -59,13 +56,17 @@ class FrameRollbackRegistry {
         }
     }
 
-    void Clear() noexcept { entries_.clear(); }
+    void Clear() noexcept {
+        entries_.clear();
+    }
 
-    bool Empty() const noexcept { return entries_.empty(); }
+    bool Empty() const noexcept {
+        return entries_.empty();
+    }
 
-  private:
+private:
     struct Entry {
-        const void *owner = nullptr;
+        const void* owner = nullptr;
         std::function<void()> rollback;
     };
 

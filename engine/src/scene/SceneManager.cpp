@@ -1,76 +1,56 @@
 #include "scene/SceneManager.h"
+
+#include "../graphics/GpuResourceScopes.h"
 #include "graphics/DirectXCommon.h"
 #include "model/MeshManager.h"
 #include "scene/BaseScene.h"
 #include "texture/TextureManager.h"
 
+#include <exception>
+#include <string>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#endif
+
 namespace {
 
-class UploadPassScope {
-  public:
-    UploadPassScope(DirectXCommon *dxCommon, TextureManager *textureManager,
-                    MeshManager *meshManager, bool active)
-        : dxCommon_(dxCommon), textureManager_(textureManager),
-          meshManager_(meshManager), active_(active) {}
-
-    ~UploadPassScope() {
-        if (active_ && dxCommon_ != nullptr) {
-            dxCommon_->AbortFrame();
-            if (textureManager_ != nullptr) {
-                textureManager_->ReleaseUploadBuffers();
-            }
-            if (meshManager_ != nullptr) {
-                meshManager_->ReleaseUploadBuffers();
-            }
-        }
-    }
-
-    bool Finish() {
-        if (!active_) {
-            return true;
-        }
-        const DirectXCommon::UploadPassResult result =
-            dxCommon_->EndUploadPass();
-        if (result == DirectXCommon::UploadPassResult::Failed) {
-            return false;
-        }
-        if (result == DirectXCommon::UploadPassResult::Completed &&
-            textureManager_ != nullptr) {
-            textureManager_->ReleaseUploadBuffers();
-        }
-        if (result == DirectXCommon::UploadPassResult::Completed &&
-            meshManager_ != nullptr) {
-            meshManager_->ReleaseUploadBuffers();
-        }
-        active_ = false;
-        return true;
-    }
-
-  private:
-    DirectXCommon *dxCommon_ = nullptr;
-    TextureManager *textureManager_ = nullptr;
-    MeshManager *meshManager_ = nullptr;
-    bool active_ = false;
-};
+using GraphicsResourceScopes::ScopedUploadPass;
 
 class BoolFlagScope {
-  public:
-    explicit BoolFlagScope(bool &flag) : flag_(flag), previous_(flag) {
+public:
+    explicit BoolFlagScope(bool& flag) : flag_(flag), previous_(flag) {
         flag_ = true;
     }
-    ~BoolFlagScope() { flag_ = previous_; }
+    ~BoolFlagScope() {
+        flag_ = previous_;
+    }
 
-    BoolFlagScope(const BoolFlagScope &) = delete;
-    BoolFlagScope &operator=(const BoolFlagScope &) = delete;
+    BoolFlagScope(const BoolFlagScope&) = delete;
+    BoolFlagScope& operator=(const BoolFlagScope&) = delete;
 
-  private:
-    bool &flag_;
+private:
+    bool& flag_;
     bool previous_ = false;
 };
 
+void LogSceneManagerError(const std::string& message) {
+#ifdef _WIN32
+    const std::string line = "SceneManager: " + message + "\n";
+    OutputDebugStringA(line.c_str());
+#else
+    (void)message;
+#endif
+}
+
 } // namespace
 
-void SceneManager::Initialize(const SceneContext &ctx) { ctx_ = &ctx; }
+void SceneManager::Initialize(const SceneContext& ctx) {
+    ctx_ = &ctx;
+}
 
 void SceneManager::Finalize() {
     if (ctx_ != nullptr && ctx_->rendering.dxCommon != nullptr) {
@@ -78,21 +58,22 @@ void SceneManager::Finalize() {
     }
     pendingScene_.reset();
     currentScene_.reset();
+    pendingSceneAlreadyInitialized_ = false;
     isUpdating_ = false;
     isDrawing_ = false;
 }
 
-void SceneManager::SetSceneFactory(AbstractSceneFactory *sceneFactory) {
+void SceneManager::SetSceneFactory(AbstractSceneFactory* sceneFactory) {
     sceneFactory_ = sceneFactory;
 }
 
-void SceneManager::ChangeScene(const std::string &sceneName) {
+void SceneManager::ChangeScene(const std::string& sceneName) {
     if (!sceneFactory_) {
         return;
     }
 
-    std::unique_ptr<BaseScene> nextScene =
-        sceneFactory_->CreateScene(sceneName);
+    std::unique_ptr<BaseScene> nextScene;
+    nextScene = sceneFactory_->CreateScene(sceneName);
     if (!nextScene) {
         return;
     }
@@ -103,57 +84,140 @@ void SceneManager::ChangeScene(const std::string &sceneName) {
 void SceneManager::ChangeScene(std::unique_ptr<BaseScene> nextScene) {
     if (isUpdating_ || isDrawing_) {
         pendingScene_ = std::move(nextScene);
+        pendingSceneAlreadyInitialized_ = false;
         return;
     }
 
-    ApplySceneChange(std::move(nextScene));
+    ApplyOrQueueSceneChange(std::move(nextScene), false);
 }
 
-void SceneManager::ApplySceneChange(std::unique_ptr<BaseScene> nextScene) {
-    if (!ctx_ || !nextScene) {
+void SceneManager::ChangeToInitializedScene(std::unique_ptr<BaseScene> nextScene) {
+    if (isUpdating_ || isDrawing_) {
+        pendingScene_ = std::move(nextScene);
+        pendingSceneAlreadyInitialized_ = true;
         return;
     }
 
-    DirectXCommon *dxCommon = ctx_->rendering.dxCommon;
-    TextureManager *textureManager = ctx_->rendering.texture;
-    MeshManager *meshManager = ctx_->rendering.mesh;
+    ApplyOrQueueSceneChange(std::move(nextScene), true);
+}
+
+SceneManager::ScenePreparationStatus
+SceneManager::PrepareSceneForLoading(BaseScene& scene) {
+    if (!ctx_) {
+        return ScenePreparationStatus::RetryLater;
+    }
+
+    DirectXCommon* dxCommon = ctx_->rendering.dxCommon;
+    TextureManager* textureManager = ctx_->rendering.texture;
+    MeshManager* meshManager = ctx_->rendering.mesh;
 
     if (dxCommon != nullptr && !dxCommon->WaitForGpu()) {
-        return;
+        return ScenePreparationStatus::RetryLater;
     }
 
-    nextScene->SetSceneManager(this);
+    scene.SetSceneManager(this);
 
     const bool ownsUploadPass =
         dxCommon != nullptr && !dxCommon->IsCommandListRecording();
     if (ownsUploadPass && !dxCommon->BeginUpload()) {
-        return;
+        return ScenePreparationStatus::RetryLater;
     }
 
-    UploadPassScope uploadPass(dxCommon, textureManager, meshManager,
-                               ownsUploadPass);
-    nextScene->Initialize(*ctx_);
-
+    ScopedUploadPass uploadPass(dxCommon, textureManager, meshManager,
+                                ownsUploadPass);
+    scene.Initialize(*ctx_);
     if (!uploadPass.Finish()) {
-        return;
+        return ScenePreparationStatus::Failed;
+    }
+
+    return ScenePreparationStatus::Ready;
+}
+
+SceneManager::ScenePreparationStatus
+SceneManager::ApplySceneChange(std::unique_ptr<BaseScene>& nextScene,
+                               bool alreadyInitialized) {
+    if (!ctx_) {
+        return ScenePreparationStatus::RetryLater;
+    }
+    if (!nextScene) {
+        return ScenePreparationStatus::Failed;
+    }
+
+    if (alreadyInitialized) {
+        DirectXCommon* dxCommon = ctx_->rendering.dxCommon;
+        if (dxCommon != nullptr && !dxCommon->WaitForGpu()) {
+            return ScenePreparationStatus::RetryLater;
+        }
+        nextScene->SetSceneManager(this);
+    } else {
+        const ScenePreparationStatus prepareStatus =
+            PrepareSceneForLoading(*nextScene);
+        if (prepareStatus != ScenePreparationStatus::Ready) {
+            return prepareStatus;
+        }
     }
 
     currentScene_.reset();
     currentScene_ = std::move(nextScene);
+    return ScenePreparationStatus::Ready;
+}
+
+void SceneManager::ApplyOrQueueSceneChange(std::unique_ptr<BaseScene> nextScene,
+                                           bool alreadyInitialized) {
+    const ScenePreparationStatus status =
+        ApplySceneChange(nextScene, alreadyInitialized);
+    if (status == ScenePreparationStatus::RetryLater && nextScene) {
+        pendingScene_ = std::move(nextScene);
+        pendingSceneAlreadyInitialized_ = alreadyInitialized;
+    }
+}
+
+void SceneManager::ApplyPendingSceneChange() {
+    if (!pendingScene_) {
+        return;
+    }
+
+    const bool alreadyInitialized = pendingSceneAlreadyInitialized_;
+    const ScenePreparationStatus status =
+        ApplySceneChange(pendingScene_, alreadyInitialized);
+    if (status == ScenePreparationStatus::Ready ||
+        status == ScenePreparationStatus::Failed) {
+        if (status == ScenePreparationStatus::Failed) {
+            pendingScene_.reset();
+        }
+        pendingSceneAlreadyInitialized_ = false;
+    }
 }
 
 void SceneManager::Update() {
-    if (pendingScene_) {
-        ApplySceneChange(std::move(pendingScene_));
-    }
+    ApplyPendingSceneChange();
 
     if (currentScene_) {
         BoolFlagScope updating(isUpdating_);
         currentScene_->Update();
     }
 
-    if (pendingScene_) {
-        ApplySceneChange(std::move(pendingScene_));
+    ApplyPendingSceneChange();
+}
+
+void SceneManager::SubmitRenderScene(RenderScene& renderScene) {
+    if (currentScene_) {
+        BoolFlagScope drawing(isDrawing_);
+        currentScene_->SubmitRenderScene(renderScene);
+    }
+}
+
+void SceneManager::SubmitLighting(LightingScene& lightingScene) {
+    if (currentScene_) {
+        BoolFlagScope drawing(isDrawing_);
+        currentScene_->SubmitLighting(lightingScene);
+    }
+}
+
+void SceneManager::SubmitFrameHistory(FrameHistory& frameHistory) {
+    if (currentScene_) {
+        BoolFlagScope drawing(isDrawing_);
+        currentScene_->SubmitFrameHistory(frameHistory);
     }
 }
 
@@ -182,6 +246,13 @@ void SceneManager::DrawTransparent() {
     }
 }
 
+void SceneManager::DrawVolumetricLighting() {
+    if (currentScene_) {
+        BoolFlagScope drawing(isDrawing_);
+        currentScene_->DrawVolumetricLighting();
+    }
+}
+
 void SceneManager::DrawPostProcessOverlay() {
     if (currentScene_) {
         BoolFlagScope drawing(isDrawing_);
@@ -196,3 +267,9 @@ void SceneManager::DrawShadow() {
     }
 }
 
+void SceneManager::DrawSpotLightShadow() {
+    if (currentScene_) {
+        BoolFlagScope drawing(isDrawing_);
+        currentScene_->DrawSpotLightShadow();
+    }
+}
