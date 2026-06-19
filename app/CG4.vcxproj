@@ -74,7 +74,12 @@
     <PostBuildEvent>
       <Command>xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" "$(OutDir)" || if exist "$(OutDir)dxcompiler.dll" (echo Warning: dxcompiler.dll is locked; keeping existing copy.) else (exit /b 1)
 xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" "$(OutDir)" || if exist "$(OutDir)dxil.dll" (echo Warning: dxil.dll is locked; keeping existing copy.) else (exit /b 1)
-if exist "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" xcopy /Y /I "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" "$(OutDir)"</Command>
+if exist "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" (
+  xcopy /Y /I "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" "$(OutDir)"
+) else (
+  echo Error: assimp-vc145-mt.dll is missing. Expected at "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll".
+  exit /b 1
+)</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -103,7 +108,12 @@ if exist "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145
     <PostBuildEvent>
       <Command>xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" "$(OutDir)" || if exist "$(OutDir)dxcompiler.dll" (echo Warning: dxcompiler.dll is locked; keeping existing copy.) else (exit /b 1)
 xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" "$(OutDir)" || if exist "$(OutDir)dxil.dll" (echo Warning: dxil.dll is locked; keeping existing copy.) else (exit /b 1)
-if exist "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" xcopy /Y /I "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" "$(OutDir)"</Command>
+if exist "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" (
+  xcopy /Y /I "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" "$(OutDir)"
+) else (
+  echo Error: assimp-vc145-mt.dll is missing. Expected at "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll".
+  exit /b 1
+)</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
