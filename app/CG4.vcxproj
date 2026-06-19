@@ -71,18 +71,6 @@
       <AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)..\engine\externals\assimp\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>dxcompiler.lib;dinput8.lib;dxguid.lib;d3d12.lib;dxgi.lib;dwrite.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;assimp-vc145-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PostBuildEvent>
-      <Command>xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" "$(OutDir)" || if exist "$(OutDir)dxcompiler.dll" (echo Warning: dxcompiler.dll is locked; keeping existing copy.) else (exit /b 1)
-xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" "$(OutDir)" || if exist "$(OutDir)dxil.dll" (echo Warning: dxil.dll is locked; keeping existing copy.) else (exit /b 1)
-if exist "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" (
-  xcopy /Y /I "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" "$(OutDir)"
-) else (
-  echo Error: assimp-vc145-mt.dll is missing. Expected at "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll".
-  exit /b 1
-)
-xcopy /E /Y /I "$(MSBuildThisFileDirectory)resources" "$(OutDir)app\resources"
-xcopy /E /Y /I "$(MSBuildThisFileDirectory)..\engine\resources" "$(OutDir)engine\resources"</Command>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -107,18 +95,6 @@ xcopy /E /Y /I "$(MSBuildThisFileDirectory)..\engine\resources" "$(OutDir)engine
       <AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)..\engine\externals\assimp\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>dxcompiler.lib;dinput8.lib;dxguid.lib;d3d12.lib;dxgi.lib;dwrite.lib;mfplat.lib;mfreadwrite.lib;mfuuid.lib;assimp-vc145-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PostBuildEvent>
-      <Command>xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" "$(OutDir)" || if exist "$(OutDir)dxcompiler.dll" (echo Warning: dxcompiler.dll is locked; keeping existing copy.) else (exit /b 1)
-xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" "$(OutDir)" || if exist "$(OutDir)dxil.dll" (echo Warning: dxil.dll is locked; keeping existing copy.) else (exit /b 1)
-if exist "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" (
-  xcopy /Y /I "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll" "$(OutDir)"
-) else (
-  echo Error: assimp-vc145-mt.dll is missing. Expected at "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll".
-  exit /b 1
-)
-xcopy /E /Y /I "$(MSBuildThisFileDirectory)resources" "$(OutDir)app\resources"
-xcopy /E /Y /I "$(MSBuildThisFileDirectory)..\engine\resources" "$(OutDir)engine\resources"</Command>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\main.cpp" />
@@ -137,4 +113,25 @@ xcopy /E /Y /I "$(MSBuildThisFileDirectory)..\engine\resources" "$(OutDir)engine
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <PropertyGroup>
+    <RuntimeWindowsSdkBinDir>$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\</RuntimeWindowsSdkBinDir>
+    <RuntimeDxCompilerDll>$(RuntimeWindowsSdkBinDir)dxcompiler.dll</RuntimeDxCompilerDll>
+    <RuntimeDxilDll>$(RuntimeWindowsSdkBinDir)dxil.dll</RuntimeDxilDll>
+    <RuntimeAssimpDll>$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll</RuntimeAssimpDll>
+  </PropertyGroup>
+  <Target Name="CopyCG4RuntimeFiles" AfterTargets="Build">
+    <Error Condition="!Exists('$(RuntimeDxCompilerDll)')" Text="Required runtime DLL is missing: $(RuntimeDxCompilerDll)" />
+    <Error Condition="!Exists('$(RuntimeDxilDll)')" Text="Required runtime DLL is missing: $(RuntimeDxilDll)" />
+    <Error Condition="!Exists('$(RuntimeAssimpDll)')" Text="Required runtime DLL is missing: $(RuntimeAssimpDll)" />
+    <ItemGroup>
+      <RuntimeDlls Include="$(RuntimeDxCompilerDll)" />
+      <RuntimeDlls Include="$(RuntimeDxilDll)" />
+      <RuntimeDlls Include="$(RuntimeAssimpDll)" />
+      <AppRuntimeResources Include="$(MSBuildThisFileDirectory)resources\**\*.*" />
+      <EngineRuntimeResources Include="$(MSBuildThisFileDirectory)..\engine\resources\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(RuntimeDlls)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Retries="2" RetryDelayMilliseconds="250" />
+    <Copy SourceFiles="@(AppRuntimeResources)" DestinationFiles="@(AppRuntimeResources->'$(OutDir)app\resources\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" Retries="2" RetryDelayMilliseconds="250" />
+    <Copy SourceFiles="@(EngineRuntimeResources)" DestinationFiles="@(EngineRuntimeResources->'$(OutDir)engine\resources\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" Retries="2" RetryDelayMilliseconds="250" />
+  </Target>
 </Project>

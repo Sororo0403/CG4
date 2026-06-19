@@ -75,10 +75,6 @@
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
       <AdditionalDependencies>dxcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PostBuildEvent>
-      <Command>xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" "$(OutDir)" || if exist "$(OutDir)dxcompiler.dll" (echo Warning: dxcompiler.dll is locked; keeping existing copy.) else (exit /b 1)
-xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" "$(OutDir)" || if exist "$(OutDir)dxil.dll" (echo Warning: dxil.dll is locked; keeping existing copy.) else (exit /b 1)</Command>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -102,10 +98,6 @@ xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" 
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalDependencies>dxcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PostBuildEvent>
-      <Command>xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxcompiler.dll" "$(OutDir)" || if exist "$(OutDir)dxcompiler.dll" (echo Warning: dxcompiler.dll is locked; keeping existing copy.) else (exit /b 1)
-xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" "$(OutDir)" || if exist "$(OutDir)dxil.dll" (echo Warning: dxil.dll is locked; keeping existing copy.) else (exit /b 1)</Command>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\src\core\AssetHotReloader.cpp" />
@@ -125,4 +117,18 @@ xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" 
     <ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <PropertyGroup>
+    <RuntimeWindowsSdkBinDir>$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\</RuntimeWindowsSdkBinDir>
+    <RuntimeDxCompilerDll>$(RuntimeWindowsSdkBinDir)dxcompiler.dll</RuntimeDxCompilerDll>
+    <RuntimeDxilDll>$(RuntimeWindowsSdkBinDir)dxil.dll</RuntimeDxilDll>
+  </PropertyGroup>
+  <Target Name="CopyEngineTestRuntimeFiles" AfterTargets="Build">
+    <Error Condition="!Exists('$(RuntimeDxCompilerDll)')" Text="Required runtime DLL is missing: $(RuntimeDxCompilerDll)" />
+    <Error Condition="!Exists('$(RuntimeDxilDll)')" Text="Required runtime DLL is missing: $(RuntimeDxilDll)" />
+    <ItemGroup>
+      <EngineTestRuntimeDlls Include="$(RuntimeDxCompilerDll)" />
+      <EngineTestRuntimeDlls Include="$(RuntimeDxilDll)" />
+    </ItemGroup>
+    <Copy SourceFiles="@(EngineTestRuntimeDlls)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Retries="2" RetryDelayMilliseconds="250" />
+  </Target>
 </Project>
