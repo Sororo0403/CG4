@@ -30,6 +30,8 @@ x86/
 [Aa][Rr][Mm]64/
 bld/
 [Bb]in/
+!engine/externals/assimp/bin/
+!engine/externals/assimp/bin/assimp-vc145-mt.dll
 [Oo]bj/
 [Oo]ut/
 [Ll]og/
