@@ -1,4 +1,4 @@
-#include "SoundFormatUtils.h"
+#include "internal/SoundFormatUtils.h"
 
 #include <Objbase.h>
 #include <algorithm>

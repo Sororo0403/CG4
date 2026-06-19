@@ -10,7 +10,6 @@
 #include "font/TextRenderer.h"
 #include "graphics/DepthPyramid.h"
 #include "graphics/FrameHistory.h"
-#include "graphics/AdvancedGpuRenderer.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/GpuProfiler.h"
 #include "graphics/LightingScene.h"
@@ -32,6 +31,8 @@
 #include "model/SkyboxRenderer.h"
 #include "scene/SceneContext.h"
 #include "scene/SceneManager.h"
+#include "sound/NullSoundService.h"
+#include "sound/SoundManager.h"
 #include "sprite/SpriteManager.h"
 #include "texture/TextureManager.h"
 
@@ -49,13 +50,12 @@ struct EngineRuntime::Systems {
     MeshManager meshManager;
     MeshRenderer meshRenderer;
     ModelManager modelManager;
-    SpriteManager *spriteManager = nullptr;
+    SpriteManager spriteManager;
     FontManager fontManager;
     TextRenderer textRenderer;
     PipelineManager pipelineManager;
     PostProcessSystem postProcessSystem;
     VolumetricLightingSystem volumetricLightingSystem;
-    AdvancedGpuRenderer advancedGpuRenderer;
     PostEffectManager postEffectManager;
     RenderTexture renderTexture;
     SkyboxRenderer skyboxRenderer;
@@ -72,6 +72,8 @@ struct EngineRuntime::Systems {
     FrameHistory frameHistory;
     SceneManager sceneManager;
     CameraManager cameraManager;
+    SoundManager soundManager;
+    NullSoundService nullSoundService;
     Input input;
     FrameTimer frameTimer;
     SceneContext sceneContext{};

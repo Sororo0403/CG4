@@ -7,7 +7,6 @@
 enum class MaterialDomain : uint8_t {
     Surface,
     Foliage,
-    PlanarReflection,
     Sky,
     Unlit,
     Particle,
@@ -22,10 +21,9 @@ enum class MaterialFeatureFlags : uint32_t {
     OrmMap = 1u << 4,
     Emissive = 1u << 5,
     Wind = 1u << 6,
-    RaytracingVisible = 1u << 7,
-    CastShadow = 1u << 8,
-    ReceiveShadow = 1u << 9,
-    WritesMotionVectors = 1u << 10,
+    CastShadow = 1u << 7,
+    ReceiveShadow = 1u << 8,
+    WritesMotionVectors = 1u << 9,
 };
 
 inline constexpr MaterialFeatureFlags

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "model/Material.h"
+#include "geometry/ModelVertex.h"
 #include "model/Vertex.h"
 
 #include <cstdint>
@@ -10,7 +11,7 @@
 namespace ModelPrimitiveFactory {
 
 struct PrimitiveMeshData {
-    std::vector<Vertex> vertices;
+    std::vector<ModelVertex> vertices;
     std::vector<uint32_t> indices;
     Material material{};
 };

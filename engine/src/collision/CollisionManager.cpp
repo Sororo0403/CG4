@@ -1,6 +1,7 @@
 #include "collision/CollisionManager.h"
 #include "core/Numeric.h"
 #include <algorithm>
+#include <array>
 #include <cfloat>
 #include <cmath>
 #include <limits>
@@ -58,13 +59,6 @@ OBB AABBToOBB(const AABB &box) {
     return result;
 }
 
-OBB ToOBB(const CollisionManager::Shape &shape) {
-    if (shape.type == CollisionManager::ShapeType::AABB) {
-        return AABBToOBB(shape.aabb);
-    }
-    return shape.obb;
-}
-
 XMVECTOR NormalizeQuaternion(const XMFLOAT4 &rotation) {
     if (!std::isfinite(rotation.x) || !std::isfinite(rotation.y) ||
         !std::isfinite(rotation.z) || !std::isfinite(rotation.w)) {
@@ -76,6 +70,98 @@ XMVECTOR NormalizeQuaternion(const XMFLOAT4 &rotation) {
         return XMQuaternionIdentity();
     }
     return XMQuaternionNormalize(q);
+}
+
+OBB ShapeAabbToObb(const CollisionManager::Shape &shape) {
+    return AABBToOBB(shape.aabb);
+}
+
+OBB ShapeObbToObb(const CollisionManager::Shape &shape) {
+    return shape.obb;
+}
+
+AABB ShapeAabbBounds(const CollisionManager::Shape &shape) {
+    return NormalizeAABB(shape.aabb);
+}
+
+AABB ShapeObbBounds(const CollisionManager::Shape &shape) {
+    const OBB &box = shape.obb;
+    const XMVECTOR center =
+        XMVectorSet(FiniteOr(box.center.x, 0.0f),
+                    FiniteOr(box.center.y, 0.0f),
+                    FiniteOr(box.center.z, 0.0f), 0.0f);
+    const XMVECTOR rotation = NormalizeQuaternion(box.rotation);
+    const XMVECTOR axes[3] = {
+        XMVector3Rotate(XMVectorSet(FiniteHalfExtent(box.size.x), 0.0f, 0.0f,
+                                    0.0f),
+                        rotation),
+        XMVector3Rotate(XMVectorSet(0.0f, FiniteHalfExtent(box.size.y), 0.0f,
+                                    0.0f),
+                        rotation),
+        XMVector3Rotate(XMVectorSet(0.0f, 0.0f, FiniteHalfExtent(box.size.z),
+                                    0.0f),
+                        rotation),
+    };
+
+    AABB bounds{};
+    bounds.min = {FLT_MAX, FLT_MAX, FLT_MAX};
+    bounds.max = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
+
+    for (int x = -1; x <= 1; x += 2) {
+        for (int y = -1; y <= 1; y += 2) {
+            for (int z = -1; z <= 1; z += 2) {
+                XMVECTOR corner = center + axes[0] * static_cast<float>(x) +
+                                  axes[1] * static_cast<float>(y) +
+                                  axes[2] * static_cast<float>(z);
+                XMFLOAT3 point{};
+                XMStoreFloat3(&point, corner);
+                if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+                    !std::isfinite(point.z)) {
+                    continue;
+                }
+                bounds.min.x = (std::min)(bounds.min.x, point.x);
+                bounds.min.y = (std::min)(bounds.min.y, point.y);
+                bounds.min.z = (std::min)(bounds.min.z, point.z);
+                bounds.max.x = (std::max)(bounds.max.x, point.x);
+                bounds.max.y = (std::max)(bounds.max.y, point.y);
+                bounds.max.z = (std::max)(bounds.max.z, point.z);
+            }
+        }
+    }
+
+    if (bounds.min.x == FLT_MAX) {
+        bounds.min = {0.0f, 0.0f, 0.0f};
+        bounds.max = {0.0f, 0.0f, 0.0f};
+    }
+
+    return bounds;
+}
+
+struct CollisionShapeOperations {
+    CollisionManager::ShapeType type;
+    OBB (*toObb)(const CollisionManager::Shape &);
+    AABB (*bounds)(const CollisionManager::Shape &);
+};
+
+constexpr std::array<CollisionShapeOperations, 2u> kCollisionShapeOperations{{
+    {CollisionManager::ShapeType::AABB, ShapeAabbToObb, ShapeAabbBounds},
+    {CollisionManager::ShapeType::OBB, ShapeObbToObb, ShapeObbBounds},
+}};
+
+const CollisionShapeOperations &ShapeOperationsFor(
+    CollisionManager::ShapeType type) {
+    const auto found = std::find_if(
+        kCollisionShapeOperations.begin(), kCollisionShapeOperations.end(),
+        [type](const CollisionShapeOperations &operations) {
+            return operations.type == type;
+        });
+    return found != kCollisionShapeOperations.end()
+               ? *found
+               : kCollisionShapeOperations.back();
+}
+
+OBB ToOBB(const CollisionManager::Shape &shape) {
+    return ShapeOperationsFor(shape.type).toObb(shape);
 }
 
 } // namespace
@@ -261,60 +347,7 @@ bool CollisionManager::CanCollide(const Body &a, const Body &b) {
 }
 
 AABB CollisionManager::ComputeBounds(const Shape &shape) {
-    if (shape.type == ShapeType::AABB) {
-        return NormalizeAABB(shape.aabb);
-    }
-
-    const OBB &box = shape.obb;
-    const XMVECTOR center =
-        XMVectorSet(FiniteOr(box.center.x, 0.0f),
-                    FiniteOr(box.center.y, 0.0f),
-                    FiniteOr(box.center.z, 0.0f), 0.0f);
-    const XMVECTOR rotation = NormalizeQuaternion(box.rotation);
-    const XMVECTOR axes[3] = {
-        XMVector3Rotate(XMVectorSet(FiniteHalfExtent(box.size.x), 0.0f, 0.0f,
-                                    0.0f),
-                        rotation),
-        XMVector3Rotate(XMVectorSet(0.0f, FiniteHalfExtent(box.size.y), 0.0f,
-                                    0.0f),
-                        rotation),
-        XMVector3Rotate(XMVectorSet(0.0f, 0.0f, FiniteHalfExtent(box.size.z),
-                                    0.0f),
-                        rotation),
-    };
-
-    AABB bounds{};
-    bounds.min = {FLT_MAX, FLT_MAX, FLT_MAX};
-    bounds.max = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
-
-    for (int x = -1; x <= 1; x += 2) {
-        for (int y = -1; y <= 1; y += 2) {
-            for (int z = -1; z <= 1; z += 2) {
-                XMVECTOR corner = center + axes[0] * static_cast<float>(x) +
-                                  axes[1] * static_cast<float>(y) +
-                                  axes[2] * static_cast<float>(z);
-                XMFLOAT3 point{};
-                XMStoreFloat3(&point, corner);
-                if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
-                    !std::isfinite(point.z)) {
-                    continue;
-                }
-                bounds.min.x = (std::min)(bounds.min.x, point.x);
-                bounds.min.y = (std::min)(bounds.min.y, point.y);
-                bounds.min.z = (std::min)(bounds.min.z, point.z);
-                bounds.max.x = (std::max)(bounds.max.x, point.x);
-                bounds.max.y = (std::max)(bounds.max.y, point.y);
-                bounds.max.z = (std::max)(bounds.max.z, point.z);
-            }
-        }
-    }
-
-    if (bounds.min.x == FLT_MAX) {
-        bounds.min = {0.0f, 0.0f, 0.0f};
-        bounds.max = {0.0f, 0.0f, 0.0f};
-    }
-
-    return bounds;
+    return ShapeOperationsFor(shape.type).bounds(shape);
 }
 
 CollisionUtil::CollisionResult

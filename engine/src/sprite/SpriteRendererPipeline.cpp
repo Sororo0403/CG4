@@ -1,7 +1,7 @@
 #include "sprite/SpriteRenderer.h"
 
-#include "SpriteRendererInternal.h"
-#include "../graphics/RootSignatureUtils.h"
+#include "internal/SpriteRendererInternal.h"
+#include "../graphics/internal/RootSignatureUtils.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/ShaderCompiler.h"

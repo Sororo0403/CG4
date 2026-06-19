@@ -1,5 +1,5 @@
 #include "core/CpuProfiler.h"
-#include "CpuProfilerInternal.h"
+#include "internal/CpuProfilerInternal.h"
 
 CpuProfiler::CpuProfiler() : state_(std::make_unique<State>()) {}
 

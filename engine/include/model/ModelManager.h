@@ -24,16 +24,6 @@ class ModelManager {
     ~ModelManager();
 
     /// <summary>
-    /// ModelManagerの共有インスタンスを取得する
-    /// </summary>
-    static ModelManager &GetInstance();
-
-    /// <summary>
-    /// 実行中ランタイムのModelManagerを共有インスタンスとして登録する
-    /// </summary>
-    static void SetActiveInstance(ModelManager *instance);
-
-    /// <summary>
     /// モデル読み込み、マテリアル、メッシュ、描画器を初期化する
     /// </summary>
     /// <param name="dxCommon">DirectX共通管理クラス</param>

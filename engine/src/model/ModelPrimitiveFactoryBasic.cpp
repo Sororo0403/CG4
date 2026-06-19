@@ -1,4 +1,4 @@
-#include "ModelPrimitiveFactoryInternal.h"
+#include "internal/ModelPrimitiveFactoryInternal.h"
 
 #include "core/Numeric.h"
 
@@ -14,7 +14,7 @@ using Internal::PrepareMaterial;
 using Internal::ReserveProceduralMesh;
 using Numeric::AtLeastFinite;
 
-constexpr std::array<Vertex, 4> kPlaneVertices = {{
+constexpr std::array<ModelVertex, 4> kPlaneVertices = {{
     {{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
     {{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
     {{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},

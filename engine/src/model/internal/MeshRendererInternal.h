@@ -61,7 +61,6 @@ struct MeshRenderer::State : RendererShadowState {
     SceneFog currentFog{};
     uint32_t environmentTextureId = kInvalidResourceId;
     bool materialReflectionsEnabled = true;
-    D3D12_GPU_DESCRIPTOR_HANDLE planarReflectionGpuHandle{};
     DirectX::XMFLOAT4 customSceneParams0{1.0f, 0.0f, 0.0f, 0.0f};
     DirectX::XMFLOAT4 customSceneParams1{0.0f, 1.0f, 0.24f, 0.0f};
     DirectX::XMFLOAT4X4 occlusionViewProjection = {

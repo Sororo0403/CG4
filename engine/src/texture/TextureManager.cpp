@@ -1,7 +1,7 @@
 #include "texture/TextureManager.h"
 
-#include "TextureManagerDecoding.h"
-#include "TextureManagerInternal.h"
+#include "internal/TextureManagerDecoding.h"
+#include "internal/TextureManagerInternal.h"
 #include "core/PathUtils.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/GpuResourceLifetime.h"
@@ -9,9 +9,11 @@
 #include "texture/Texture.h"
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <iterator>
 #include <numeric>
+#include <string_view>
 #include <vector>
 
 class TextureManagerInitializationGuard {
@@ -38,8 +40,6 @@ private:
 using namespace DirectX;
 
 namespace {
-TextureManager* gActiveTextureManager = nullptr;
-
 uint64_t BufferByteWidth(ID3D12Resource* resource) {
     if (resource == nullptr) {
         return 0;
@@ -49,39 +49,44 @@ uint64_t BufferByteWidth(ID3D12Resource* resource) {
 }
 
 TextureManagerDecoding::TextureColorSpacePolicy DecodeColorSpacePolicy(int policy) {
-    switch (policy) {
-    case 1:
-        return TextureManagerDecoding::TextureColorSpacePolicy::Srgb;
-    case 2:
-        return TextureManagerDecoding::TextureColorSpacePolicy::Linear;
-    case 0:
-    default:
-        return TextureManagerDecoding::TextureColorSpacePolicy::Auto;
-    }
+    struct ColorSpacePolicyMap {
+        int value;
+        TextureManagerDecoding::TextureColorSpacePolicy policy;
+    };
+    static constexpr std::array<ColorSpacePolicyMap, 2> kPolicies{{
+        {1, TextureManagerDecoding::TextureColorSpacePolicy::Srgb},
+        {2, TextureManagerDecoding::TextureColorSpacePolicy::Linear},
+    }};
+
+    const auto it = std::find_if(
+        kPolicies.begin(), kPolicies.end(),
+        [policy](const ColorSpacePolicyMap &entry) {
+            return entry.value == policy;
+        });
+    return it != kPolicies.end()
+               ? it->policy
+               : TextureManagerDecoding::TextureColorSpacePolicy::Auto;
 }
 
 std::wstring MakeTextureCacheKey(const std::wstring& pathKey, int colorSpacePolicy) {
-    switch (colorSpacePolicy) {
-    case 1:
-        return pathKey + L"|srgb";
-    case 2:
-        return pathKey + L"|linear";
-    case 0:
-    default:
-        return pathKey;
-    }
+    struct CacheKeySuffix {
+        int policy = 0;
+        std::wstring_view suffix;
+    };
+    static constexpr std::array<CacheKeySuffix, 2> kSuffixes{{
+        {1, L"|srgb"},
+        {2, L"|linear"},
+    }};
+
+    const auto it = std::find_if(
+        kSuffixes.begin(), kSuffixes.end(),
+        [colorSpacePolicy](const CacheKeySuffix &entry) {
+            return entry.policy == colorSpacePolicy;
+        });
+    return it != kSuffixes.end() ? pathKey + std::wstring(it->suffix) : pathKey;
 }
 
 } // namespace
-
-TextureManager& TextureManager::GetInstance() {
-    static TextureManager instance;
-    return gActiveTextureManager != nullptr ? *gActiveTextureManager : instance;
-}
-
-void TextureManager::SetActiveInstance(TextureManager* instance) {
-    gActiveTextureManager = instance;
-}
 
 TextureManager::TextureManager() : state_(std::make_unique<State>()) {}
 
@@ -116,7 +121,6 @@ void TextureManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager)
 
     dxCommon_ = dxCommon;
     srvManager_ = srvManager;
-    SetActiveInstance(this);
     TextureManagerInitializationGuard initializeGuard(*this);
 
     ResetStateForInitialize();
@@ -272,9 +276,6 @@ bool TextureManager::Finalize(bool allowFrameAbort) {
     state_->filePathToTextureId.clear();
     dxCommon_ = nullptr;
     srvManager_ = nullptr;
-    if (gActiveTextureManager == this) {
-        SetActiveInstance(nullptr);
-    }
     state_->whiteTextureId = kInvalidResourceId;
     state_->whiteCubeTextureId = kInvalidResourceId;
     state_->blackCubeTextureId = kInvalidResourceId;

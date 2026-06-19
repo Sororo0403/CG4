@@ -6,7 +6,7 @@
 class Input;
 class WinApp;
 class CameraManager;
-class SoundManager;
+class ISoundService;
 class ModelManager;
 class MeshManager;
 class SpriteManager;
@@ -31,7 +31,6 @@ class LightingScene;
 class RenderScene;
 class CpuProfiler;
 class VolumetricLightingSystem;
-class AdvancedGpuRenderer;
 
 #ifdef _DEBUG
 class ImguiManager;
@@ -43,7 +42,7 @@ class ImguiManager;
 struct SceneSystemServices {
     Input *input = nullptr;
     WinApp *winApp = nullptr;
-    SoundManager *sound = nullptr;
+    ISoundService *sound = nullptr;
     TextureManager *texture = nullptr;
     CameraManager *cameraManager = nullptr;
     CpuProfiler *cpuProfiler = nullptr;
@@ -82,5 +81,4 @@ struct SceneRenderServices {
     FrameHistory *frameHistory = nullptr;
     GpuProfiler *gpuProfiler = nullptr;
     VolumetricLightingSystem *volumetricLighting = nullptr;
-    AdvancedGpuRenderer *advancedGpu = nullptr;
 };

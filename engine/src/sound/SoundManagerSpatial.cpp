@@ -1,4 +1,4 @@
-#include "SoundManagerInternal.h"
+#include "internal/SoundManagerInternal.h"
 #include "core/MathUtils.h"
 #include "core/Numeric.h"
 #include "sound/SoundManager.h"

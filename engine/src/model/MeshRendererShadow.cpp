@@ -1,8 +1,8 @@
 #include "model/MeshRenderer.h"
-#include "MeshRendererInternal.h"
+#include "internal/MeshRendererInternal.h"
 
 #include "graphics/DirectXCommon.h"
-#include "RendererMaterialUtils.h"
+#include "internal/RendererMaterialUtils.h"
 #include "model/RendererMath.h"
 
 using namespace DirectX;

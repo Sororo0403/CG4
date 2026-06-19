@@ -13,7 +13,7 @@ inline D3D12_INPUT_LAYOUT_DESC MakeDesc(
     return {elements.data(), static_cast<UINT>(elements.size())};
 }
 
-inline constexpr std::array<D3D12_INPUT_ELEMENT_DESC, 10> kMeshVertex{{
+inline constexpr std::array<D3D12_INPUT_ELEMENT_DESC, 5> kMeshVertex{{
     {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
      D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
@@ -26,21 +26,6 @@ inline constexpr std::array<D3D12_INPUT_ELEMENT_DESC, 10> kMeshVertex{{
      D3D12_APPEND_ALIGNED_ELEMENT,
      D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     {"TANGENT", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
-     D3D12_APPEND_ALIGNED_ELEMENT,
-     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"CUSTOMSCALAR", 0, DXGI_FORMAT_R32_FLOAT, 0,
-     D3D12_APPEND_ALIGNED_ELEMENT,
-     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"CUSTOMPOSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
-     D3D12_APPEND_ALIGNED_ELEMENT,
-     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"CUSTOMVECTOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
-     D3D12_APPEND_ALIGNED_ELEMENT,
-     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"CUSTOMPOSITION", 1, DXGI_FORMAT_R32G32B32_FLOAT, 0,
-     D3D12_APPEND_ALIGNED_ELEMENT,
-     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"CUSTOMVECTOR", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
      D3D12_APPEND_ALIGNED_ELEMENT,
      D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
 }};
@@ -68,17 +53,12 @@ inline constexpr std::array<D3D12_INPUT_ELEMENT_DESC, 7> kInstanceData{{
      D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1},
 }};
 
-inline constexpr std::array<D3D12_INPUT_ELEMENT_DESC, 17> kMeshInstanced{{
+inline constexpr std::array<D3D12_INPUT_ELEMENT_DESC, 12> kMeshInstanced{{
     kMeshVertex[0],
     kMeshVertex[1],
     kMeshVertex[2],
     kMeshVertex[3],
     kMeshVertex[4],
-    kMeshVertex[5],
-    kMeshVertex[6],
-    kMeshVertex[7],
-    kMeshVertex[8],
-    kMeshVertex[9],
     kInstanceData[0],
     kInstanceData[1],
     kInstanceData[2],
@@ -88,24 +68,81 @@ inline constexpr std::array<D3D12_INPUT_ELEMENT_DESC, 17> kMeshInstanced{{
     kInstanceData[6],
 }};
 
-inline constexpr std::array<D3D12_INPUT_ELEMENT_DESC, 7> kModelVertex{{
+inline constexpr std::array<D3D12_INPUT_ELEMENT_DESC, 7> kSurfaceVertex{{
     kMeshVertex[0],
     kMeshVertex[1],
     kMeshVertex[2],
     kMeshVertex[3],
     kMeshVertex[4],
-    kMeshVertex[5],
-    kMeshVertex[6],
+    {"SURFACEWEIGHT", 0, DXGI_FORMAT_R32_FLOAT, 0,
+     D3D12_APPEND_ALIGNED_ELEMENT,
+     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    {"SURFACEPARAMS", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
+     D3D12_APPEND_ALIGNED_ELEMENT,
+     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
 }};
 
-inline constexpr std::array<D3D12_INPUT_ELEMENT_DESC, 14> kModelInstanced{{
+inline constexpr std::array<D3D12_INPUT_ELEMENT_DESC, 10> kTreeVertex{{
+    kMeshVertex[0],
+    kMeshVertex[1],
+    kMeshVertex[2],
+    kMeshVertex[3],
+    kMeshVertex[4],
+    {"TREEANIMATIONWEIGHT", 0, DXGI_FORMAT_R32_FLOAT, 0,
+     D3D12_APPEND_ALIGNED_ELEMENT,
+     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    {"TREEMOTIONPIVOT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
+     D3D12_APPEND_ALIGNED_ELEMENT,
+     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    {"TREEMOTIONMETA", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
+     D3D12_APPEND_ALIGNED_ELEMENT,
+     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    {"TREEPARENTMOTIONPIVOT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
+     D3D12_APPEND_ALIGNED_ELEMENT,
+     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    {"TREEPARENTMOTIONMETA", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
+     D3D12_APPEND_ALIGNED_ELEMENT,
+     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+}};
+
+inline constexpr std::array<D3D12_INPUT_ELEMENT_DESC, 17> kTreeInstanced{{
+    kTreeVertex[0],
+    kTreeVertex[1],
+    kTreeVertex[2],
+    kTreeVertex[3],
+    kTreeVertex[4],
+    kTreeVertex[5],
+    kTreeVertex[6],
+    kTreeVertex[7],
+    kTreeVertex[8],
+    kTreeVertex[9],
+    kInstanceData[0],
+    kInstanceData[1],
+    kInstanceData[2],
+    kInstanceData[3],
+    kInstanceData[4],
+    kInstanceData[5],
+    kInstanceData[6],
+}};
+
+inline constexpr std::array<D3D12_INPUT_ELEMENT_DESC, 6> kModelVertex{{
+    kMeshVertex[0],
+    kMeshVertex[1],
+    kMeshVertex[2],
+    kMeshVertex[3],
+    kMeshVertex[4],
+    {"SOURCEPOSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
+     D3D12_APPEND_ALIGNED_ELEMENT,
+     D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+}};
+
+inline constexpr std::array<D3D12_INPUT_ELEMENT_DESC, 13> kModelInstanced{{
     kModelVertex[0],
     kModelVertex[1],
     kModelVertex[2],
     kModelVertex[3],
     kModelVertex[4],
     kModelVertex[5],
-    kModelVertex[6],
     kInstanceData[0],
     kInstanceData[1],
     kInstanceData[2],

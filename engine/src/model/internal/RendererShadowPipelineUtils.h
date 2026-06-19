@@ -1,7 +1,7 @@
 #pragma once
 
 #include "graphics/DxHelpers.h"
-#include "../graphics/RootSignatureUtils.h"
+#include "../../graphics/internal/RootSignatureUtils.h"
 
 #include <cstddef>
 #include <cstdint>

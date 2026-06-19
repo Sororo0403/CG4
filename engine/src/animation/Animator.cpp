@@ -4,9 +4,74 @@
 #include "core/MathUtils.h"
 #include <DirectXMath.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 using namespace DirectX;
+
+namespace {
+
+void ResetRootAnimation(Model &model) {
+    model.hasRootAnimation = false;
+    XMStoreFloat4x4(&model.rootAnimationMatrix, XMMatrixIdentity());
+}
+
+struct AnimationPlaybackPolicy {
+    bool loop = false;
+    void (*finish)(Model &, const AnimationClip &) = nullptr;
+};
+
+void FinishLoopingPlayback(Model &model, const AnimationClip &clip) {
+    if (model.animationTime >= clip.duration) {
+        model.animationTime = std::fmod(model.animationTime, clip.duration);
+    }
+}
+
+void FinishOneShotPlayback(Model &model, const AnimationClip &clip) {
+    if (model.animationTime >= clip.duration) {
+        model.animationTime = clip.duration;
+        model.isPlaying = false;
+        model.animationFinished = true;
+    }
+}
+
+const std::array<AnimationPlaybackPolicy, 2> &AnimationPlaybackPolicies() {
+    static const std::array<AnimationPlaybackPolicy, 2> kPolicies = {{
+        {false, FinishOneShotPlayback},
+        {true, FinishLoopingPlayback},
+    }};
+    return kPolicies;
+}
+
+const AnimationPlaybackPolicy &PlaybackPolicyFor(bool loop) {
+    const auto &policies = AnimationPlaybackPolicies();
+    const auto found =
+        std::find_if(policies.begin(), policies.end(),
+                     [loop](const AnimationPlaybackPolicy &policy) {
+                         return policy.loop == loop;
+                     });
+    return found != policies.end() ? *found : policies.front();
+}
+
+void AdvancePlayback(Model &model, const AnimationClip &clip, float deltaTime) {
+    if (!model.isPlaying) {
+        return;
+    }
+
+    if (!std::isfinite(model.animationTime) || model.animationTime < 0.0f) {
+        model.animationTime = 0.0f;
+    }
+    const float safeDeltaTime =
+        std::isfinite(deltaTime) ? (std::max)(deltaTime, 0.0f) : 0.0f;
+    model.animationTime += safeDeltaTime;
+    if (!std::isfinite(model.animationTime)) {
+        model.animationTime = model.isLoop ? 0.0f : clip.duration;
+    }
+
+    PlaybackPolicyFor(model.isLoop).finish(model, clip);
+}
+
+} // namespace
 
 void Animator::Play(Model &model, const std::string &animationName, bool loop) {
     auto it = model.animations.find(animationName);
@@ -42,60 +107,34 @@ void Animator::ApplyBindPose(Model &model) {
 }
 
 void Animator::Update(Model &model, float deltaTime) {
-    if (model.currentAnimation.empty()) {
-        model.hasRootAnimation = false;
-        XMStoreFloat4x4(&model.rootAnimationMatrix, XMMatrixIdentity());
-        if (!model.bones.empty()) {
-            ApplyBindPose(model);
+    const auto applyBindPoseIfPresent = [](Model &target) {
+        ResetRootAnimation(target);
+        if (!target.bones.empty()) {
+            Animator::ApplyBindPose(target);
         }
+    };
+
+    if (model.currentAnimation.empty()) {
+        applyBindPoseIfPresent(model);
         return;
     }
 
     auto clipIt = model.animations.find(model.currentAnimation);
     if (clipIt == model.animations.end()) {
-        model.hasRootAnimation = false;
-        XMStoreFloat4x4(&model.rootAnimationMatrix, XMMatrixIdentity());
-        if (!model.bones.empty()) {
-            ApplyBindPose(model);
-        }
+        applyBindPoseIfPresent(model);
         return;
     }
 
     const AnimationClip &clip = clipIt->second;
     if (!std::isfinite(clip.duration) || clip.duration <= 0.0f) {
-        model.hasRootAnimation = false;
-        XMStoreFloat4x4(&model.rootAnimationMatrix, XMMatrixIdentity());
-        if (!model.bones.empty()) {
-            ApplyBindPose(model);
-        }
+        applyBindPoseIfPresent(model);
         return;
     }
 
-    if (model.isPlaying) {
-        if (!std::isfinite(model.animationTime) || model.animationTime < 0.0f) {
-            model.animationTime = 0.0f;
-        }
-        const float safeDeltaTime =
-            std::isfinite(deltaTime) ? (std::max)(deltaTime, 0.0f) : 0.0f;
-        model.animationTime += safeDeltaTime;
-        if (!std::isfinite(model.animationTime)) {
-            model.animationTime = model.isLoop ? 0.0f : clip.duration;
-        }
-        if (model.isLoop) {
-            if (model.animationTime >= clip.duration) {
-                model.animationTime = std::fmod(model.animationTime,
-                                                clip.duration);
-            }
-        } else if (model.animationTime >= clip.duration) {
-            model.animationTime = clip.duration;
-            model.isPlaying = false;
-            model.animationFinished = true;
-        }
-    }
+    AdvancePlayback(model, clip, deltaTime);
 
     if (model.bones.empty()) {
-        model.hasRootAnimation = false;
-        XMStoreFloat4x4(&model.rootAnimationMatrix, XMMatrixIdentity());
+        ResetRootAnimation(model);
 
         if (!clip.rootNodeName.empty()) {
             auto rootIt = clip.nodeAnimations.find(clip.rootNodeName);

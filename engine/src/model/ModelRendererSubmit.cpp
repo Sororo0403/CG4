@@ -1,11 +1,11 @@
 #include "model/ModelRenderer.h"
-#include "ModelRendererInternal.h"
+#include "internal/ModelRendererInternal.h"
 
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "model/MaterialManager.h"
 #include "model/MeshManager.h"
-#include "RendererMaterialUtils.h"
+#include "internal/RendererMaterialUtils.h"
 #include "texture/TextureManager.h"
 
 #include <array>

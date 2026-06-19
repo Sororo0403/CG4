@@ -1,5 +1,5 @@
 #include "graphics/DirectXCommon.h"
-#include "DirectXCommonState.h"
+#include "internal/DirectXCommonState.h"
 
 #include <utility>
 

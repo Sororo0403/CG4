@@ -1,5 +1,5 @@
 #include "graphics/RenderTexture.h"
-#include "RenderTextureInternal.h"
+#include "internal/RenderTextureInternal.h"
 #include "core/Numeric.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
@@ -134,14 +134,32 @@ bool RenderTexture::Release(bool allowFrameAbort) {
 }
 
 void RenderTexture::BeginRender(const DirectX::XMFLOAT4 &clearColor) {
+    BeginRenderInternal(clearColor, true, true);
+}
+
+void RenderTexture::BeginRenderNoDepth(
+    const DirectX::XMFLOAT4 &clearColor) {
+    BeginRenderInternal(clearColor, false, false);
+}
+
+void RenderTexture::BeginRenderInternal(
+    const DirectX::XMFLOAT4 &clearColor, bool bindDepth, bool clearDepth) {
     if (!dxCommon_ || !resources_->resource || !resources_->rtvHeap) {
         return;
     }
 
     auto commandList = dxCommon_->GetCommandList();
-    auto dsvHandle = dxCommon_->GetDepthStencilView();
-    if (commandList == nullptr || dsvHandle.ptr == 0) {
+    if (commandList == nullptr) {
         return;
+    }
+    D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle{};
+    D3D12_CPU_DESCRIPTOR_HANDLE *dsvHandlePtr = nullptr;
+    if (bindDepth) {
+        dsvHandle = dxCommon_->GetDepthStencilView();
+        if (dsvHandle.ptr == 0) {
+            return;
+        }
+        dsvHandlePtr = &dsvHandle;
     }
 
     if (resources_->resourceState != D3D12_RESOURCE_STATE_RENDER_TARGET) {
@@ -176,7 +194,7 @@ void RenderTexture::BeginRender(const DirectX::XMFLOAT4 &clearColor) {
 
     commandList->RSSetViewports(1, &viewport);
     commandList->RSSetScissorRects(1, &scissorRect);
-    commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
+    commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, dsvHandlePtr);
 
     const float clear[4] = {
         ClampFinite(clearColor.x, 0.0f, 1.0f, 0.0f),
@@ -185,8 +203,10 @@ void RenderTexture::BeginRender(const DirectX::XMFLOAT4 &clearColor) {
         ClampFinite(clearColor.w, 0.0f, 1.0f, 1.0f),
     };
     commandList->ClearRenderTargetView(rtvHandle, clear, 0, nullptr);
-    commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f,
-                                       0, 0, nullptr);
+    if (clearDepth && dsvHandle.ptr != 0) {
+        commandList->ClearDepthStencilView(
+            dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+    }
 }
 
 void RenderTexture::EndRender() {
@@ -297,8 +317,8 @@ bool RenderTexture::CreateResources() {
         return false;
     }
 
-    if (!CanReleaseGpuResources(dxCommon_, resources_->resource != nullptr || resources_->rtvHeap ||
-                                               resources_->srvIndex != UINT_MAX)) {
+    if (!CanReleaseGpuResources(dxCommon_, resources_->resource != nullptr ||
+                                               resources_->rtvHeap != nullptr)) {
         return false;
     }
     device->CreateShaderResourceView(newResource.Get(), &srvDesc, srvHandle);

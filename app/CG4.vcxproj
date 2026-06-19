@@ -111,10 +111,11 @@ if exist "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145
     <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\ParticleDemoScene.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\effects\FireworkHitEffectPresets.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\ParticleDemoScene.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="$(MSBuildThisFileDirectory)resources\textures\flame_spread_atlas.png" />
+    <None Include="$(MSBuildThisFileDirectory)resources\ui\space_particle_prompt.png" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="$(MSBuildThisFileDirectory)..\engine\Engine.vcxproj">

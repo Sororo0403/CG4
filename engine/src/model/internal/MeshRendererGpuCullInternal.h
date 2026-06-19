@@ -18,7 +18,8 @@ struct MeshGpuCullConstants {
     DirectX::XMFLOAT4 occlusionParams;
     uint32_t instanceCount = 0;
     uint32_t enableDistanceCull = 0;
-    uint32_t padding[2]{};
+    float minDistanceSq = 0.0f;
+    uint32_t enableMinDistanceCull = 0;
 };
 
 struct MeshGpuCullArgsConstants {
@@ -57,6 +58,7 @@ void BuildFrustumPlanes(const DirectX::XMMATRIX &viewProjection,
 DirectX::XMFLOAT4 BuildCameraAndMaxDistanceSq(
     const DirectX::XMFLOAT3 &cameraPosition, float maxDistance);
 uint32_t IsDistanceCullEnabled(float maxDistance);
+uint32_t IsMinDistanceCullEnabled(float minDistance);
 DirectX::XMFLOAT4
 BuildLocalCenterAndRadius(const MeshGpuCullBounds &localBounds);
 DirectX::XMFLOAT4 BuildLodDistanceBreaks(

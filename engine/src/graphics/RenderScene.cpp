@@ -9,9 +9,6 @@ MaterialFeatureFlags FeaturesFromFlags(RenderObjectFlags flags) {
     if (HasRenderObjectFlag(flags, RenderObjectFlags::Transparent)) {
         features |= MaterialFeatureFlags::Transparent;
     }
-    if (HasRenderObjectFlag(flags, RenderObjectFlags::RaytracingVisible)) {
-        features |= MaterialFeatureFlags::RaytracingVisible;
-    }
     if (HasRenderObjectFlag(flags, RenderObjectFlags::CastShadow)) {
         features |= MaterialFeatureFlags::CastShadow;
     }
@@ -32,9 +29,6 @@ RenderObjectFlags ApplyMaterialClassification(RenderObjectFlags flags,
         flags |= RenderObjectFlags::Opaque;
     }
 
-    if (HasMaterialFeature(key.features, MaterialFeatureFlags::RaytracingVisible)) {
-        flags |= RenderObjectFlags::RaytracingVisible;
-    }
     if (HasMaterialFeature(key.features, MaterialFeatureFlags::CastShadow)) {
         flags |= RenderObjectFlags::CastShadow;
     }
@@ -47,8 +41,6 @@ RenderObjectFlags ApplyMaterialClassification(RenderObjectFlags flags,
 
     if (key.domain == MaterialDomain::Foliage) {
         flags |= RenderObjectFlags::Foliage;
-    } else if (key.domain == MaterialDomain::PlanarReflection) {
-        flags |= RenderObjectFlags::PlanarReflective;
     }
     return flags;
 }
@@ -79,11 +71,9 @@ void RenderScene::BeginFrame() {
     opaqueMeshes_.clear();
     transparentMeshes_.clear();
     shadowMeshes_.clear();
-    raytracingMeshes_.clear();
     instancedMeshes_.clear();
     opaqueInstancedMeshes_.clear();
     shadowInstancedMeshes_.clear();
-    raytracingInstancedMeshes_.clear();
     stats_ = {};
 }
 
@@ -124,10 +114,6 @@ std::span<const RenderMeshItem> RenderScene::ShadowMeshes() const {
     return shadowMeshes_;
 }
 
-std::span<const RenderMeshItem> RenderScene::RaytracingMeshes() const {
-    return raytracingMeshes_;
-}
-
 std::span<const RenderInstancedMeshItem> RenderScene::InstancedMeshes() const {
     return instancedMeshes_;
 }
@@ -140,11 +126,6 @@ RenderScene::OpaqueInstancedMeshes() const {
 std::span<const RenderInstancedMeshItem>
 RenderScene::ShadowInstancedMeshes() const {
     return shadowInstancedMeshes_;
-}
-
-std::span<const RenderInstancedMeshItem>
-RenderScene::RaytracingInstancedMeshes() const {
-    return raytracingInstancedMeshes_;
 }
 
 void RenderScene::CategorizeMesh(const RenderMeshItem &item) {
@@ -162,11 +143,6 @@ void RenderScene::CategorizeMesh(const RenderMeshItem &item) {
         stats_.shadowMeshCount = static_cast<uint32_t>(shadowMeshes_.size());
     }
 
-    if (HasRenderObjectFlag(item.flags, RenderObjectFlags::RaytracingVisible)) {
-        raytracingMeshes_.push_back(item);
-        stats_.raytracingMeshCount =
-            static_cast<uint32_t>(raytracingMeshes_.size());
-    }
 }
 
 void RenderScene::CategorizeInstancedMesh(
@@ -184,11 +160,6 @@ void RenderScene::CategorizeInstancedMesh(
             static_cast<uint32_t>(shadowInstancedMeshes_.size());
     }
 
-    if (HasRenderObjectFlag(item.flags, RenderObjectFlags::RaytracingVisible)) {
-        raytracingInstancedMeshes_.push_back(item);
-        stats_.raytracingInstancedMeshCount =
-            static_cast<uint32_t>(raytracingInstancedMeshes_.size());
-    }
 }
 
 RenderMeshItem RenderScene::Normalize(const RenderMeshItem &item) {

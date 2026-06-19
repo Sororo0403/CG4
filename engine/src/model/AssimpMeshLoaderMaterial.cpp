@@ -1,4 +1,4 @@
-#include "AssimpMeshLoaderMaterial.h"
+#include "internal/AssimpMeshLoaderMaterial.h"
 
 #include "core/Numeric.h"
 #include "model/ModelLimits.h"

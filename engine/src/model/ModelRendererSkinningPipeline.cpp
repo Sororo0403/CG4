@@ -1,9 +1,9 @@
-﻿#include "model/ModelRenderer.h"
-#include "ModelRendererInternal.h"
+#include "model/ModelRenderer.h"
+#include "internal/ModelRendererInternal.h"
 
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
-#include "../graphics/RootSignatureUtils.h"
+#include "../graphics/internal/RootSignatureUtils.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 

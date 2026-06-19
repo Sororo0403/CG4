@@ -1,19 +1,3 @@
 #pragma once
-#include <DirectXMath.h>
-#include <cstdint>
 
-/// <summary>
-/// モデル描画に使用する頂点情報
-/// </summary>
-struct Vertex {
-    DirectX::XMFLOAT3 position{};
-    DirectX::XMFLOAT3 normal{0.0f, 1.0f, 0.0f};
-    DirectX::XMFLOAT2 uv{};
-    DirectX::XMFLOAT4 color{1.0f, 1.0f, 1.0f, 1.0f};
-    DirectX::XMFLOAT4 tangent{1.0f, 0.0f, 0.0f, 1.0f};
-    float customScalar0 = 0.0f;
-    DirectX::XMFLOAT3 customPosition0{};
-    DirectX::XMFLOAT4 customVector0{};
-    DirectX::XMFLOAT3 customPosition1{};
-    DirectX::XMFLOAT4 customVector1{};
-};
+#include "geometry/Vertex.h"

@@ -21,11 +21,8 @@ inline constexpr const wchar_t *BloomUpsamplePS =
     L"engine/resources/shaders/postprocess/BloomUpsamplePS.hlsl";
 inline constexpr const wchar_t *VolumetricLightingPS =
     L"engine/resources/shaders/postprocess/VolumetricLightingPS.hlsl";
-
-inline constexpr const wchar_t *AdvancedRaytracingPreview =
-    L"engine/resources/shaders/advanced/RaytracingPreview.hlsl";
-inline constexpr const wchar_t *AdvancedRaytracingCompositePS =
-    L"engine/resources/shaders/advanced/RaytracingCompositePS.hlsl";
+inline constexpr const wchar_t *VolumetricLightingCompositePS =
+    L"engine/resources/shaders/postprocess/VolumetricLightingCompositePS.hlsl";
 
 inline constexpr const wchar_t *DepthPyramidCS =
     L"engine/resources/shaders/depth/DepthPyramidCS.hlsl";

@@ -1,5 +1,6 @@
 #pragma once
 #include "core/ResourceHandle.h"
+#include "texture/Texture.h"
 #include <cstddef>
 #include <cstdint>
 #include <d3d12.h>
@@ -7,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <wrl.h>
 
 class DirectXCommon;
 class SrvManager;
@@ -29,16 +31,6 @@ class TextureManager {
   public:
     TextureManager();
     ~TextureManager();
-
-    /// <summary>
-    /// TextureManagerの共有インスタンスを取得する
-    /// </summary>
-    static TextureManager &GetInstance();
-
-    /// <summary>
-    /// 実行中ランタイムのTextureManagerを共有インスタンスとして登録する
-    /// </summary>
-    static void SetActiveInstance(TextureManager *instance);
 
     /// <summary>
     /// テクスチャ管理に必要なDirectXとSRV管理への参照を設定する
@@ -278,6 +270,14 @@ class TextureManager {
     /// <returns>生成されたテクスチャID</returns>
     uint32_t CreateTexture(const DirectX::Image *images, size_t imageCount,
                            const DirectX::TexMetadata &metadata);
+    bool ReserveTextureStorage();
+    bool StoreTextureUploadBuffer(
+        const Microsoft::WRL::ComPtr<ID3D12Resource> &uploadBuffer,
+        bool ownsUploadPass);
+    bool StoreTextureEntry(Texture &&texture, uint32_t srvIndex,
+                           uint32_t &textureId);
+    void RollBackTextureEntry(uint32_t textureId, uint32_t srvIndex);
+    bool RegisterTextureFrameRollback(uint32_t textureId, uint32_t srvIndex);
     uint32_t LoadWithColorSpace(const std::wstring &filePath,
                                 int colorSpacePolicy);
     uint32_t LoadFromMemoryWithColorSpace(const uint8_t *data, size_t size,
@@ -292,7 +292,9 @@ class TextureManager {
                                   bool hadPreviousCache,
                                   uint32_t previousTextureId);
     void PruneCompletedAsyncRequests();
+    void EnsureAsyncWorkers();
     void StartQueuedAsyncLoads();
+    void StopAsyncWorkers();
     void StopAsyncLoads();
 
     DirectXCommon *dxCommon_ = nullptr;

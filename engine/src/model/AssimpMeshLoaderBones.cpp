@@ -1,4 +1,4 @@
-#include "AssimpMeshLoaderUtils.h"
+#include "internal/AssimpMeshLoaderUtils.h"
 #include "model/AssimpMeshLoader.h"
 
 #include <limits>

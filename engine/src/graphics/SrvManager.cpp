@@ -1,6 +1,6 @@
 #include "graphics/SrvManager.h"
 
-#include "SrvManagerInternal.h"
+#include "internal/SrvManagerInternal.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 

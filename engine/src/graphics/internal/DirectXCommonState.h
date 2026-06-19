@@ -1,5 +1,6 @@
 #pragma once
 #include "DirectXCommonDiagnostics.h"
+#include "DirectXCommonInternal.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/FrameRollbackRegistry.h"
 
@@ -25,15 +26,11 @@ struct DirectXCommon::State {
     Microsoft::WRL::ComPtr<IDXGIFactory7> factory;
     Microsoft::WRL::ComPtr<IDXGISwapChain4> swapChain;
     Microsoft::WRL::ComPtr<ID3D12Device> device;
-    Microsoft::WRL::ComPtr<ID3D12Device5> raytracingDevice;
     DXGI_ADAPTER_DESC1 adapterDesc{};
-    GpuFeatureCaps featureCaps{};
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue;
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator>
         commandAllocators[DirectXCommon::kSwapChainBufferCount];
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList;
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> raytracingCommandList;
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList6> meshShaderCommandList;
     bool isCommandListRecording = false;
     bool uploadPassActive = false;
     UINT uploadPassDepth = 0;
@@ -53,7 +50,7 @@ struct DirectXCommon::State {
     Microsoft::WRL::ComPtr<ID3D12Fence> fence;
     UINT64 fenceValue = 0;
     UINT64 frameFenceValues[DirectXCommon::kSwapChainBufferCount]{};
-    HANDLE fenceEvent = nullptr;
+    DirectXCommonInternal::ScopedWin32Handle fenceEvent;
     std::unique_ptr<DirectXCommonGpuDiagnostics> diagnostics =
         std::make_unique<DirectXCommonGpuDiagnostics>();
 

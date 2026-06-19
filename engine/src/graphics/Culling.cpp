@@ -1,7 +1,7 @@
 #include "graphics/Culling.h"
 #include "camera/Camera.h"
 #include "core/Numeric.h"
-#include "FrustumPlaneUtils.h"
+#include "internal/FrustumPlaneUtils.h"
 #include <algorithm>
 #include <cmath>
 

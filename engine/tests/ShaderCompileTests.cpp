@@ -41,6 +41,12 @@ const char *InferShaderTarget(const std::filesystem::path &path) {
     if (EndsWith(filename, L"CS.hlsl")) {
         return "cs_6_6";
     }
+    if (EndsWith(filename, L"AS.hlsl")) {
+        return "as_6_6";
+    }
+    if (EndsWith(filename, L"MS.hlsl")) {
+        return "ms_6_6";
+    }
     return nullptr;
 }
 
@@ -184,8 +190,8 @@ void AppendKnownShaderEntryPoints(std::vector<ShaderCompileTarget> &targets) {
 void TestAllRuntimeShadersCompile() {
     std::vector<ShaderCompileTarget> targets;
     std::vector<std::filesystem::path> includeFiles;
-    constexpr std::array<const wchar_t *, 1> kShaderRoots = {
-        L"engine/resources/shaders"};
+    constexpr std::array<const wchar_t *, 2> kShaderRoots = {
+        L"engine/resources/shaders", L"1000/resources/shaders"};
     for (const wchar_t *root : kShaderRoots) {
         AppendShaderCompileTargets(root, targets, includeFiles);
     }

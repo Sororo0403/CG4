@@ -1,8 +1,8 @@
 #include "model/MeshRenderer.h"
-#include "MeshRendererInternal.h"
+#include "internal/MeshRendererInternal.h"
 
 #include "graphics/DirectXCommon.h"
-#include "RendererMaterialUtils.h"
+#include "internal/RendererMaterialUtils.h"
 #include "texture/TextureManager.h"
 
 using RendererMaterialUtils::PipelineVariantIndex;
@@ -196,10 +196,8 @@ void MeshRenderer::BindForwardMaterialDescriptors(
                ResolveMetallicTextureId(state_->textureManager, drawMaterial),
                state_->textureManager->GetWhiteTextureId()));
     SetGraphicsRootDescriptorTableCached(
-        10, state_->planarReflectionGpuHandle.ptr != 0
-                ? state_->planarReflectionGpuHandle
-                : state_->textureManager->GetGpuHandle(
-                      state_->textureManager->GetWhiteTextureId()));
+        10, state_->textureManager->GetGpuHandle(
+                state_->textureManager->GetWhiteTextureId()));
 }
 
 void MeshRenderer::BindForwardMaterialDescriptorHandles(
@@ -236,10 +234,8 @@ void MeshRenderer::BindForwardMaterialDescriptorHandles(
         9, state_->textureManager->GetGpuHandle(
                state_->textureManager->GetWhiteTextureId()));
     SetGraphicsRootDescriptorTableCached(
-        10, state_->planarReflectionGpuHandle.ptr != 0
-                ? state_->planarReflectionGpuHandle
-                : state_->textureManager->GetGpuHandle(
-                      state_->textureManager->GetWhiteTextureId()));
+        10, state_->textureManager->GetGpuHandle(
+                state_->textureManager->GetWhiteTextureId()));
 }
 
 void MeshRenderer::BindShadowMaterialDescriptor(const Material &drawMaterial,

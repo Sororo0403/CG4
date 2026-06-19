@@ -1,6 +1,6 @@
 #include "sprite/SpriteRenderer.h"
 
-#include "SpriteRendererInternal.h"
+#include "internal/SpriteRendererInternal.h"
 #include "core/Numeric.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
@@ -9,6 +9,7 @@
 #include "texture/TextureManager.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 using namespace DirectX;
@@ -22,6 +23,31 @@ using Numeric::FiniteOr;
 
 bool IsFinite(float value) {
     return std::isfinite(value);
+}
+
+enum class SpriteDrawPlanKind {
+    Alpha,
+    Modulate,
+    PremultipliedMask,
+};
+
+SpriteDrawPlanKind ResolveSpriteDrawPlanKind(SpriteBlendMode blendMode) {
+    struct SpriteBlendPlanMap {
+        SpriteBlendMode blendMode;
+        SpriteDrawPlanKind planKind;
+    };
+    static constexpr std::array<SpriteBlendPlanMap, 3> kPlans{{
+        {SpriteBlendMode::Alpha, SpriteDrawPlanKind::Alpha},
+        {SpriteBlendMode::Modulate, SpriteDrawPlanKind::Modulate},
+        {SpriteBlendMode::PremultipliedMask, SpriteDrawPlanKind::PremultipliedMask},
+    }};
+
+    const auto it = std::find_if(
+        kPlans.begin(), kPlans.end(),
+        [blendMode](const SpriteBlendPlanMap& plan) {
+            return plan.blendMode == blendMode;
+        });
+    return it != kPlans.end() ? it->planKind : SpriteDrawPlanKind::Alpha;
 }
 
 XMFLOAT2 SanitizeFloat2(const XMFLOAT2& value, const XMFLOAT2& fallback) {
@@ -99,22 +125,17 @@ void SpriteRenderer::Draw(const Sprite& sprite) {
         ++state_->drawCursor;
     };
 
-    switch (sprite.blendMode) {
-        case SpriteBlendMode::Modulate:
-            drawPass(PipelineKind::Modulate, color);
-            break;
-        case SpriteBlendMode::PremultipliedMask: {
-            const XMFLOAT4 darkenColor = {color.x * 0.60f, color.y * 0.60f, color.z * 0.60f,
-                                          std::clamp(color.w * 1.10f, 0.0f, 1.0f)};
-            const XMFLOAT4 tintColor = {color.x, color.y, color.z, color.w * 0.64f};
-            drawPass(PipelineKind::Modulate, darkenColor);
-            drawPass(PipelineKind::Alpha, tintColor);
-            break;
-        }
-        case SpriteBlendMode::Alpha:
-        default:
-            drawPass(PipelineKind::Alpha, color);
-            break;
+    const SpriteDrawPlanKind drawPlan = ResolveSpriteDrawPlanKind(sprite.blendMode);
+    if (drawPlan == SpriteDrawPlanKind::Modulate) {
+        drawPass(PipelineKind::Modulate, color);
+    } else if (drawPlan == SpriteDrawPlanKind::PremultipliedMask) {
+        const XMFLOAT4 darkenColor = {color.x * 0.60f, color.y * 0.60f, color.z * 0.60f,
+                                      std::clamp(color.w * 1.10f, 0.0f, 1.0f)};
+        const XMFLOAT4 tintColor = {color.x, color.y, color.z, color.w * 0.64f};
+        drawPass(PipelineKind::Modulate, darkenColor);
+        drawPass(PipelineKind::Alpha, tintColor);
+    } else {
+        drawPass(PipelineKind::Alpha, color);
     }
 }
 

@@ -128,6 +128,7 @@ float4 main(PostProcessVSOutput input) : SV_TARGET
     float distanceT = stepLength * (0.35f + dither * 0.45f);
     float transmittance = 1.0f;
     float3 radiance = float3(0.0f, 0.0f, 0.0f);
+    float previousVisibility = 1.0f;
 
     [loop]
     for (int i = 0; i < 48; ++i)
@@ -144,7 +145,11 @@ float4 main(PostProcessVSOutput input) : SV_TARGET
         {
             float stepTransmittance = exp(-extinction * stepLength);
             float segment = (1.0f - stepTransmittance) / extinction;
-            float visibility = SampleLightVisibility(samplePos);
+            float visibility =
+                (i == 0 || (i & 1) == 0)
+                    ? SampleLightVisibility(samplePos)
+                    : previousVisibility;
+            previousVisibility = visibility;
             float distanceFade = 1.0f - saturate(distanceT / maxDistance);
             float scattering = extinction * scatteringAlbedo;
             float singleScatter = phase * visibility;

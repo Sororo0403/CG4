@@ -1,5 +1,5 @@
-#include "MeshRendererInternal.h"
-#include "RendererUploadUtils.h"
+#include "internal/MeshRendererInternal.h"
+#include "internal/RendererUploadUtils.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"

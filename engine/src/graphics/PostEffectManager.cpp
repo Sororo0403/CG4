@@ -1,8 +1,9 @@
 #include "graphics/PostEffectManager.h"
-#include "PostEffectManagerInternal.h"
-#include "PostProcessProfileUtils.h"
+#include "internal/PostEffectManagerInternal.h"
+#include "internal/PostProcessProfileUtils.h"
 #include "graphics/PostProcessSystem.h"
 #include <algorithm>
+#include <array>
 #include <limits>
 
 namespace {
@@ -12,34 +13,108 @@ using PostProcessProfileUtils::HasSpecial;
 using PostProcessProfileUtils::HasToon;
 using PostProcessProfileUtils::HasVignette;
 
-void ApplyEnabledPostEffects(PostProcessProfile &dst,
-                             const PostProcessProfile &overlay) {
-    if (overlay.colorGrade.mode != PostProcessColorMode::None) {
-        dst.colorGrade = overlay.colorGrade;
-    }
-    if (overlay.filter.mode != PostProcessFilterMode::None) {
-        dst.filter = overlay.filter;
-    }
-    if (overlay.edge.mode != PostProcessEdgeMode::None) {
-        dst.edge = overlay.edge;
-    }
-    if (overlay.tonemap.enabled) {
-        dst.tonemap = overlay.tonemap;
-    }
-    if (overlay.bloom.enabled) {
-        dst.bloom = overlay.bloom;
-    }
-    if (overlay.noise.enabled) {
-        dst.noise = overlay.noise;
-    }
-    if (HasSpecial(overlay)) {
-        dst.special = overlay.special;
-        if (overlay.special.mode == PostProcessSpecialMode::Dissolve) {
-            dst.dissolve = overlay.dissolve;
+struct PostEffectCopyRule {
+    bool (*enabled)(const PostProcessProfile &) = nullptr;
+    void (*copy)(PostProcessProfile &, const PostProcessProfile &) = nullptr;
+};
+
+struct SpecialPayloadCopyRule {
+    PostProcessSpecialMode mode = PostProcessSpecialMode::None;
+    void (*copy)(PostProcessProfile &, const PostProcessProfile &) = nullptr;
+};
+
+bool HasColorGrade(const PostProcessProfile &profile) {
+    return profile.colorGrade.mode != PostProcessColorMode::None;
+}
+
+bool HasFilter(const PostProcessProfile &profile) {
+    return profile.filter.mode != PostProcessFilterMode::None;
+}
+
+bool HasEdge(const PostProcessProfile &profile) {
+    return profile.edge.mode != PostProcessEdgeMode::None;
+}
+
+bool HasTonemap(const PostProcessProfile &profile) {
+    return profile.tonemap.enabled;
+}
+
+bool HasBloom(const PostProcessProfile &profile) {
+    return profile.bloom.enabled;
+}
+
+bool HasNoise(const PostProcessProfile &profile) {
+    return profile.noise.enabled;
+}
+
+bool HasLensFlare(const PostProcessProfile &profile) {
+    return profile.lensFlare.enabled;
+}
+
+void CopyColorGrade(PostProcessProfile &dst, const PostProcessProfile &src) {
+    dst.colorGrade = src.colorGrade;
+}
+
+void CopyFilter(PostProcessProfile &dst, const PostProcessProfile &src) {
+    dst.filter = src.filter;
+}
+
+void CopyEdge(PostProcessProfile &dst, const PostProcessProfile &src) {
+    dst.edge = src.edge;
+}
+
+void CopyTonemap(PostProcessProfile &dst, const PostProcessProfile &src) {
+    dst.tonemap = src.tonemap;
+}
+
+void CopyBloom(PostProcessProfile &dst, const PostProcessProfile &src) {
+    dst.bloom = src.bloom;
+}
+
+void CopyNoise(PostProcessProfile &dst, const PostProcessProfile &src) {
+    dst.noise = src.noise;
+}
+
+void CopyDissolve(PostProcessProfile &dst, const PostProcessProfile &src) {
+    dst.dissolve = src.dissolve;
+}
+
+void CopySpecial(PostProcessProfile &dst, const PostProcessProfile &src) {
+    dst.special = src.special;
+    static const std::array<SpecialPayloadCopyRule, 1u> kSpecialPayloadRules = {{
+        {PostProcessSpecialMode::Dissolve, CopyDissolve},
+    }};
+    for (const SpecialPayloadCopyRule &rule : kSpecialPayloadRules) {
+        if (rule.mode == src.special.mode && rule.copy) {
+            rule.copy(dst, src);
         }
     }
-    if (overlay.lensFlare.enabled) {
-        dst.lensFlare = overlay.lensFlare;
+}
+
+void CopyLensFlare(PostProcessProfile &dst, const PostProcessProfile &src) {
+    dst.lensFlare = src.lensFlare;
+}
+
+const std::array<PostEffectCopyRule, 8> &EnabledPostEffectCopyRules() {
+    static const std::array<PostEffectCopyRule, 8> kRules = {{
+        {HasColorGrade, CopyColorGrade},
+        {HasFilter, CopyFilter},
+        {HasEdge, CopyEdge},
+        {HasTonemap, CopyTonemap},
+        {HasBloom, CopyBloom},
+        {HasNoise, CopyNoise},
+        {HasSpecial, CopySpecial},
+        {HasLensFlare, CopyLensFlare},
+    }};
+    return kRules;
+}
+
+void ApplyEnabledPostEffects(PostProcessProfile &dst,
+                             const PostProcessProfile &overlay) {
+    for (const PostEffectCopyRule &rule : EnabledPostEffectCopyRules()) {
+        if (rule.enabled(overlay)) {
+            rule.copy(dst, overlay);
+        }
     }
 }
 
@@ -109,14 +184,21 @@ void MergeOverride(PostProcessProfile &dst, const PostProcessProfile &overlay) {
 
 void MergeLayer(PostProcessProfile &dst, const PostProcessProfile &overlay,
                 PostEffectLayerBlendMode blendMode) {
-    switch (blendMode) {
-    case PostEffectLayerBlendMode::Override:
-        MergeOverride(dst, overlay);
-        break;
-    case PostEffectLayerBlendMode::Overlay:
-    default:
-        MergeOverlay(dst, overlay);
-        break;
+    struct BlendStrategy {
+        PostEffectLayerBlendMode mode;
+        void (*merge)(PostProcessProfile &, const PostProcessProfile &);
+    };
+    static const std::array<BlendStrategy, 2> kStrategies = {{
+        {PostEffectLayerBlendMode::Override, MergeOverride},
+        {PostEffectLayerBlendMode::Overlay, MergeOverlay},
+    }};
+    const auto strategy = std::find_if(
+        kStrategies.begin(), kStrategies.end(),
+        [blendMode](const BlendStrategy &entry) {
+            return entry.mode == blendMode;
+        });
+    if (strategy != kStrategies.end()) {
+        strategy->merge(dst, overlay);
     }
 }
 } // namespace

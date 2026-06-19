@@ -89,6 +89,11 @@ class SceneManager {
     void DrawSpotLightShadow();
 
     /// <summary>
+    /// 現在のシーンがSpotLight用ShadowPassを必要とするかを返す
+    /// </summary>
+    bool UsesSpotLightShadowPass() const;
+
+    /// <summary>
     /// 現在のシーンを描画する
     /// </summary>
     void Draw();
@@ -102,6 +107,11 @@ class SceneManager {
     /// 現在のシーンの前面3D描画を描画する
     /// </summary>
     void DrawForeground3D();
+
+    /// <summary>
+    /// 現在のシーンがボリューム光パスを必要とするかを返す
+    /// </summary>
+    bool UsesVolumetricLightingPass() const;
 
     /// <summary>
     /// 現在のシーンの透明描画を描画する

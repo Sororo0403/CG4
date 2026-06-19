@@ -1,6 +1,6 @@
 #include "sprite/SpriteRenderer.h"
 
-#include "SpriteRendererInternal.h"
+#include "internal/SpriteRendererInternal.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/GpuResourceLifetime.h"
 

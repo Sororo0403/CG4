@@ -1,5 +1,5 @@
 #include "graphics/PipelineManager.h"
-#include "PipelineManagerInternal.h"
+#include "internal/PipelineManagerInternal.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/GpuResourceLifetime.h"
 #include "graphics/ShaderCompiler.h"

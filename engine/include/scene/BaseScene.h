@@ -51,14 +51,14 @@ class BaseScene {
     virtual void Update() = 0;
 
     /// <summary>
-    /// 新しい描画登録経路。既存のDraw系を残したまま段階的に移行する。
+    /// シーンのフレーム描画オブジェクトを登録する。
     /// </summary>
     virtual void SubmitRenderScene(RenderScene &renderScene) {
         (void)renderScene;
     }
 
     /// <summary>
-    /// 新しいライト登録経路。既存のSceneLightingへ段階的に橋渡しする。
+    /// シーンのフレーム照明状態を登録する。
     /// </summary>
     virtual void SubmitLighting(LightingScene &lightingScene) {
         (void)lightingScene;
@@ -82,6 +82,11 @@ class BaseScene {
     virtual void DrawSpotLightShadow() {}
 
     /// <summary>
+    /// SpotLight用ShadowPassが必要かを返す。
+    /// </summary>
+    virtual bool UsesSpotLightShadowPass() const { return false; }
+
+    /// <summary>
     /// シーン固有の内容を描画する
     /// </summary>
     virtual void Draw() = 0;
@@ -95,6 +100,11 @@ class BaseScene {
     /// 背景深度を無視して手前に重ねる3D描画を行う。
     /// </summary>
     virtual void DrawForeground3D() {}
+
+    /// <summary>
+    /// 深度とシャドウを参照するボリューム光パスが必要かを返す。
+    /// </summary>
+    virtual bool UsesVolumetricLightingPass() const { return false; }
 
     /// <summary>
     /// 透明描画だけをSceneColorPassの後段で描画する。

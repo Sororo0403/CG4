@@ -1,7 +1,7 @@
 #include "model/MeshRenderer.h"
 
-#include "MeshRendererInternal.h"
-#include "../graphics/RootSignatureUtils.h"
+#include "internal/MeshRendererInternal.h"
+#include "../graphics/internal/RootSignatureUtils.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"

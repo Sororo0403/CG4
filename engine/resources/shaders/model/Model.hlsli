@@ -10,8 +10,7 @@ struct ModelVSInput
     float2 uv : TEXCOORD;
     float4 color : COLOR;
     float4 tangent : TANGENT;
-    float customScalar0 : CUSTOMSCALAR0;
-    float3 customPosition0 : CUSTOMPOSITION0;
+    float3 sourcePosition : SOURCEPOSITION;
 };
 
 struct ModelInstanceInput
@@ -21,8 +20,7 @@ struct ModelInstanceInput
     float2 uv : TEXCOORD;
     float4 color : COLOR;
     float4 tangent : TANGENT;
-    float customScalar0 : CUSTOMSCALAR0;
-    float3 customPosition0 : CUSTOMPOSITION0;
+    float3 sourcePosition : SOURCEPOSITION;
     float4 world0 : WORLD0;
     float4 world1 : WORLD1;
     float4 world2 : WORLD2;
@@ -40,7 +38,7 @@ struct ModelVSOutput
     float3 worldNormal : TEXCOORD2;
     float4 worldTangent : TEXCOORD3;
     float3 localPos : TEXCOORD4;
-    float3 customPosition0 : TEXCOORD5;
+    float3 sourcePosition : TEXCOORD5;
     float4 color : COLOR;
 };
 

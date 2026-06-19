@@ -1,6 +1,6 @@
 #include "particle/GPUParticleSystem.h"
 
-#include "GPUParticleSystemInternal.h"
+#include "internal/GPUParticleSystemInternal.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/GpuResourceLifetime.h"

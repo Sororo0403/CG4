@@ -48,8 +48,6 @@ ParticleVSOutput main(uint vertexId : SV_VertexID, uint instanceId : SV_Instance
         inactiveOutput.color = float4(0.0f, 0.0f, 0.0f, 0.0f);
         inactiveOutput.params = float2(1.0f, 0.0f);
         inactiveOutput.worldPosition = float3(0.0f, 0.0f, 0.0f);
-        inactiveOutput.style = float4(0.0f, 0.0f, 0.0f, 0.0f);
-        inactiveOutput.shapeParams = float4(0.0f, 0.0f, 0.0f, 0.0f);
         return inactiveOutput;
     }
 
@@ -235,8 +233,5 @@ ParticleVSOutput main(uint vertexId : SV_VertexID, uint instanceId : SV_Instance
     output.color = particle.color * tintColor;
     output.params = float2(ageRate, particle.params1.z);
     output.worldPosition = worldPosition;
-    output.style = float4(particle.params4.w, particle.params1.y,
-                          particle.params0.x, particle.params0.y);
-    output.shapeParams = particle.params5;
     return output;
 }

@@ -18,11 +18,6 @@ Sprite &FallbackSprite() {
 }
 } // namespace
 
-SpriteManager &SpriteManager::GetInstance() {
-    static SpriteManager instance;
-    return instance;
-}
-
 void SpriteManager::Initialize(DirectXCommon *dxCommon,
                                TextureManager *textureManager,
                                SrvManager *srvManager, int width, int height) {

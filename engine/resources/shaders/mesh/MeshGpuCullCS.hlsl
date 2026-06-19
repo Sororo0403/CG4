@@ -19,7 +19,8 @@ cbuffer MeshGpuCullParams : register(b0)
     float4 occlusionParams;
     uint instanceCount;
     uint enableDistanceCull;
-    uint2 paddingParams;
+    float minDistanceSq;
+    uint enableMinDistanceCull;
 };
 
 StructuredBuffer<InstanceData> gInputInstances : register(t0);
@@ -37,6 +38,14 @@ bool IsOccludedByDepthPyramid(float3 center, float radius)
 {
     if (occlusionParams.z < 0.5f || occlusionParams.x < 1.0f ||
         occlusionParams.y < 1.0f)
+    {
+        return false;
+    }
+
+    float3 cameraToCenter = center - cameraAndMaxDistanceSq.xyz;
+    float cameraDistance = length(cameraToCenter);
+    float nearOcclusionGuard = max(radius * 4.0f, 6.0f);
+    if (cameraDistance <= nearOcclusionGuard)
     {
         return false;
     }
@@ -63,6 +72,22 @@ bool IsOccludedByDepthPyramid(float3 center, float radius)
     float2 maxUv = centerUv;
     float minDepth = centerClip.z / max(centerClip.w, 0.0001f);
 
+    float3 viewDir = cameraToCenter / max(cameraDistance, 0.0001f);
+    float4 frontClip =
+        mul(float4(center - viewDir * radius, 1.0f), occlusionViewProjection);
+    if (frontClip.w <= 0.0001f)
+    {
+        return false;
+    }
+    float2 frontUv = ClipToUv(frontClip);
+    if (any(frontUv < 0.0f) || any(frontUv > 1.0f))
+    {
+        return false;
+    }
+    minUv = min(minUv, frontUv);
+    maxUv = max(maxUv, frontUv);
+    minDepth = min(minDepth, frontClip.z / max(frontClip.w, 0.0001f));
+
     [unroll]
     for (uint axisIndex = 0u; axisIndex < 3u; ++axisIndex)
     {
@@ -86,6 +111,10 @@ bool IsOccludedByDepthPyramid(float3 center, float radius)
             minDepth = min(minDepth, clip.z / max(clip.w, 0.0001f));
         }
     }
+
+    float2 uvPadding = max(2.0f / occlusionParams.xy, (maxUv - minUv) * 0.08f);
+    minUv = saturate(minUv - uvPadding);
+    maxUv = saturate(maxUv + uvPadding);
 
     if (minDepth <= 0.0f || minDepth >= 1.0f)
     {
@@ -127,6 +156,15 @@ bool IsVisible(InstanceData instance)
         float2 delta = center.xz - cameraAndMaxDistanceSq.xz;
         float distanceLimit = sqrt(max(cameraAndMaxDistanceSq.w, 0.0f)) + radius;
         if (dot(delta, delta) > distanceLimit * distanceLimit)
+        {
+            return false;
+        }
+    }
+    if (enableMinDistanceCull != 0u)
+    {
+        float2 delta = center.xz - cameraAndMaxDistanceSq.xz;
+        float distanceLimit = max(sqrt(max(minDistanceSq, 0.0f)) - radius, 0.0f);
+        if (dot(delta, delta) < distanceLimit * distanceLimit)
         {
             return false;
         }

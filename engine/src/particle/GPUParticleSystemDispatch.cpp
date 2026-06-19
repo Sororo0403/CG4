@@ -1,4 +1,4 @@
-#include "GPUParticleSystemInternal.h"
+#include "internal/GPUParticleSystemInternal.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/SrvManager.h"
@@ -17,7 +17,7 @@ void GPUParticleSystem::DispatchPendingUpdate() {
     }
 }
 
-void GPUParticleSystem::DispatchUpdate() {
+bool GPUParticleSystem::HasUpdateDispatchResources() const {
     if (!dxCommon_ || !srvManager_ || !resources_->particleResource ||
         !dxCommon_->IsCommandListRecording() || !resources_->activeIndexResource ||
         !resources_->activeCountResource || !resources_->drawArgsResource ||
@@ -27,25 +27,29 @@ void GPUParticleSystem::DispatchUpdate() {
         resources_->freeListIndexUavGpuHandle.ptr == 0 ||
         resources_->activeIndexUavGpuHandle.ptr == 0 ||
         resources_->activeCountUavGpuHandle.ptr == 0 || resources_->drawArgsUavGpuHandle.ptr == 0) {
-        return;
+        return false;
     }
+    return true;
+}
 
-    auto* cmd = dxCommon_->GetCommandList();
+bool GPUParticleSystem::BindDescriptorHeap(ID3D12GraphicsCommandList *&commandList) {
+    commandList = dxCommon_ != nullptr ? dxCommon_->GetCommandList() : nullptr;
     ID3D12DescriptorHeap* heap = srvManager_->GetHeap();
-    if (cmd == nullptr || heap == nullptr) {
-        return;
+    if (commandList == nullptr || heap == nullptr) {
+        return false;
     }
     ID3D12DescriptorHeap* heaps[] = {heap};
-    cmd->SetDescriptorHeaps(1, heaps);
+    commandList->SetDescriptorHeaps(1, heaps);
+    return true;
+}
 
-    const D3D12_RESOURCE_STATES previousActiveIndexState = resources_->activeIndexState;
-    const D3D12_RESOURCE_STATES previousDrawArgsState = resources_->drawArgsState;
-    const bool previousUpdatePending = updatePending_;
-    const bool previousClearPending = clearPending_;
+bool GPUParticleSystem::RegisterUpdateDispatchRollback(
+    D3D12_RESOURCE_STATES previousActiveIndexState,
+    D3D12_RESOURCE_STATES previousDrawArgsState,
+    bool previousUpdatePending, bool previousClearPending,
+    std::deque<ParticleEmitterSettings> previousPendingEmitSettings,
+    std::vector<GPUParticleExplicitSpawn> previousPendingExplicitParticles) {
     std::function<void()> rollback;
-    std::deque<ParticleEmitterSettings> previousPendingEmitSettings = pendingEmitSettings_;
-    std::vector<GPUParticleExplicitSpawn> previousPendingExplicitParticles =
-        pendingExplicitParticles_;
     rollback = [this, previousActiveIndexState, previousDrawArgsState, previousUpdatePending,
                 previousClearPending,
                 previousPendingEmitSettings = std::move(previousPendingEmitSettings),
@@ -58,10 +62,11 @@ void GPUParticleSystem::DispatchUpdate() {
         pendingEmitSettings_.swap(previousPendingEmitSettings);
         pendingExplicitParticles_.swap(previousPendingExplicitParticles);
     };
-    if (!dxCommon_->RegisterFrameRollback(this, std::move(rollback))) {
-        return;
-    }
+    return dxCommon_->RegisterFrameRollback(this, std::move(rollback));
+}
 
+void GPUParticleSystem::TransitionUpdateResourcesToUav(
+    ID3D12GraphicsCommandList *commandList) {
     D3D12_RESOURCE_BARRIER barriers[3]{};
     UINT barrierCount = 0;
     barriers[barrierCount++] = CD3DX12_RESOURCE_BARRIER::Transition(
@@ -79,29 +84,27 @@ void GPUParticleSystem::DispatchUpdate() {
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         resources_->drawArgsState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     }
-    cmd->ResourceBarrier(barrierCount, barriers);
+    commandList->ResourceBarrier(barrierCount, barriers);
+}
 
+void GPUParticleSystem::ClearUpdateCounters(ID3D12GraphicsCommandList *commandList) {
     const UINT clearValues[4] = {};
-    cmd->ClearUnorderedAccessViewUint(
+    commandList->ClearUnorderedAccessViewUint(
         resources_->activeCountUavGpuHandle, resources_->activeCountUavCpuHandle,
         resources_->activeCountResource.Get(), clearValues, 0, nullptr);
     const UINT drawArgsClearValues[4] = {6u, 0u, 0u, 0u};
-    cmd->ClearUnorderedAccessViewUint(
+    commandList->ClearUnorderedAccessViewUint(
         resources_->drawArgsUavGpuHandle, resources_->drawArgsUavCpuHandle,
         resources_->drawArgsResource.Get(), drawArgsClearValues, 0, nullptr);
     D3D12_RESOURCE_BARRIER clearBarriers[] = {
         CD3DX12_RESOURCE_BARRIER::UAV(resources_->activeCountResource.Get()),
         CD3DX12_RESOURCE_BARRIER::UAV(resources_->drawArgsResource.Get()),
     };
-    cmd->ResourceBarrier(_countof(clearBarriers), clearBarriers);
+    commandList->ResourceBarrier(_countof(clearBarriers), clearBarriers);
+}
 
-    std::deque<ParticleEmitterSettings> emitSettings;
-    emitSettings.swap(pendingEmitSettings_);
-    std::vector<GPUParticleExplicitSpawn> explicitParticles;
-    explicitParticles.swap(pendingExplicitParticles_);
-
-    RecordUpdateDispatch(BuildEmitterForGPU(emitterSettings_, 0));
-
+void GPUParticleSystem::RecordUpdateUavBarrier(
+    ID3D12GraphicsCommandList *commandList) {
     D3D12_RESOURCE_BARRIER uavBarriers[] = {
         CD3DX12_RESOURCE_BARRIER::UAV(resources_->particleResource.Get()),
         CD3DX12_RESOURCE_BARRIER::UAV(resources_->freeListResource.Get()),
@@ -110,8 +113,13 @@ void GPUParticleSystem::DispatchUpdate() {
         CD3DX12_RESOURCE_BARRIER::UAV(resources_->activeCountResource.Get()),
         CD3DX12_RESOURCE_BARRIER::UAV(resources_->drawArgsResource.Get()),
     };
-    cmd->ResourceBarrier(_countof(uavBarriers), uavBarriers);
+    commandList->ResourceBarrier(_countof(uavBarriers), uavBarriers);
+}
 
+void GPUParticleSystem::RecordQueuedEmitterDispatches(
+    ID3D12GraphicsCommandList *commandList,
+    const std::deque<ParticleEmitterSettings> &emitSettings) {
+    RecordUpdateUavBarrier(commandList);
     for (const ParticleEmitterSettings& settings : emitSettings) {
         const uint32_t emitCount =
             (std::min)({settings.burstCount, settings.maxParticles, maxParticles_});
@@ -119,44 +127,92 @@ void GPUParticleSystem::DispatchUpdate() {
             continue;
         }
         RecordUpdateDispatch(BuildEmitterForGPU(settings, 1), emitCount);
-        cmd->ResourceBarrier(_countof(uavBarriers), uavBarriers);
+        RecordUpdateUavBarrier(commandList);
+    }
+}
+
+bool GPUParticleSystem::RecordExplicitParticleDispatches(
+    ID3D12GraphicsCommandList *commandList,
+    std::vector<GPUParticleExplicitSpawn> explicitParticles) {
+    if (explicitParticles.empty()) {
+        return false;
     }
 
-    bool explicitWorkRemaining = false;
-    if (!explicitParticles.empty()) {
-        uint32_t explicitSpawnCount = 0u;
-        if (UploadExplicitParticles(explicitParticles, explicitSpawnCount) &&
-            explicitSpawnCount > 0u) {
-            RecordExplicitSpawnDispatch(explicitSpawnCount);
-            cmd->ResourceBarrier(_countof(uavBarriers), uavBarriers);
-            const size_t uploadedCount = static_cast<size_t>(explicitSpawnCount);
-            if (uploadedCount < explicitParticles.size()) {
-                pendingExplicitParticles_.assign(
-                    explicitParticles.begin() +
-                        static_cast<std::ptrdiff_t>(uploadedCount),
-                    explicitParticles.end());
-                explicitWorkRemaining = true;
-            }
-        } else {
-            pendingExplicitParticles_ = std::move(explicitParticles);
-            explicitWorkRemaining = true;
-        }
+    uint32_t explicitSpawnCount = 0u;
+    if (!UploadExplicitParticles(explicitParticles, explicitSpawnCount) ||
+        explicitSpawnCount == 0u) {
+        pendingExplicitParticles_ = std::move(explicitParticles);
+        return true;
     }
 
+    RecordExplicitSpawnDispatch(explicitSpawnCount);
+    RecordUpdateUavBarrier(commandList);
+    const size_t uploadedCount = static_cast<size_t>(explicitSpawnCount);
+    if (uploadedCount < explicitParticles.size()) {
+        pendingExplicitParticles_.assign(
+            explicitParticles.begin() + static_cast<std::ptrdiff_t>(uploadedCount),
+            explicitParticles.end());
+        return true;
+    }
+    return false;
+}
+
+void GPUParticleSystem::TransitionUpdateResourcesForDraw(
+    ID3D12GraphicsCommandList *commandList) {
     D3D12_RESOURCE_BARRIER finalBarriers[] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(resources_->particleResource.Get(),
-                                             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                                             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
-        CD3DX12_RESOURCE_BARRIER::Transition(resources_->activeIndexResource.Get(),
-                                             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                                             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
-        CD3DX12_RESOURCE_BARRIER::Transition(resources_->drawArgsResource.Get(),
-                                             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                                             D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT),
+        CD3DX12_RESOURCE_BARRIER::Transition(
+            resources_->particleResource.Get(),
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
+        CD3DX12_RESOURCE_BARRIER::Transition(
+            resources_->activeIndexResource.Get(),
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
+        CD3DX12_RESOURCE_BARRIER::Transition(
+            resources_->drawArgsResource.Get(),
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT),
     };
-    cmd->ResourceBarrier(_countof(finalBarriers), finalBarriers);
+    commandList->ResourceBarrier(_countof(finalBarriers), finalBarriers);
     resources_->activeIndexState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
     resources_->drawArgsState = D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
+}
+
+void GPUParticleSystem::DispatchUpdate() {
+    if (!HasUpdateDispatchResources()) {
+        return;
+    }
+
+    ID3D12GraphicsCommandList *cmd = nullptr;
+    if (!BindDescriptorHeap(cmd)) {
+        return;
+    }
+
+    const D3D12_RESOURCE_STATES previousActiveIndexState = resources_->activeIndexState;
+    const D3D12_RESOURCE_STATES previousDrawArgsState = resources_->drawArgsState;
+    const bool previousUpdatePending = updatePending_;
+    const bool previousClearPending = clearPending_;
+    if (!RegisterUpdateDispatchRollback(previousActiveIndexState, previousDrawArgsState,
+                                        previousUpdatePending, previousClearPending,
+                                        pendingEmitSettings_,
+                                        pendingExplicitParticles_)) {
+        return;
+    }
+
+    TransitionUpdateResourcesToUav(cmd);
+    ClearUpdateCounters(cmd);
+
+    std::deque<ParticleEmitterSettings> emitSettings;
+    emitSettings.swap(pendingEmitSettings_);
+    std::vector<GPUParticleExplicitSpawn> explicitParticles;
+    explicitParticles.swap(pendingExplicitParticles_);
+
+    RecordUpdateDispatch(BuildEmitterForGPU(emitterSettings_, 0));
+    RecordQueuedEmitterDispatches(cmd, emitSettings);
+    const bool explicitWorkRemaining =
+        RecordExplicitParticleDispatches(cmd, std::move(explicitParticles));
+
+    TransitionUpdateResourcesForDraw(cmd);
     updatePending_ = explicitWorkRemaining;
     clearPending_ = false;
 }

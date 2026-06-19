@@ -1,6 +1,6 @@
 #include "texture/CpuTextureLoader.h"
 
-#include "TextureManagerDecoding.h"
+#include "internal/TextureManagerDecoding.h"
 #include "core/PathUtils.h"
 #include "texture/TextureLimits.h"
 

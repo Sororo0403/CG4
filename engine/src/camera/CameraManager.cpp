@@ -2,8 +2,6 @@
 #include <limits>
 
 namespace {
-CameraManager *gActiveCameraManager = nullptr;
-
 std::string MakeGeneratedCameraName(
     const std::unordered_map<std::string, std::unique_ptr<Camera>> &cameras) {
     for (size_t suffix = cameras.size();
@@ -15,15 +13,6 @@ std::string MakeGeneratedCameraName(
     }
     return "__camera";
 }
-}
-
-CameraManager &CameraManager::GetInstance() {
-    static CameraManager instance;
-    return gActiveCameraManager != nullptr ? *gActiveCameraManager : instance;
-}
-
-void CameraManager::SetActiveInstance(CameraManager *instance) {
-    gActiveCameraManager = instance;
 }
 
 Camera &CameraManager::CreateCamera(const std::string &name, float aspect) {

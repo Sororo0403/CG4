@@ -1,13 +1,14 @@
 #include "model/AssimpMeshLoader.h"
 
-#include "AssimpMeshLoaderMaterial.h"
-#include "AssimpMeshLoaderUtils.h"
+#include "internal/AssimpMeshLoaderMaterial.h"
+#include "internal/AssimpMeshLoaderUtils.h"
 #include "core/Numeric.h"
 #include "core/ResourceHandle.h"
 #include "model/Material.h"
 #include "model/MaterialManager.h"
 #include "model/MeshManager.h"
 #include "model/ModelLimits.h"
+#include "geometry/ModelVertex.h"
 #include "model/Vertex.h"
 
 #include <DirectXMath.h>
@@ -77,7 +78,7 @@ bool IsAssimpMeshWithinBudget(const aiMesh& mesh, size_t loadedVertices, size_t 
            mesh.mNumFaces <= ModelLimits::kMaxTotalFaces - loadedFaces;
 }
 
-bool BuildAssimpMeshGeometry(const aiMesh& mesh, std::vector<Vertex>& vertices,
+bool BuildAssimpMeshGeometry(const aiMesh& mesh, std::vector<ModelVertex>& vertices,
                              std::vector<uint32_t>& indices) {
     if (static_cast<size_t>(mesh.mNumFaces) > (std::numeric_limits<size_t>::max)() / 3u) {
         return false;
@@ -86,9 +87,9 @@ bool BuildAssimpMeshGeometry(const aiMesh& mesh, std::vector<Vertex>& vertices,
     vertices.reserve(mesh.mNumVertices);
     indices.reserve(static_cast<size_t>(mesh.mNumFaces) * 3u);
     for (unsigned int i = 0; i < mesh.mNumVertices; i++) {
-        Vertex v{};
+        ModelVertex v{};
         v.position = SanitizeFloat3(mesh.mVertices[i], {0.0f, 0.0f, 0.0f});
-        v.customPosition0 = v.position;
+        v.sourcePosition = v.position;
 
         if (mesh.HasNormals()) {
             v.normal = SanitizeNormal(mesh.mNormals[i]);
@@ -134,7 +135,7 @@ bool BuildAssimpMeshGeometry(const aiMesh& mesh, std::vector<Vertex>& vertices,
     return !vertices.empty() && !indices.empty();
 }
 
-bool PopulateSubMeshSourceData(ModelSubMesh& subMesh, const std::vector<Vertex>& vertices) {
+bool PopulateSubMeshSourceData(ModelSubMesh& subMesh, const std::vector<ModelVertex>& vertices) {
     if (vertices.empty() ||
         vertices.size() > static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
         return false;
@@ -144,7 +145,7 @@ bool PopulateSubMeshSourceData(ModelSubMesh& subMesh, const std::vector<Vertex>&
     subMesh.sourcePositions.reserve(vertices.size());
     subMesh.sourceBoundsMin = vertices.front().position;
     subMesh.sourceBoundsMax = vertices.front().position;
-    for (const Vertex& vertex : vertices) {
+    for (const ModelVertex& vertex : vertices) {
         subMesh.sourcePositions.push_back(vertex.position);
         subMesh.sourceBoundsMin.x = (std::min)(subMesh.sourceBoundsMin.x, vertex.position.x);
         subMesh.sourceBoundsMin.y = (std::min)(subMesh.sourceBoundsMin.y, vertex.position.y);
@@ -273,7 +274,7 @@ void AssimpMeshLoader::LoadMeshes(const aiScene* scene, const std::string& path,
             continue;
         }
 
-        std::vector<Vertex> vertices;
+        std::vector<ModelVertex> vertices;
         std::vector<uint32_t> indices;
         ModelSubMesh subMesh{};
 
@@ -294,7 +295,7 @@ void AssimpMeshLoader::LoadMeshes(const aiScene* scene, const std::string& path,
         materialSource =
             AssimpMeshLoaderMaterial::LoadSource(*textureManager_, *scene, *mesh, path);
         uint32_t meshId =
-            meshManager_->CreateMesh(vertices.data(), sizeof(Vertex), subMesh.vertexCount,
+            meshManager_->CreateMesh(vertices.data(), sizeof(ModelVertex), subMesh.vertexCount,
                                      indices.data(), static_cast<uint32_t>(indices.size()));
         if (!IsValidResourceId(meshId)) {
             RollbackAddedBones(model, boneRollbackSize, addedBoneNames);

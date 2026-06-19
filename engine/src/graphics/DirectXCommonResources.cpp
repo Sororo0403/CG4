@@ -1,6 +1,6 @@
 #include "graphics/DirectXCommon.h"
-#include "DirectXCommonInternal.h"
-#include "DirectXCommonState.h"
+#include "internal/DirectXCommonInternal.h"
+#include "internal/DirectXCommonState.h"
 
 #include "graphics/DxHelpers.h"
 #include "graphics/SrvManager.h"
@@ -43,31 +43,6 @@ PickHighPerformanceAdapter(IDXGIFactory7 *factory) {
     }
 
     return adapter;
-}
-
-GpuFeatureCaps DetectGpuFeatureCaps(ID3D12Device *device) {
-    GpuFeatureCaps caps{};
-    if (device == nullptr) {
-        return caps;
-    }
-
-    D3D12_FEATURE_DATA_D3D12_OPTIONS5 options5{};
-    if (SUCCEEDED(device->CheckFeatureSupport(
-            D3D12_FEATURE_D3D12_OPTIONS5, &options5, sizeof(options5)))) {
-        caps.raytracingTier = options5.RaytracingTier;
-        caps.raytracingSupported =
-            options5.RaytracingTier != D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
-    }
-
-    D3D12_FEATURE_DATA_D3D12_OPTIONS7 options7{};
-    if (SUCCEEDED(device->CheckFeatureSupport(
-            D3D12_FEATURE_D3D12_OPTIONS7, &options7, sizeof(options7)))) {
-        caps.meshShaderTier = options7.MeshShaderTier;
-        caps.meshShaderSupported =
-            options7.MeshShaderTier != D3D12_MESH_SHADER_TIER_NOT_SUPPORTED;
-    }
-
-    return caps;
 }
 
 } // namespace
@@ -114,15 +89,6 @@ void DirectXCommon::CreateDevice() {
         }
     }
     state_->device->SetName(L"DirectXCommon.Device");
-    state_->featureCaps = DetectGpuFeatureCaps(state_->device.Get());
-    state_->raytracingDevice.Reset();
-    if (state_->featureCaps.raytracingSupported &&
-        (FAILED(state_->device.As(&state_->raytracingDevice)) ||
-         !state_->raytracingDevice)) {
-        state_->featureCaps.raytracingTier =
-            D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
-        state_->featureCaps.raytracingSupported = false;
-    }
 }
 
 void DirectXCommon::CreateCommandQueue() {
@@ -174,26 +140,8 @@ void DirectXCommon::CreateCommandList() {
         return;
     }
     state_->commandList->SetName(L"DirectXCommon.CommandList");
-    state_->raytracingCommandList.Reset();
-    state_->meshShaderCommandList.Reset();
-    if (state_->featureCaps.raytracingSupported &&
-        (FAILED(state_->commandList.As(&state_->raytracingCommandList)) ||
-         !state_->raytracingCommandList)) {
-        state_->featureCaps.raytracingTier =
-            D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
-        state_->featureCaps.raytracingSupported = false;
-    }
-    if (state_->featureCaps.meshShaderSupported &&
-        (FAILED(state_->commandList.As(&state_->meshShaderCommandList)) ||
-         !state_->meshShaderCommandList)) {
-        state_->featureCaps.meshShaderTier =
-            D3D12_MESH_SHADER_TIER_NOT_SUPPORTED;
-        state_->featureCaps.meshShaderSupported = false;
-    }
 
     if (LogIfFailed(state_->commandList->Close(), "state_->commandList->Close failed")) {
-        state_->raytracingCommandList.Reset();
-        state_->meshShaderCommandList.Reset();
         state_->commandList.Reset();
     }
 }

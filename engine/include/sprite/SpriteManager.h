@@ -10,10 +10,7 @@ class TextureManager;
 
 class SpriteManager {
   public:
-    /// <summary>
-    /// SpriteManagerの唯一のインスタンスを取得する
-    /// </summary>
-    static SpriteManager &GetInstance();
+    SpriteManager() = default;
 
     SpriteManager(const SpriteManager &) = delete;
     SpriteManager &operator=(const SpriteManager &) = delete;
@@ -110,8 +107,6 @@ class SpriteManager {
     void Resize(int width, int height);
 
   private:
-    SpriteManager() = default;
-
     DirectXCommon *dxCommon_ = nullptr;
     TextureManager *textureManager_ = nullptr;
 

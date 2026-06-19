@@ -12,7 +12,7 @@
 #include "sound/SoundManager.h"
 #include "texture/TextureManager.h"
 #include "texture/TextureLimits.h"
-#include "../src/model/RendererPipelineVariantUtils.h"
+#include "../src/model/internal/RendererPipelineVariantUtils.h"
 
 #include <cstddef>
 #include <cstdint>

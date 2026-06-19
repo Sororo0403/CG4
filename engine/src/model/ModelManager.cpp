@@ -1,12 +1,14 @@
 #include "model/ModelManager.h"
 
-#include "ModelPrimitiveFactory.h"
+#include "internal/ModelPrimitiveFactory.h"
+#include "internal/ModelSkinClusterResourceUtils.h"
 #include "core/AssetManager.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/GpuResourceLifetime.h"
 #include "graphics/SrvManager.h"
 #include "model/MaterialManager.h"
+#include "geometry/ModelVertex.h"
 #include "model/Vertex.h"
 #include "texture/TextureManager.h"
 
@@ -137,17 +139,7 @@ void DestroyModelSkinClusters(DirectXCommon* dxCommon, SrvManager* srvManager, M
             srvManager->FreeIfAllocated(skinCluster.skinnedVertexUavIndex);
         }
 
-        if (skinCluster.influenceResource && skinCluster.mappedInfluence != nullptr) {
-            skinCluster.influenceResource->Unmap(0, nullptr);
-            skinCluster.mappedInfluence = nullptr;
-        }
-        for (SkinPaletteFrame& frame : skinCluster.paletteFrames) {
-            if (frame.resource && frame.mappedPalette != nullptr) {
-                frame.resource->Unmap(0, nullptr);
-                frame.mappedPalette = nullptr;
-            }
-        }
-
+        ModelSkinClusterResourceUtils::UnmapSkinClusterMappings(skinCluster);
         skinCluster = {};
     }
 }
@@ -176,10 +168,14 @@ uint32_t AppendPrimitiveModel(std::vector<Model>& models, MeshManager& meshManag
     Model model{};
     ReserveSingleSubMesh(model);
 
+    for (ModelVertex &vertex : primitive.vertices) {
+        vertex.sourcePosition = vertex.position;
+    }
+
     ModelSubMesh subMesh{};
     subMesh.vertexCount = static_cast<uint32_t>(primitive.vertices.size());
     subMesh.meshId = meshManager.CreateMesh(
-        primitive.vertices.data(), sizeof(Vertex), static_cast<uint32_t>(primitive.vertices.size()),
+        primitive.vertices.data(), sizeof(ModelVertex), static_cast<uint32_t>(primitive.vertices.size()),
         primitive.indices.data(), static_cast<uint32_t>(primitive.indices.size()));
     if (!IsValidResourceId(subMesh.meshId)) {
         return kInvalidResourceId;
@@ -206,19 +202,6 @@ uint32_t AppendPrimitiveModel(std::vector<Model>& models, MeshManager& meshManag
 
 } // namespace
 
-namespace {
-ModelManager* gActiveModelManager = nullptr;
-}
-
-ModelManager& ModelManager::GetInstance() {
-    static ModelManager instance;
-    return gActiveModelManager != nullptr ? *gActiveModelManager : instance;
-}
-
-void ModelManager::SetActiveInstance(ModelManager* instance) {
-    gActiveModelManager = instance;
-}
-
 ModelManager::~ModelManager() {
     Finalize(true);
 }
@@ -233,7 +216,6 @@ void ModelManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager,
         return;
     }
 
-    SetActiveInstance(this);
     dxCommon_ = dxCommon;
     srvManager_ = srvManager;
     textureManager_ = textureManager;
@@ -275,9 +257,6 @@ bool ModelManager::Finalize(bool allowFrameAbort) {
     dxCommon_ = nullptr;
     srvManager_ = nullptr;
     textureManager_ = nullptr;
-    if (gActiveModelManager == this) {
-        SetActiveInstance(nullptr);
-    }
     return true;
 }
 

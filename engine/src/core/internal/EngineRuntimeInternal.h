@@ -4,6 +4,8 @@
 #include "input/InputReplayTypes.h"
 
 #include <Windows.h>
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
@@ -70,15 +72,20 @@ inline std::string WideToUtf8(const std::wstring &value) {
 }
 
 inline const char *ReplayModeName(InputReplayMode mode) {
-    switch (mode) {
-    case InputReplayMode::Live:
-        return "Live";
-    case InputReplayMode::Record:
-        return "Record";
-    case InputReplayMode::Replay:
-        return "Replay";
-    }
-    return "Unknown";
+    struct ReplayModeNameEntry {
+        InputReplayMode mode;
+        const char *name;
+    };
+    static constexpr std::array<ReplayModeNameEntry, 3> kNames{{
+        {InputReplayMode::Live, "Live"},
+        {InputReplayMode::Record, "Record"},
+        {InputReplayMode::Replay, "Replay"},
+    }};
+
+    const auto it = std::find_if(
+        kNames.begin(), kNames.end(),
+        [mode](const ReplayModeNameEntry &entry) { return entry.mode == mode; });
+    return it != kNames.end() ? it->name : "Unknown";
 }
 
 } // namespace EngineRuntimeInternal

@@ -1,5 +1,5 @@
 #include "graphics/ShadowMapRenderer.h"
-#include "ShadowMapRendererInternal.h"
+#include "internal/ShadowMapRendererInternal.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"

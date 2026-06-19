@@ -12,8 +12,8 @@
 
 #include "particle/GPUParticleSystem.h"
 #include "graphics/DirectXCommon.h"
-#include "../graphics/ConstantBufferUtils.h"
-#include "../graphics/GpuResourceScopes.h"
+#include "../../graphics/internal/ConstantBufferUtils.h"
+#include "../../graphics/internal/GpuResourceScopes.h"
 
 struct GPUParticleSystem::ConstantFrame {
     Microsoft::WRL::ComPtr<ID3D12Resource> updateConstantBuffer;

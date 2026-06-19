@@ -18,6 +18,10 @@
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectName>EngineTests</ProjectName>
   </PropertyGroup>
+  <Import Project="$(MSBuildThisFileDirectory)..\..\Directory.Build.props" Condition="Exists('$(MSBuildThisFileDirectory)..\..\Directory.Build.props')" />
+  <PropertyGroup>
+    <ImportDirectoryBuildProps>false</ImportDirectoryBuildProps>
+  </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -63,7 +67,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/utf-8 /FS %(AdditionalOptions)</AdditionalOptions>
       <ProgramDataBaseFileName>$(IntDir)$(ProjectName).pdb</ProgramDataBaseFileName>
-      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\include;$(MSBuildThisFileDirectory)..\externals;$(MSBuildThisFileDirectory)..\externals\assimp\include;$(MSBuildThisFileDirectory)..\externals\assimp\include\assimp;$(MSBuildThisFileDirectory)..\externals\DirectXTex;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\include;$(MSBuildThisFileDirectory)..\externals;$(MSBuildThisFileDirectory)..\externals\assimp\include;$(MSBuildThisFileDirectory)..\externals\assimp\include\assimp;$(MSBuildThisFileDirectory)..\externals\DirectX-Headers;$(MSBuildThisFileDirectory)..\externals\DirectXTex;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -88,7 +92,7 @@ xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" 
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/utf-8 /FS %(AdditionalOptions)</AdditionalOptions>
       <ProgramDataBaseFileName>$(IntDir)$(ProjectName).pdb</ProgramDataBaseFileName>
-      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\include;$(MSBuildThisFileDirectory)..\externals;$(MSBuildThisFileDirectory)..\externals\assimp\include;$(MSBuildThisFileDirectory)..\externals\assimp\include\assimp;$(MSBuildThisFileDirectory)..\externals\DirectXTex;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\include;$(MSBuildThisFileDirectory)..\externals;$(MSBuildThisFileDirectory)..\externals\assimp\include;$(MSBuildThisFileDirectory)..\externals\assimp\include\assimp;$(MSBuildThisFileDirectory)..\externals\DirectX-Headers;$(MSBuildThisFileDirectory)..\externals\DirectXTex;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -116,5 +120,9 @@ xcopy /Y /I "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\$(Platform)\dxil.dll" 
     <ClCompile Include="ShaderCompileTests.cpp" />
     <ClCompile Include="StateStoreTests.cpp" />
   </ItemGroup>
+  <Import Project="$(MSBuildThisFileDirectory)..\..\Directory.Build.targets" Condition="Exists('$(MSBuildThisFileDirectory)..\..\Directory.Build.targets')" />
+  <PropertyGroup>
+    <ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets>
+  </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

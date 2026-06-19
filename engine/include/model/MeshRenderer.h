@@ -24,6 +24,16 @@ struct MeshRendererCommandCache;
 class SrvManager;
 class TextureManager;
 
+enum class MeshInstancedVertexLayout {
+    Mesh,
+    Tree,
+};
+
+enum class MeshVertexLayout {
+    Mesh,
+    Surface,
+};
+
 /// <summary>
 /// モデルファイルに依存しない汎用メッシュ描画器
 /// </summary>
@@ -53,8 +63,15 @@ class MeshRenderer {
     /// Pipelineを生成する
     /// </summary>
     uint32_t CreatePipeline(const MeshPipelineDesc &desc);
+    uint32_t CreatePipeline(const MeshPipelineDesc &desc,
+                            MeshVertexLayout vertexLayout);
+    uint32_t CreatePipeline(const MeshPipelineDesc &desc,
+                            D3D12_INPUT_LAYOUT_DESC inputLayout);
     uint32_t CreatePipeline(const std::wstring &vertexShaderPath,
                             const std::wstring &pixelShaderPath);
+    uint32_t CreatePipeline(const std::wstring &vertexShaderPath,
+                            const std::wstring &pixelShaderPath,
+                            MeshVertexLayout vertexLayout);
     uint32_t CreateAdditiveNoDepthPipeline(
         const std::wstring &vertexShaderPath,
         const std::wstring &pixelShaderPath);
@@ -82,6 +99,18 @@ class MeshRenderer {
         const std::wstring &pixelShaderPath,
         const std::wstring &shadowVertexShaderPath,
         const std::wstring &shadowPixelShaderPath);
+    uint32_t CreateInstancedPipeline(
+        const std::wstring &vertexShaderPath,
+        const std::wstring &pixelShaderPath,
+        const std::wstring &shadowVertexShaderPath,
+        const std::wstring &shadowPixelShaderPath,
+        MeshInstancedVertexLayout vertexLayout);
+    uint32_t CreateInstancedPipeline(
+        const std::wstring &vertexShaderPath,
+        const std::wstring &pixelShaderPath,
+        const std::wstring &shadowVertexShaderPath,
+        const std::wstring &shadowPixelShaderPath,
+        D3D12_INPUT_LAYOUT_DESC inputLayout);
     [[nodiscard]] bool ReleaseInstancedPipeline(
         uint32_t pipelineId, bool allowFrameAbort = false) noexcept;
     size_t GetCustomInstancedPipelineCount() const noexcept;
@@ -105,7 +134,8 @@ class MeshRenderer {
         const MeshInstanceBuffer &sourceInstances,
         MeshGpuCullBuffer &cullBuffer, const MeshGpuCullBounds &localBounds,
         const Camera &camera, float maxDistance, uint32_t textureId = 0,
-        uint32_t normalTextureId = kInvalidResourceId);
+        uint32_t normalTextureId = kInvalidResourceId,
+        float minDistance = 0.0f);
     bool DrawMeshInstancedGpuLodCulledWithPipeline(
         uint32_t pipelineId,
         const std::array<const Mesh *, kMeshGpuCullLodCount> &lodMeshes,
@@ -121,7 +151,8 @@ class MeshRenderer {
         MeshGpuCullBuffer &cullBuffer, const MeshGpuCullBounds &localBounds,
         const DirectX::XMFLOAT4X4 &lightViewProjection,
         const DirectX::XMFLOAT3 &cullOrigin, float maxDistance,
-        uint32_t textureId = 0, bool opaqueShadow = false);
+        uint32_t textureId = 0, bool opaqueShadow = false,
+        float minDistance = 0.0f);
     bool DrawMeshInstancedGpuLodCulledShadowWithPipeline(
         uint32_t pipelineId,
         const std::array<const Mesh *, kMeshGpuCullLodCount> &lodMeshes,
@@ -174,8 +205,6 @@ class MeshRenderer {
     void SetSceneFog(const SceneFog &fog);
     void SetEnvironmentTexture(uint32_t textureId);
     void SetMaterialReflectionsEnabled(bool enabled);
-    void SetPlanarReflectionTexture(
-        D3D12_GPU_DESCRIPTOR_HANDLE reflectionTexture);
     void SetCustomSceneParams(const DirectX::XMFLOAT4 &params0,
                               const DirectX::XMFLOAT4 &params1);
     void SetShadowMap(D3D12_GPU_DESCRIPTOR_HANDLE shadowMap,
@@ -349,7 +378,7 @@ class MeshRenderer {
         const DirectX::XMMATRIX &cullViewProjection,
         const DirectX::XMFLOAT3 &cullOrigin,
         const DirectX::XMFLOAT4 &occlusionParams, float maxDistance,
-        ID3D12GraphicsCommandList *&commandList);
+        float minDistance, ID3D12GraphicsCommandList *&commandList);
     bool DispatchLodGpuCull(
         const std::array<const Mesh *, kMeshGpuCullLodCount> &lodMeshes,
         const MeshInstanceBuffer &sourceInstances,

@@ -1,7 +1,7 @@
 #include "sound/SoundManager.h"
 
-#include "SoundFormatUtils.h"
-#include "SoundManagerInternal.h"
+#include "internal/SoundFormatUtils.h"
+#include "internal/SoundManagerInternal.h"
 #include "core/Numeric.h"
 
 #include <algorithm>

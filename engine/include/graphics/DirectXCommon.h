@@ -9,8 +9,6 @@
 #include <memory>
 #include <string>
 
-#include "graphics/GpuFeatureCaps.h"
-
 class DirectXCommonGpuDiagnostics;
 class SrvManager;
 
@@ -206,26 +204,6 @@ class DirectXCommon {
     /// </summary>
     /// <returns>記録中でない場合はnullptr</returns>
     ID3D12GraphicsCommandList *GetCommandList() const;
-
-    /// <summary>
-    /// GPU/ドライバが対応している高度描画機能を取得する
-    /// </summary>
-    const GpuFeatureCaps &GetGpuFeatureCaps() const;
-
-    /// <summary>
-    /// DXR対応デバイスを取得する。未対応環境ではnullptr。
-    /// </summary>
-    ID3D12Device5 *GetRaytracingDevice() const;
-
-    /// <summary>
-    /// DXR用コマンドリストを取得する。未対応または未記録時はnullptr。
-    /// </summary>
-    ID3D12GraphicsCommandList4 *GetRaytracingCommandList() const;
-
-    /// <summary>
-    /// Mesh Shader用コマンドリストを取得する。未対応または未記録時はnullptr。
-    /// </summary>
-    ID3D12GraphicsCommandList6 *GetMeshShaderCommandList() const;
 
     /// <summary>
     /// コマンドリストが記録中かを取得する

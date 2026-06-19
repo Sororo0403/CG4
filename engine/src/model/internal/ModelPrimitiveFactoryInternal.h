@@ -13,7 +13,7 @@ inline constexpr uint32_t kMaxProceduralSegments = 4096;
 
 bool CheckedMultiplySize(size_t lhs, size_t rhs, size_t &out);
 bool CheckedAddSize(size_t lhs, size_t rhs, size_t &out);
-bool ReserveProceduralMesh(std::vector<Vertex> &vertices,
+bool ReserveProceduralMesh(std::vector<ModelVertex> &vertices,
                            std::vector<uint32_t> &indices,
                            size_t vertexCount,
                            size_t indexCount,

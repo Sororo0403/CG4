@@ -1,7 +1,7 @@
 #include "graphics/DirectXCommon.h"
-#include "DirectXCommonDiagnostics.h"
-#include "DirectXCommonInternal.h"
-#include "DirectXCommonState.h"
+#include "internal/DirectXCommonDiagnostics.h"
+#include "internal/DirectXCommonInternal.h"
+#include "internal/DirectXCommonState.h"
 #include "graphics/SrvManager.h"
 
 #include <algorithm>
@@ -17,15 +17,11 @@ DirectXCommon::DirectXCommon() : state_(std::make_unique<State>()) {}
 
 DirectXCommon::~DirectXCommon() {
     WaitForGpuIfPossible();
-    if (state_ && state_->fenceEvent) {
-        CloseHandle(state_->fenceEvent);
-        state_->fenceEvent = nullptr;
-    }
 }
 
 bool DirectXCommon::IsInitialized() const {
     return state_->commandQueue && state_->fence &&
-           state_->fenceEvent != nullptr;
+           static_cast<bool>(state_->fenceEvent);
 }
 
 bool DirectXCommon::IsReadyForRendering() const {
@@ -44,32 +40,6 @@ ID3D12CommandQueue *DirectXCommon::GetCommandQueue() const {
 ID3D12GraphicsCommandList *DirectXCommon::GetCommandList() const {
     return state_->isCommandListRecording ? state_->commandList.Get()
                                           : nullptr;
-}
-
-const GpuFeatureCaps &DirectXCommon::GetGpuFeatureCaps() const {
-    return state_->featureCaps;
-}
-
-ID3D12Device5 *DirectXCommon::GetRaytracingDevice() const {
-    return state_->featureCaps.raytracingSupported
-               ? state_->raytracingDevice.Get()
-               : nullptr;
-}
-
-ID3D12GraphicsCommandList4 *
-DirectXCommon::GetRaytracingCommandList() const {
-    return state_->isCommandListRecording &&
-                   state_->featureCaps.raytracingSupported
-               ? state_->raytracingCommandList.Get()
-               : nullptr;
-}
-
-ID3D12GraphicsCommandList6 *
-DirectXCommon::GetMeshShaderCommandList() const {
-    return state_->isCommandListRecording &&
-                   state_->featureCaps.meshShaderSupported
-               ? state_->meshShaderCommandList.Get()
-               : nullptr;
 }
 
 bool DirectXCommon::IsCommandListRecording() const {
@@ -406,11 +376,12 @@ bool DirectXCommon::WaitForGpu() {
     }
 
     if (state_->fence->GetCompletedValue() < state_->fenceValue) {
-        if (LogIfFailed(state_->fence->SetEventOnCompletion(state_->fenceValue, state_->fenceEvent),
+        if (LogIfFailed(state_->fence->SetEventOnCompletion(
+                            state_->fenceValue, state_->fenceEvent.Get()),
                         "state_->fence->SetEventOnCompletion failed")) {
             return false;
         }
-        WaitForSingleObject(state_->fenceEvent, INFINITE);
+        WaitForSingleObject(state_->fenceEvent.Get(), INFINITE);
     }
     for (UINT i = 0; i < kSwapChainBufferCount; ++i) {
         state_->frameFenceValues[i] = state_->fenceValue;

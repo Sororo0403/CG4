@@ -1,6 +1,6 @@
 #include "model/ModelRenderer.h"
-#include "ModelRendererInternal.h"
-#include "RendererUploadUtils.h"
+#include "internal/ModelRendererInternal.h"
+#include "internal/RendererUploadUtils.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/ShaderCompiler.h"

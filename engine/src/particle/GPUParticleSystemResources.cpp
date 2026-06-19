@@ -1,18 +1,18 @@
-﻿#include "particle/GPUParticleSystem.h"
-#include "GPUParticleSystemInternal.h"
-#include "GPUParticleSystemShared.h"
+#include "particle/GPUParticleSystem.h"
+#include "internal/GPUParticleSystemInternal.h"
+#include "internal/GPUParticleSystemShared.h"
 
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/GpuResourceHelpers.h"
 #include "graphics/GpuResourceLifetime.h"
-#include "../graphics/RootSignatureUtils.h"
+#include "../graphics/internal/RootSignatureUtils.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
 #include "texture/TextureManager.h"
-#include "../graphics/SrvDescriptorAllocation.h"
+#include "../graphics/internal/SrvDescriptorAllocation.h"
 
 #include <algorithm>
 #include <cstring>

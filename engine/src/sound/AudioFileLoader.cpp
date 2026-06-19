@@ -2,7 +2,7 @@
 
 #include "core/PathUtils.h"
 #include "sound/AudioLimits.h"
-#include "SoundFormatUtils.h"
+#include "internal/SoundFormatUtils.h"
 
 #include <filesystem>
 #include <mfapi.h>

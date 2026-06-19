@@ -3,7 +3,6 @@
 #include <filesystem>
 #include <functional>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 class AssetHotReloader {
@@ -22,6 +21,7 @@ class AssetHotReloader {
 
   private:
     struct WatchedFile {
+        std::wstring key;
         std::filesystem::path path;
         std::filesystem::file_time_type lastWriteTime{};
         ReloadCallback callback;
@@ -34,5 +34,5 @@ class AssetHotReloader {
     static bool HasExtension(const std::filesystem::path &path,
                              const std::vector<std::wstring> &extensions);
 
-    std::unordered_map<std::wstring, WatchedFile> watchedFiles_;
+    std::vector<WatchedFile> watchedFiles_;
 };

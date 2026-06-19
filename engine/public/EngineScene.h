@@ -6,6 +6,5 @@
 #include "collision/CollisionUtil.h"
 #include "collision/OBB.h"
 #include "scene/BaseScene.h"
-#include "scene/EditorGizmo.h"
 #include "scene/SceneContext.h"
 #include "scene/SceneManager.h"

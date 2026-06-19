@@ -1,14 +1,14 @@
 #include "model/MeshRenderer.h"
-#include "MeshRendererInternal.h"
+#include "internal/MeshRendererInternal.h"
 
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
-#include "RendererPipelineVariantUtils.h"
-#include "RendererInputLayouts.h"
-#include "RendererShadowPipelineUtils.h"
-#include "../graphics/RootSignatureUtils.h"
+#include "internal/RendererPipelineVariantUtils.h"
+#include "internal/RendererInputLayouts.h"
+#include "internal/RendererShadowPipelineUtils.h"
+#include "../graphics/internal/RootSignatureUtils.h"
 #include "model/RendererMath.h"
 #include "model/Vertex.h"
 #include <algorithm>
@@ -65,20 +65,11 @@ void MeshRenderer::CreateRootSignature() {
     planarReflectionRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 9);
     params[10].InitAsDescriptorTable(1, &planarReflectionRange);
 
-    CD3DX12_STATIC_SAMPLER_DESC samplers[] = {
-        CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR),
-        CD3DX12_STATIC_SAMPLER_DESC(1, D3D12_FILTER_MIN_MAG_MIP_POINT),
-    };
-    samplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    samplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    samplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    samplers[1].AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    samplers[1].AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    samplers[1].AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    samplers[1].BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
+    const auto samplers = RendererPipelineVariantUtils::MakeMaterialTextureSamplers(
+        D3D12_TEXTURE_ADDRESS_MODE_WRAP);
 
     CD3DX12_ROOT_SIGNATURE_DESC desc;
-    desc.Init(_countof(params), params, _countof(samplers), samplers,
+    desc.Init(_countof(params), params, static_cast<UINT>(samplers.size()), samplers.data(),
               D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
     RootSignatureUtils::CreateRootSignature(state_->dxCommon->GetDevice(), desc,
@@ -129,14 +120,28 @@ void MeshRenderer::CreatePipelineStates() {
 }
 
 uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc &desc) {
+    return CreatePipeline(
+        desc, RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshVertex));
+}
+
+uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc &desc,
+                                      MeshVertexLayout vertexLayout) {
+    const D3D12_INPUT_LAYOUT_DESC inputLayout =
+        vertexLayout == MeshVertexLayout::Surface
+            ? RendererInputLayouts::MakeDesc(RendererInputLayouts::kSurfaceVertex)
+            : RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshVertex);
+    return CreatePipeline(desc, inputLayout);
+}
+
+uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc &desc,
+                                      D3D12_INPUT_LAYOUT_DESC inputLayout) {
     if (!state_->dxCommon || !state_->dxCommon->GetDevice() || !state_->rootSignature) {
         return kInvalidResourceId;
     }
 
     MeshPipelineSet pipelineSet = MeshPipelineFactory::CreatePipelineSet(
         state_->dxCommon->GetDevice(), state_->rootSignature.Get(), desc,
-        RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshVertex),
-        DirectXCommon::kSceneColorFormat,
+        inputLayout, DirectXCommon::kSceneColorFormat,
         DirectXCommon::kDepthStencilFormat);
     if (!pipelineSet.pipelineStates[0]) {
         return kInvalidResourceId;
@@ -165,6 +170,16 @@ uint32_t MeshRenderer::CreatePipeline(const std::wstring &vertexShaderPath,
     return CreatePipeline(desc);
 }
 
+uint32_t MeshRenderer::CreatePipeline(const std::wstring &vertexShaderPath,
+                                      const std::wstring &pixelShaderPath,
+                                      MeshVertexLayout vertexLayout) {
+    MeshPipelineDesc desc{};
+    desc.vertexShader = vertexShaderPath;
+    desc.pixelShader = pixelShaderPath;
+    desc.variantMode = MeshPipelineVariantMode::MaterialDriven;
+    return CreatePipeline(desc, vertexLayout);
+}
+
 uint32_t MeshRenderer::CreateAdditiveNoDepthPipeline(
     const std::wstring &vertexShaderPath,
     const std::wstring &pixelShaderPath) {
@@ -182,15 +197,37 @@ uint32_t MeshRenderer::CreateInstancedPipeline(
     const std::wstring &vertexShaderPath, const std::wstring &pixelShaderPath,
     const std::wstring &shadowVertexShaderPath,
     const std::wstring &shadowPixelShaderPath) {
+    return CreateInstancedPipeline(
+        vertexShaderPath, pixelShaderPath, shadowVertexShaderPath,
+        shadowPixelShaderPath,
+        RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshInstanced));
+}
+
+uint32_t MeshRenderer::CreateInstancedPipeline(
+    const std::wstring &vertexShaderPath, const std::wstring &pixelShaderPath,
+    const std::wstring &shadowVertexShaderPath,
+    const std::wstring &shadowPixelShaderPath,
+    MeshInstancedVertexLayout vertexLayout) {
+    const D3D12_INPUT_LAYOUT_DESC inputLayout =
+        vertexLayout == MeshInstancedVertexLayout::Tree
+            ? RendererInputLayouts::MakeDesc(RendererInputLayouts::kTreeInstanced)
+            : RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshInstanced);
+    return CreateInstancedPipeline(vertexShaderPath, pixelShaderPath,
+                                   shadowVertexShaderPath,
+                                   shadowPixelShaderPath, inputLayout);
+}
+
+uint32_t MeshRenderer::CreateInstancedPipeline(
+    const std::wstring &vertexShaderPath, const std::wstring &pixelShaderPath,
+    const std::wstring &shadowVertexShaderPath,
+    const std::wstring &shadowPixelShaderPath,
+    D3D12_INPUT_LAYOUT_DESC inputLayout) {
     if (!state_->dxCommon || !state_->dxCommon->GetDevice() || !state_->rootSignature ||
         !state_->shadowRootSignature) {
         return kInvalidResourceId;
     }
 
     InstancedPipelineSet pipelineSet{};
-
-    const auto instancedInputLayout =
-        RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshInstanced);
 
     MeshPipelineDesc desc{};
     desc.vertexShader = vertexShaderPath;
@@ -199,7 +236,7 @@ uint32_t MeshRenderer::CreateInstancedPipeline(
     desc.variantMode = MeshPipelineVariantMode::MaterialDriven;
     MeshPipelineSet forwardPipelines = MeshPipelineFactory::CreatePipelineSet(
         state_->dxCommon->GetDevice(), state_->rootSignature.Get(), desc,
-        instancedInputLayout, DirectXCommon::kSceneColorFormat,
+        inputLayout, DirectXCommon::kSceneColorFormat,
         DirectXCommon::kDepthStencilFormat);
     if (!forwardPipelines.pipelineStates[0]) {
         return kInvalidResourceId;
@@ -225,7 +262,7 @@ uint32_t MeshRenderer::CreateInstancedPipeline(
             shadowPso.PS = {shadowPs->GetBufferPointer(),
                             shadowPs->GetBufferSize()};
         }
-        shadowPso.InputLayout = instancedInputLayout;
+        shadowPso.InputLayout = inputLayout;
         shadowPso.PrimitiveTopologyType =
             D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         shadowPso.NumRenderTargets = 0;

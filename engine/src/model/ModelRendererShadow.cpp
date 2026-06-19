@@ -1,5 +1,5 @@
-﻿#include "model/ModelRenderer.h"
-#include "ModelRendererInternal.h"
+#include "model/ModelRenderer.h"
+#include "internal/ModelRendererInternal.h"
 
 #include "graphics/DirectXCommon.h"
 #include "graphics/SrvManager.h"

@@ -1,5 +1,5 @@
 #include "model/ModelRenderer.h"
-#include "ModelRendererInternal.h"
+#include "internal/ModelRendererInternal.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/ShaderCompiler.h"
@@ -7,11 +7,11 @@
 #include "graphics/SrvManager.h"
 #include "model/MaterialManager.h"
 #include "model/MeshManager.h"
-#include "../graphics/RootSignatureUtils.h"
-#include "RendererInputLayouts.h"
-#include "RendererMaterialUtils.h"
-#include "RendererPipelineVariantUtils.h"
-#include "RendererShadowPipelineUtils.h"
+#include "../graphics/internal/RootSignatureUtils.h"
+#include "internal/RendererInputLayouts.h"
+#include "internal/RendererMaterialUtils.h"
+#include "internal/RendererPipelineVariantUtils.h"
+#include "internal/RendererShadowPipelineUtils.h"
 #include "model/Vertex.h"
 #include <algorithm>
 #include <array>
@@ -230,20 +230,11 @@ void ModelRenderer::CreateRootSignature() {
     metallicRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 8);
     params[12].InitAsDescriptorTable(1, &metallicRange);
 
-    CD3DX12_STATIC_SAMPLER_DESC samplers[] = {
-        CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR),
-        CD3DX12_STATIC_SAMPLER_DESC(1, D3D12_FILTER_MIN_MAG_MIP_POINT),
-    };
-    samplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    samplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-    samplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    samplers[1].AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    samplers[1].AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    samplers[1].AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    samplers[1].BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
+    const auto samplers = RendererPipelineVariantUtils::MakeMaterialTextureSamplers(
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP);
 
     CD3DX12_ROOT_SIGNATURE_DESC desc;
-    desc.Init(_countof(params), params, _countof(samplers), samplers,
+    desc.Init(_countof(params), params, static_cast<UINT>(samplers.size()), samplers.data(),
               D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
     RootSignatureUtils::CreateRootSignature(state_->dxCommon->GetDevice(),

@@ -1,5 +1,5 @@
 #include "model/SkyboxRenderer.h"
-#include "SkyboxRendererInternal.h"
+#include "internal/SkyboxRendererInternal.h"
 #include "core/Numeric.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
@@ -9,8 +9,8 @@
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
-#include "../graphics/ConstantBufferUtils.h"
-#include "../graphics/RootSignatureUtils.h"
+#include "../graphics/internal/ConstantBufferUtils.h"
+#include "../graphics/internal/RootSignatureUtils.h"
 #include "texture/TextureManager.h"
 #include <algorithm>
 #include <array>

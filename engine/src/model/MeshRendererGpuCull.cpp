@@ -1,10 +1,10 @@
 #include "model/MeshRenderer.h"
-#include "MeshRendererInternal.h"
-#include "MeshRendererGpuCullInternal.h"
+#include "internal/MeshRendererInternal.h"
+#include "internal/MeshRendererGpuCullInternal.h"
 
 #include "graphics/DirectXCommon.h"
 #include "graphics/SrvManager.h"
-#include "RendererMaterialUtils.h"
+#include "internal/RendererMaterialUtils.h"
 #include "model/RendererMath.h"
 #include "texture/TextureManager.h"
 
@@ -26,6 +26,7 @@ using MeshRendererGpuCullInternal::BuildSingleCullArgs;
 using MeshRendererGpuCullInternal::ExecuteLodGpuCull;
 using MeshRendererGpuCullInternal::ExecuteSingleGpuCull;
 using MeshRendererGpuCullInternal::IsDistanceCullEnabled;
+using MeshRendererGpuCullInternal::IsMinDistanceCullEnabled;
 using MeshRendererGpuCullInternal::MeshGpuCullArgsConstants;
 using MeshRendererGpuCullInternal::MeshGpuCullConstants;
 using MeshRendererGpuCullInternal::MeshGpuLodCullArgsConstants;
@@ -46,7 +47,7 @@ MeshGpuCullConstants BuildSingleGpuCullConstants(
     const MeshGpuCullBounds &localBounds,
     const XMFLOAT4X4 &occlusionViewProjection,
     const XMFLOAT4 &occlusionParams, uint32_t instanceCount,
-    float maxDistance) {
+    float maxDistance, float minDistance) {
     MeshGpuCullConstants constants{};
     BuildFrustumPlanes(cullViewProjection, constants.frustumPlanes);
     constants.cameraAndMaxDistanceSq =
@@ -56,6 +57,10 @@ MeshGpuCullConstants BuildSingleGpuCullConstants(
     constants.occlusionParams = occlusionParams;
     constants.instanceCount = instanceCount;
     constants.enableDistanceCull = IsDistanceCullEnabled(maxDistance);
+    const float safeMinDistance =
+        std::isfinite(minDistance) ? (std::max)(minDistance, 0.0f) : 0.0f;
+    constants.minDistanceSq = safeMinDistance * safeMinDistance;
+    constants.enableMinDistanceCull = IsMinDistanceCullEnabled(minDistance);
     return constants;
 }
 
@@ -93,19 +98,28 @@ bool WriteGpuCullConstantBuffers(UploadRingBuffer &uploadBuffer,
     return cullCb != 0 && argsCb != 0;
 }
 
+bool ShouldUseGpuCull(uint32_t instanceCount) {
+    constexpr uint32_t kMinGpuCullInstances = 33u;
+    return instanceCount >= kMinGpuCullInstances;
+}
+
 } // namespace
 
 bool MeshRenderer::DrawMeshInstancedGpuCulledWithPipeline(
     uint32_t pipelineId, const Mesh &mesh, const Material &material,
     const MeshInstanceBuffer &sourceInstances, MeshGpuCullBuffer &cullBuffer,
     const MeshGpuCullBounds &localBounds, const Camera &camera,
-    float maxDistance, uint32_t textureId, uint32_t normalTextureId) {
+    float maxDistance, uint32_t textureId, uint32_t normalTextureId,
+    float minDistance) {
     if (!state_->dxCommon || !state_->textureManager || !state_->srvManager || !state_->rootSignature ||
         !state_->gpuCullRootSignature || !state_->gpuCullPSO || !state_->gpuCullArgsPSO ||
         !state_->gpuCullCommandSignature ||
         pipelineId >= state_->customInstancedPipelines.size() ||
         !IsDrawableMesh(mesh) || !sourceInstances.IsValid() ||
         state_->drawIndex >= kMaxDraws) {
+        return false;
+    }
+    if (!ShouldUseGpuCull(sourceInstances.instanceCount)) {
         return false;
     }
     const XMFLOAT3 cameraPosition = camera.GetPosition();
@@ -115,7 +129,7 @@ bool MeshRenderer::DrawMeshInstancedGpuCulledWithPipeline(
             camera.GetViewProjection(), cameraPosition,
             state_->occlusionPyramidEnabled ? state_->occlusionParams
                                             : DefaultCullOcclusionParams(),
-            maxDistance, cmd)) {
+            maxDistance, minDistance, cmd)) {
         return false;
     }
 
@@ -141,6 +155,9 @@ bool MeshRenderer::DrawMeshInstancedGpuLodCulledWithPipeline(
         !state_->gpuLodCullArgsPSO || !state_->gpuCullCommandSignature ||
         pipelineId >= state_->customInstancedPipelines.size() ||
         !sourceInstances.IsValid() || state_->drawIndex >= kMaxDraws) {
+        return false;
+    }
+    if (!ShouldUseGpuCull(sourceInstances.instanceCount)) {
         return false;
     }
     for (const Mesh *mesh : lodMeshes) {
@@ -173,7 +190,7 @@ bool MeshRenderer::DrawMeshInstancedGpuCulledShadowWithPipeline(
     const MeshGpuCullBounds &localBounds,
     const DirectX::XMFLOAT4X4 &lightViewProjection,
     const DirectX::XMFLOAT3 &cullOrigin, float maxDistance,
-    uint32_t textureId, bool opaqueShadow) {
+    uint32_t textureId, bool opaqueShadow, float minDistance) {
     if (!state_->dxCommon || !state_->textureManager || !state_->srvManager ||
         !state_->shadowRootSignature || !state_->gpuCullRootSignature || !state_->gpuCullPSO ||
         !state_->gpuCullArgsPSO || !state_->gpuCullCommandSignature ||
@@ -183,11 +200,14 @@ bool MeshRenderer::DrawMeshInstancedGpuCulledShadowWithPipeline(
         state_->drawIndex >= kMaxDraws) {
         return false;
     }
+    if (!ShouldUseGpuCull(sourceInstances.instanceCount)) {
+        return false;
+    }
     ID3D12GraphicsCommandList *cmd = nullptr;
     if (!DispatchSingleGpuCull(
             mesh, sourceInstances, cullBuffer, localBounds,
             XMLoadFloat4x4(&lightViewProjection), cullOrigin,
-            DefaultCullOcclusionParams(), maxDistance, cmd)) {
+            DefaultCullOcclusionParams(), maxDistance, minDistance, cmd)) {
         return false;
     }
 
@@ -219,6 +239,9 @@ bool MeshRenderer::DrawMeshInstancedGpuLodCulledShadowWithPipeline(
         !sourceInstances.IsValid() || state_->drawIndex >= kMaxDraws) {
         return false;
     }
+    if (!ShouldUseGpuCull(sourceInstances.instanceCount)) {
+        return false;
+    }
     for (const Mesh *mesh : lodMeshes) {
         if (mesh == nullptr || !IsDrawableMesh(*mesh)) {
             return false;
@@ -246,6 +269,7 @@ bool MeshRenderer::DispatchSingleGpuCull(
     MeshGpuCullBuffer &cullBuffer, const MeshGpuCullBounds &localBounds,
     const XMMATRIX &cullViewProjection, const XMFLOAT3 &cullOrigin,
     const XMFLOAT4 &occlusionParams, float maxDistance,
+    float minDistance,
     ID3D12GraphicsCommandList *&commandList) {
     ID3D12DescriptorHeap *heap = nullptr;
     D3D12_GPU_DESCRIPTOR_HANDLE occlusionHandle{};
@@ -257,7 +281,7 @@ bool MeshRenderer::DispatchSingleGpuCull(
     const MeshGpuCullConstants cullConstants = BuildSingleGpuCullConstants(
         cullViewProjection, cullOrigin, localBounds,
         state_->occlusionViewProjection, occlusionParams,
-        sourceInstances.instanceCount, maxDistance);
+        sourceInstances.instanceCount, maxDistance, minDistance);
     const MeshGpuCullArgsConstants argsConstants =
         BuildSingleCullArgs(mesh, sourceInstances.instanceCount);
 

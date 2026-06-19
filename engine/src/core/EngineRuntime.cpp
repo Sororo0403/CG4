@@ -1,14 +1,13 @@
 #include "core/EngineRuntime.h"
 
-#include "EngineRuntimeInternal.h"
-#include "EngineRuntimeSystems.h"
+#include "internal/EngineRuntimeInternal.h"
+#include "internal/EngineRuntimeSystems.h"
 #include "core/CpuProfiler.h"
 #include "camera/CameraManager.h"
 #include "core/FrameTimer.h"
 #include "core/WinApp.h"
 #include "font/FontManager.h"
 #include "font/TextRenderer.h"
-#include "graphics/AdvancedGpuRenderer.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DepthPyramid.h"
 #include "graphics/FrameHistory.h"
@@ -48,7 +47,6 @@
 
 namespace {
 using EngineRuntimeInternal::BoolText;
-using EngineRuntimeInternal::FrameAbortScope;
 using EngineRuntimeInternal::MakeTimestamp;
 using EngineRuntimeInternal::ReplayModeName;
 using EngineRuntimeInternal::WideToUtf8;
@@ -62,11 +60,11 @@ EngineRuntime::~EngineRuntime() {
         return;
     }
 
-    SoundManager::GetInstance().StopAll();
+    systems_->soundManager.StopAll();
     systems_->winApp.SetCursorVisible(true);
     systems_->dxCommon.WaitForGpuIfPossible();
     systems_->sceneManager.Finalize();
-    SoundManager::GetInstance().Finalize();
+    systems_->soundManager.Finalize();
 #ifdef _DEBUG
     systems_->imguiManager.Finalize();
 #endif
@@ -76,21 +74,16 @@ EngineRuntime::~EngineRuntime() {
     systems_->gpuProfiler.Finalize();
     systems_->renderTexture.Release();
     systems_->skyboxRenderer.Finalize();
-    systems_->advancedGpuRenderer.Finalize();
     systems_->volumetricLightingSystem.Finalize();
     systems_->postProcessSystem.Finalize();
     systems_->pipelineManager.Clear();
     systems_->meshRenderer.Finalize();
     systems_->textRenderer.Finalize();
     systems_->fontManager.Finalize();
-    if (systems_->spriteManager != nullptr) {
-        systems_->spriteManager->Finalize();
-        systems_->spriteManager = nullptr;
-    }
+    systems_->spriteManager.Finalize();
     systems_->modelManager.Finalize();
     systems_->textureManager.Finalize();
     GPUParticleSystem::ReleaseSharedResources();
-    CameraManager::SetActiveInstance(nullptr);
     systems_->dxCommon.ReleaseRegisteredSrvs();
 }
 
@@ -170,15 +163,20 @@ int EngineRuntime::RunMainLoop() {
         }
         UpdateFrameContext();
         systems_->cpuProfiler.BeginFrame();
-        systems_->cpuProfiler.BeginEvent("Input");
-        systems_->input.Update(systems_->sceneContext.frame.deltaTime);
-        systems_->cpuProfiler.EndEvent();
-        systems_->cpuProfiler.BeginEvent("SceneUpdate");
-        systems_->sceneManager.Update();
-        systems_->cpuProfiler.EndEvent();
-        systems_->cpuProfiler.BeginEvent("AudioUpdate");
-        SoundManager::GetInstance().Update();
-        systems_->cpuProfiler.EndEvent();
+        {
+            CpuProfiler::ScopedEvent event(systems_->cpuProfiler, "Input");
+            systems_->input.Update(systems_->sceneContext.frame.deltaTime);
+        }
+        {
+            CpuProfiler::ScopedEvent event(systems_->cpuProfiler,
+                                           "SceneUpdate");
+            systems_->sceneManager.Update();
+        }
+        {
+            CpuProfiler::ScopedEvent event(systems_->cpuProfiler,
+                                           "AudioUpdate");
+            systems_->soundManager.Update();
+        }
         if (!RenderFrame()) {
             Log("Render frame failed");
             systems_->winApp.RequestClose();
@@ -276,12 +274,11 @@ bool EngineRuntime::InitializeRenderingSystems() {
     if (!systems_->renderTexture.IsReady()) {
         return FailInitialize("RenderTexture");
     }
-    systems_->spriteManager = &SpriteManager::GetInstance();
-    systems_->spriteManager->Initialize(&systems_->dxCommon,
-                                        &systems_->textureManager,
-                                        &systems_->srvManager, currentWidth_,
-                                        currentHeight_);
-    if (!systems_->spriteManager->IsReady()) {
+    systems_->spriteManager.Initialize(&systems_->dxCommon,
+                                       &systems_->textureManager,
+                                       &systems_->srvManager, currentWidth_,
+                                       currentHeight_);
+    if (!systems_->spriteManager.IsReady()) {
         return FailInitialize("SpriteManager");
     }
     systems_->fontManager.Initialize(&systems_->textureManager);
@@ -289,7 +286,7 @@ bool EngineRuntime::InitializeRenderingSystems() {
         return FailInitialize("FontManager");
     }
     systems_->textRenderer.Initialize(&systems_->fontManager,
-                                      systems_->spriteManager->GetRenderer());
+                                      systems_->spriteManager.GetRenderer());
     if (!systems_->textRenderer.IsReady()) {
         return FailInitialize("TextRenderer");
     }
@@ -305,10 +302,6 @@ bool EngineRuntime::InitializeRenderingSystems() {
     if (!systems_->volumetricLightingSystem.IsReady()) {
         return FailInitialize("VolumetricLightingSystem");
     }
-    systems_->advancedGpuRenderer.Initialize(
-        &systems_->dxCommon, &systems_->srvManager,
-        static_cast<uint32_t>(currentWidth_),
-        static_cast<uint32_t>(currentHeight_));
     systems_->postEffectManager.Initialize(&systems_->postProcessSystem);
     if (!systems_->postEffectManager.IsReady()) {
         return FailInitialize("PostEffectManager");
@@ -359,8 +352,7 @@ bool EngineRuntime::InitializeSceneSystems(
             std::string(ReplayModeName(systems_->input.GetReplayMode())) +
             " path=" + WideToUtf8(systems_->input.GetReplayPath()));
     }
-    CameraManager::SetActiveInstance(&systems_->cameraManager);
-    SoundManager::GetInstance().Initialize();
+    systems_->soundManager.Initialize();
 
 #ifdef _DEBUG
     systems_->imguiManager.Initialize(&systems_->winApp, &systems_->dxCommon,
@@ -383,17 +375,17 @@ void EngineRuntime::BindSceneContext() {
     systems_->sceneContext.systems.log =
         [this](const std::string &message) { Log(message); };
     systems_->sceneContext.systems.sound =
-        SoundManager::GetInstance().IsInitialized() ? &SoundManager::GetInstance()
-                                                    : nullptr;
+        systems_->soundManager.IsInitialized()
+            ? static_cast<ISoundService *>(&systems_->soundManager)
+            : static_cast<ISoundService *>(&systems_->nullSoundService);
     systems_->sceneContext.rendering.mesh = &systems_->meshManager;
     systems_->sceneContext.rendering.meshRenderer = &systems_->meshRenderer;
     systems_->sceneContext.rendering.model = &systems_->modelManager;
     systems_->sceneContext.rendering.modelRenderer =
         systems_->modelManager.GetRenderer();
-    systems_->sceneContext.rendering.sprite = systems_->spriteManager;
+    systems_->sceneContext.rendering.sprite = &systems_->spriteManager;
     systems_->sceneContext.rendering.spriteRenderer =
-        systems_->spriteManager != nullptr ? systems_->spriteManager->GetRenderer()
-                                           : nullptr;
+        systems_->spriteManager.GetRenderer();
     systems_->sceneContext.rendering.font = &systems_->fontManager;
     systems_->sceneContext.rendering.text = &systems_->textRenderer;
     systems_->sceneContext.rendering.texture = &systems_->textureManager;
@@ -414,8 +406,6 @@ void EngineRuntime::BindSceneContext() {
     systems_->sceneContext.rendering.gpuProfiler = &systems_->gpuProfiler;
     systems_->sceneContext.rendering.volumetricLighting =
         &systems_->volumetricLightingSystem;
-    systems_->sceneContext.rendering.advancedGpu =
-        &systems_->advancedGpuRenderer;
     systems_->sceneContext.render = systems_->renderPassController.GetContextPtr();
 #ifdef _DEBUG
     systems_->sceneContext.systems.imgui = &systems_->imguiManager;
@@ -450,23 +440,18 @@ EngineRuntime::ResizeResult EngineRuntime::ResizeIfNeeded() {
     systems_->renderTexture.Resize(width, height);
     systems_->postProcessSystem.Resize(width, height);
     systems_->volumetricLightingSystem.Resize(width, height);
-    systems_->advancedGpuRenderer.Resize(static_cast<uint32_t>(width),
-                                         static_cast<uint32_t>(height));
     systems_->frameHistory.Resize(static_cast<uint32_t>(width),
                                   static_cast<uint32_t>(height));
     const bool depthPyramidReady =
         systems_->depthPyramid.Resize(static_cast<uint32_t>(width),
                                       static_cast<uint32_t>(height)) &&
         systems_->depthPyramid.IsReady();
-    if (systems_->spriteManager != nullptr) {
-        systems_->spriteManager->Resize(width, height);
-    }
+    systems_->spriteManager.Resize(width, height);
     if (!systems_->renderTexture.IsReady() ||
         !systems_->postProcessSystem.IsReady() ||
         !systems_->volumetricLightingSystem.IsReady() ||
         !depthPyramidReady ||
-        (systems_->spriteManager != nullptr &&
-         !systems_->spriteManager->IsReady())) {
+        !systems_->spriteManager.IsReady()) {
         return ResizeResult::Failed;
     }
     return ResizeResult::Ready;

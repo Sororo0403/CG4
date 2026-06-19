@@ -1,10 +1,10 @@
 #include "model/ModelRenderer.h"
-#include "ModelRendererInternal.h"
+#include "internal/ModelRendererInternal.h"
 
 #include "graphics/DirectXCommon.h"
 #include "graphics/SrvManager.h"
 #include "model/RendererMath.h"
-#include "RendererShadowMapUtils.h"
+#include "internal/RendererShadowMapUtils.h"
 #include "texture/TextureManager.h"
 
 using namespace DirectX;

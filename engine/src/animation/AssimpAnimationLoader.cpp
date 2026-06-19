@@ -113,116 +113,171 @@ const aiNode* FindNearestAnimatedNode(
     return nullptr;
 }
 
+bool IsSceneAnimationListUsable(const aiScene *scene) {
+    if (!scene || !scene->HasAnimations()) {
+        return false;
+    }
+    if (scene->mNumAnimations > ModelLimits::kMaxAnimations) {
+        return false;
+    }
+    return scene->mNumAnimations == 0 || scene->mAnimations != nullptr;
+}
+
+bool TryReserveAnimationChannels(const aiAnimation *animation, size_t &totalChannels) {
+    if (animation->mNumChannels > ModelLimits::kMaxAnimationChannels ||
+        totalChannels > ModelLimits::kMaxAnimationChannels - animation->mNumChannels) {
+        return false;
+    }
+    totalChannels += animation->mNumChannels;
+    return true;
+}
+
+bool HasUsableAnimationChannels(const aiAnimation *animation) {
+    return animation->mNumChannels == 0 || animation->mChannels != nullptr;
+}
+
+bool HasUsableChannelKeyArrays(const aiNodeAnim *channel) {
+    return (channel->mNumPositionKeys == 0 || channel->mPositionKeys) &&
+           (channel->mNumRotationKeys == 0 || channel->mRotationKeys) &&
+           (channel->mNumScalingKeys == 0 || channel->mScalingKeys);
+}
+
+size_t ChannelKeyCount(const aiNodeAnim *channel) {
+    return static_cast<size_t>(channel->mNumPositionKeys) +
+           static_cast<size_t>(channel->mNumRotationKeys) +
+           static_cast<size_t>(channel->mNumScalingKeys);
+}
+
+bool TryReserveChannelKeys(const aiNodeAnim *channel, size_t &totalKeys) {
+    const size_t keyCount = ChannelKeyCount(channel);
+    if (keyCount > ModelLimits::kMaxAnimationKeysPerChannel ||
+        totalKeys > ModelLimits::kMaxAnimationKeysTotal - keyCount) {
+        return false;
+    }
+    totalKeys += keyCount;
+    return true;
+}
+
+void AppendPositionKeys(const aiNodeAnim *channel, float ticksPerSecond,
+                        NodeAnimation &nodeAnimation) {
+    for (unsigned int k = 0; k < channel->mNumPositionKeys; k++) {
+        const aiVectorKey &key = channel->mPositionKeys[k];
+        nodeAnimation.translate.keyframes.push_back(
+            {ToSeconds(key.mTime, ticksPerSecond),
+             {key.mValue.x, key.mValue.y, key.mValue.z}});
+    }
+}
+
+void AppendRotationKeys(const aiNodeAnim *channel, float ticksPerSecond,
+                        NodeAnimation &nodeAnimation) {
+    for (unsigned int k = 0; k < channel->mNumRotationKeys; k++) {
+        const aiQuatKey &key = channel->mRotationKeys[k];
+        nodeAnimation.rotate.keyframes.push_back(
+            {ToSeconds(key.mTime, ticksPerSecond),
+             {key.mValue.x, key.mValue.y, key.mValue.z, key.mValue.w}});
+    }
+}
+
+void AppendScalingKeys(const aiNodeAnim *channel, float ticksPerSecond,
+                       NodeAnimation &nodeAnimation) {
+    for (unsigned int k = 0; k < channel->mNumScalingKeys; k++) {
+        const aiVectorKey &key = channel->mScalingKeys[k];
+        nodeAnimation.scale.keyframes.push_back(
+            {ToSeconds(key.mTime, ticksPerSecond),
+             {key.mValue.x, key.mValue.y, key.mValue.z}});
+    }
+}
+
+bool TryLoadNodeAnimation(const aiNodeAnim *channel, float ticksPerSecond,
+                          size_t &totalKeys, NodeAnimation &nodeAnimation) {
+    if (!channel || !HasUsableChannelKeyArrays(channel) ||
+        !TryReserveChannelKeys(channel, totalKeys)) {
+        return false;
+    }
+
+    AppendPositionKeys(channel, ticksPerSecond, nodeAnimation);
+    AppendRotationKeys(channel, ticksPerSecond, nodeAnimation);
+    AppendScalingKeys(channel, ticksPerSecond, nodeAnimation);
+    NormalizeNodeAnimation(nodeAnimation);
+    return HasKeyframes(nodeAnimation);
+}
+
+void FinalizeClipDuration(AnimationClip &clip) {
+    clip.duration = (std::max)(clip.duration, MaxClipKeyTime(clip));
+    if (!std::isfinite(clip.duration) || clip.duration <= 0.0f) {
+        clip.duration = kMinimumClipDuration;
+    }
+}
+
+void ResolveClipRootNode(const aiScene *scene, AnimationClip &clip) {
+    if (const aiNode *rootAnimatedNode =
+            FindNearestAnimatedNode(scene->mRootNode, clip.nodeAnimations)) {
+        clip.rootNodeName = rootAnimatedNode->mName.C_Str();
+    } else if (clip.nodeAnimations.size() == 1) {
+        clip.rootNodeName = clip.nodeAnimations.begin()->first;
+    }
+}
+
+std::string ResolveAnimationName(const aiAnimation *animation, unsigned int index) {
+    std::string animationName = animation->mName.C_Str();
+    if (animationName.empty()) {
+        animationName = "Anim_" + std::to_string(index);
+    }
+    return animationName;
+}
+
+bool TryLoadAnimationClip(const aiScene *scene, const aiAnimation *animation,
+                          size_t &totalChannels, size_t &totalKeys,
+                          AnimationClip &clip) {
+    if (!animation || !TryReserveAnimationChannels(animation, totalChannels) ||
+        !HasUsableAnimationChannels(animation)) {
+        return false;
+    }
+
+    const float ticksPerSecond = static_cast<float>(animation->mTicksPerSecond);
+    clip.duration = ToSeconds(animation->mDuration, ticksPerSecond);
+    for (unsigned int i = 0; i < animation->mNumChannels; i++) {
+        NodeAnimation nodeAnimation;
+        const aiNodeAnim *channel = animation->mChannels[i];
+        if (!TryLoadNodeAnimation(channel, ticksPerSecond, totalKeys, nodeAnimation)) {
+            continue;
+        }
+        clip.nodeAnimations[channel->mNodeName.C_Str()] = nodeAnimation;
+    }
+
+    if (clip.nodeAnimations.empty()) {
+        return false;
+    }
+    FinalizeClipDuration(clip);
+    ResolveClipRootNode(scene, clip);
+    return true;
+}
+
+void EnableModelAnimationPlayback(Model &model) {
+    if (model.animations.empty()) {
+        return;
+    }
+    model.currentAnimation = model.animations.begin()->first;
+    model.animationTime = 0.0f;
+    model.isLoop = true;
+    model.isPlaying = true;
+}
+
 } // namespace
 
 void AssimpAnimationLoader::LoadAnimations(const aiScene* scene, Model& model) {
-    if (!scene || !scene->HasAnimations()) {
-        return;
-    }
-    if (scene->mNumAnimations > ModelLimits::kMaxAnimations) {
-        return;
-    }
-    if (scene->mNumAnimations > 0 && scene->mAnimations == nullptr) {
+    if (!IsSceneAnimationListUsable(scene)) {
         return;
     }
 
     size_t totalChannels = 0;
     size_t totalKeys = 0;
     for (unsigned int a = 0; a < scene->mNumAnimations; a++) {
-        aiAnimation* anim = scene->mAnimations[a];
-        if (!anim) {
-            continue;
-        }
-        if (anim->mNumChannels > ModelLimits::kMaxAnimationChannels ||
-            totalChannels > ModelLimits::kMaxAnimationChannels - anim->mNumChannels) {
-            continue;
-        }
-        totalChannels += anim->mNumChannels;
-        if (anim->mNumChannels > 0 && anim->mChannels == nullptr) {
-            continue;
-        }
-
         AnimationClip clip{};
-        const float ticksPerSecond = static_cast<float>(anim->mTicksPerSecond);
-        clip.duration = ToSeconds(anim->mDuration, ticksPerSecond);
-
-        for (unsigned int i = 0; i < anim->mNumChannels; i++) {
-            aiNodeAnim* channel = anim->mChannels[i];
-            if (!channel) {
-                continue;
-            }
-            if ((channel->mNumPositionKeys > 0 && !channel->mPositionKeys) ||
-                (channel->mNumRotationKeys > 0 && !channel->mRotationKeys) ||
-                (channel->mNumScalingKeys > 0 && !channel->mScalingKeys)) {
-                continue;
-            }
-            const size_t channelKeyCount = static_cast<size_t>(channel->mNumPositionKeys) +
-                                           static_cast<size_t>(channel->mNumRotationKeys) +
-                                           static_cast<size_t>(channel->mNumScalingKeys);
-            if (channelKeyCount > ModelLimits::kMaxAnimationKeysPerChannel ||
-                totalKeys > ModelLimits::kMaxAnimationKeysTotal - channelKeyCount) {
-                continue;
-            }
-            totalKeys += channelKeyCount;
-
-            NodeAnimation nodeAnim;
-
-            for (unsigned int k = 0; k < channel->mNumPositionKeys; k++) {
-                const aiVectorKey& key = channel->mPositionKeys[k];
-                nodeAnim.translate.keyframes.push_back(
-                    {ToSeconds(key.mTime, ticksPerSecond),
-                     {key.mValue.x, key.mValue.y, key.mValue.z}});
-            }
-
-            for (unsigned int k = 0; k < channel->mNumRotationKeys; k++) {
-                const aiQuatKey& key = channel->mRotationKeys[k];
-                nodeAnim.rotate.keyframes.push_back(
-                    {ToSeconds(key.mTime, ticksPerSecond),
-                     {key.mValue.x, key.mValue.y, key.mValue.z, key.mValue.w}});
-            }
-
-            for (unsigned int k = 0; k < channel->mNumScalingKeys; k++) {
-                const aiVectorKey& key = channel->mScalingKeys[k];
-                nodeAnim.scale.keyframes.push_back({ToSeconds(key.mTime, ticksPerSecond),
-                                                    {key.mValue.x, key.mValue.y, key.mValue.z}});
-            }
-
-            NormalizeNodeAnimation(nodeAnim);
-            if (!HasKeyframes(nodeAnim)) {
-                continue;
-            }
-            clip.nodeAnimations[channel->mNodeName.C_Str()] = nodeAnim;
+        const aiAnimation *animation = scene->mAnimations[a];
+        if (TryLoadAnimationClip(scene, animation, totalChannels, totalKeys, clip)) {
+            model.animations[ResolveAnimationName(animation, a)] = clip;
         }
-
-        if (clip.nodeAnimations.empty()) {
-            continue;
-        }
-
-        const float keyDuration = MaxClipKeyTime(clip);
-        clip.duration = (std::max)(clip.duration, keyDuration);
-        if (!std::isfinite(clip.duration) || clip.duration <= 0.0f) {
-            clip.duration = kMinimumClipDuration;
-        }
-
-        if (const aiNode* rootAnimatedNode =
-                FindNearestAnimatedNode(scene->mRootNode, clip.nodeAnimations)) {
-            clip.rootNodeName = rootAnimatedNode->mName.C_Str();
-        } else if (clip.nodeAnimations.size() == 1) {
-            clip.rootNodeName = clip.nodeAnimations.begin()->first;
-        }
-
-        std::string animName = anim->mName.C_Str();
-        if (animName.empty()) {
-            animName = "Anim_" + std::to_string(a);
-        }
-
-        model.animations[animName] = clip;
     }
-
-    if (!model.animations.empty()) {
-        model.currentAnimation = model.animations.begin()->first;
-        model.animationTime = 0.0f;
-        model.isLoop = true;
-        model.isPlaying = true;
-    }
+    EnableModelAnimationPlayback(model);
 }

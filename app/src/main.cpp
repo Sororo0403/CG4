@@ -20,7 +20,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int showCommand) {
     EngineRuntimeConfig config{};
     config.width = 1280;
     config.height = 720;
-    config.title = L"CG4 Procedural Particles";
+    config.title = L"CG4 Evaluation Assignment";
     config.cursorVisible = true;
 
     EngineRuntime runtime;

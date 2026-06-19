@@ -1,4 +1,4 @@
-#include "ModelPrimitiveFactoryInternal.h"
+#include "internal/ModelPrimitiveFactoryInternal.h"
 
 #include "core/Numeric.h"
 

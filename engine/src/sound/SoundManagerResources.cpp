@@ -1,5 +1,5 @@
-#include "SoundFormatUtils.h"
-#include "SoundManagerInternal.h"
+#include "internal/SoundFormatUtils.h"
+#include "internal/SoundManagerInternal.h"
 #include "core/PathUtils.h"
 #include "sound/AudioLimits.h"
 #include "sound/SoundManager.h"

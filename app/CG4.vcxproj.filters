@@ -1,38 +1,47 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="Source Files">
-      <UniqueIdentifier>{C3D15084-84A4-4C1C-9028-3A2BC48B1348}</UniqueIdentifier>
+    <Filter Include="include">
+      <UniqueIdentifier>{0feb36d4-ded9-b530-8a82-8ce6435f7e81}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Header Files">
-      <UniqueIdentifier>{6E28D90A-E3EA-44B7-9680-8B1F4379498C}</UniqueIdentifier>
+    <Filter Include="include\effects">
+      <UniqueIdentifier>{a2ca2b62-a086-943c-a049-0c7ccaa304d2}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Resources">
-      <UniqueIdentifier>{F07B73D4-2836-4F98-A337-C35291657A7F}</UniqueIdentifier>
+    <Filter Include="include\scene">
+      <UniqueIdentifier>{8122cdb0-e911-eb3b-b656-1a359e6c02ce}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Resources\Textures">
-      <UniqueIdentifier>{06D4E7A4-80BC-405A-8479-6CBAE51C1D02}</UniqueIdentifier>
+    <Filter Include="resources">
+      <UniqueIdentifier>{c758b555-82ef-6e3e-80e5-993b9e55d93b}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Resources\Textures\Source">
-      <UniqueIdentifier>{965F3F98-C41B-4B95-A761-2B67D49E0A2E}</UniqueIdentifier>
+    <Filter Include="resources\ui">
+      <UniqueIdentifier>{003b3e55-154c-ff36-a53b-279728c2471c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src">
+      <UniqueIdentifier>{c202d925-8342-8c3b-bbac-54dfa101ad31}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\scene">
+      <UniqueIdentifier>{72706981-6907-ef3f-9df9-4b763cf81236}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\main.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\ParticleDemoScene.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>src\scene</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\effects\FireworkHitEffectPresets.h">
+      <Filter>include\effects</Filter>
+    </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\ParticleDemoScene.h">
-      <Filter>Header Files</Filter>
+      <Filter>include\scene</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="$(MSBuildThisFileDirectory)resources\textures\flame_spread_atlas.png">
-      <Filter>Resources\Textures</Filter>
+    <None Include="$(MSBuildThisFileDirectory)resources\ui\space_particle_prompt.png">
+      <Filter>resources\ui</Filter>
     </None>
   </ItemGroup>
 </Project>

@@ -1,4 +1,4 @@
-#include "ModelPrimitiveFactoryInternal.h"
+#include "internal/ModelPrimitiveFactoryInternal.h"
 #include "core/ResourceHandle.h"
 #include "model/ModelLimits.h"
 
@@ -27,7 +27,7 @@ bool CanBuildProceduralMesh(size_t vertexCount, size_t indexCount, size_t extraC
     size_t vertexBytes = 0;
     size_t indexBytes = 0;
     size_t totalBytes = 0;
-    if (!CheckedMultiplySize(vertexCount, sizeof(Vertex), vertexBytes) ||
+    if (!CheckedMultiplySize(vertexCount, sizeof(ModelVertex), vertexBytes) ||
         !CheckedMultiplySize(indexCount, sizeof(uint32_t), indexBytes) ||
         !CheckedAddSize(vertexBytes, indexBytes, totalBytes) ||
         !CheckedAddSize(totalBytes, extraCpuBytes, totalBytes)) {
@@ -54,7 +54,7 @@ bool CheckedAddSize(size_t lhs, size_t rhs, size_t& out) {
     return true;
 }
 
-bool ReserveProceduralMesh(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices,
+bool ReserveProceduralMesh(std::vector<ModelVertex>& vertices, std::vector<uint32_t>& indices,
                            size_t vertexCount, size_t indexCount, size_t extraCpuBytes) {
     if (!CanBuildProceduralMesh(vertexCount, indexCount, extraCpuBytes)) {
         return false;

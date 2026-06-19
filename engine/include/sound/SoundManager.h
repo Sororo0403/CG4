@@ -1,6 +1,7 @@
 #pragma once
 #include "core/ResourceHandle.h"
 #include "sound/AudioFileLoader.h"
+#include "sound/ISoundService.h"
 #include <DirectXMath.h>
 #include <cstddef>
 #include <cstdint>
@@ -11,23 +12,15 @@
 /// <summary>
 /// Media Foundationで音声を読み込み、XAudio2で再生を管理する
 /// </summary>
-class SoundManager {
+class SoundManager : public ISoundService {
   public:
-    static constexpr uint32_t kInvalidVoiceHandle = kInvalidResourceId;
-    static constexpr uint32_t kInvalidSoundId = kInvalidResourceId;
-
     using SoundInfo = AudioFileLoader::SoundData::Info;
-
-    /// <summary>
-    /// SoundManagerの共有インスタンスを取得する
-    /// </summary>
-    static SoundManager &GetInstance();
 
     /// <summary>
     /// 音声リソースとMedia Foundationを破棄する
     /// </summary>
     SoundManager();
-    ~SoundManager();
+    ~SoundManager() override;
 
     /// <summary>
     /// Media Foundation、COM、XAudio2エンジンとマスターボイスを初期化する
@@ -72,8 +65,8 @@ class SoundManager {
     uint32_t CreatePcm16Sound(const std::wstring &cacheKey,
                               const std::vector<int16_t> &pcmSamples,
                               uint32_t sampleRate = 48000,
-                              uint16_t channels = 1);
-    uint32_t FindPcm16Sound(const std::wstring &cacheKey) const;
+                              uint16_t channels = 1) override;
+    uint32_t FindPcm16Sound(const std::wstring &cacheKey) const override;
     bool RemoveSound(uint32_t soundId);
     SoundHandle CreatePcm16SoundHandle(
         const std::wstring &cacheKey,
@@ -93,7 +86,8 @@ class SoundManager {
     /// <summary>
     /// Playを実行する
     /// </summary>
-    uint32_t Play(uint32_t soundId, float volume = 1.0f, bool loop = false);
+    uint32_t Play(uint32_t soundId, float volume = 1.0f,
+                  bool loop = false) override;
     VoiceHandle Play(SoundHandle sound, float volume = 1.0f,
                      bool loop = false) {
         return VoiceHandle(Play(sound.Get(), volume, loop));
@@ -103,7 +97,7 @@ class SoundManager {
     /// 登録済み音声IDのデコード済みデータを指定秒から再生する
     /// </summary>
     uint32_t PlayFrom(uint32_t soundId, float startSeconds,
-                      float volume = 1.0f, bool loop = false);
+                      float volume = 1.0f, bool loop = false) override;
     VoiceHandle PlayFrom(SoundHandle sound, float startSeconds,
                          float volume = 1.0f, bool loop = false) {
         return VoiceHandle(PlayFrom(sound.Get(), startSeconds, volume, loop));
@@ -114,7 +108,7 @@ class SoundManager {
     /// </summary>
     uint32_t Play3D(uint32_t soundId,
                     const DirectX::XMFLOAT3 &sourcePosition,
-                    float volume = 1.0f, bool loop = false);
+                    float volume = 1.0f, bool loop = false) override;
     VoiceHandle Play3D(SoundHandle sound,
                        const DirectX::XMFLOAT3 &sourcePosition,
                        float volume = 1.0f, bool loop = false) {
@@ -134,7 +128,7 @@ class SoundManager {
     /// <summary>
     /// 指定した再生中ボイスを停止する
     /// </summary>
-    void Stop(uint32_t voiceHandle);
+    void Stop(uint32_t voiceHandle) override;
     void Stop(VoiceHandle voice) { Stop(voice.Get()); }
 
     /// <summary>
@@ -152,7 +146,7 @@ class SoundManager {
     /// <summary>
     /// 指定した再生中ボイスの音量を設定する
     /// </summary>
-    void SetVoiceVolume(uint32_t voiceHandle, float volume);
+    void SetVoiceVolume(uint32_t voiceHandle, float volume) override;
     void SetVoiceVolume(VoiceHandle voice, float volume) {
         SetVoiceVolume(voice.Get(), volume);
     }
@@ -176,7 +170,8 @@ class SoundManager {
     /// <summary>
     /// 指定した再生中ボイスの周波数比率（ピッチ）を設定する
     /// </summary>
-    void SetVoiceFrequencyRatio(uint32_t voiceHandle, float frequencyRatio);
+    void SetVoiceFrequencyRatio(uint32_t voiceHandle,
+                                float frequencyRatio) override;
     void SetVoiceFrequencyRatio(VoiceHandle voice, float frequencyRatio) {
         SetVoiceFrequencyRatio(voice.Get(), frequencyRatio);
     }
@@ -208,15 +203,16 @@ class SoundManager {
     /// <summary>
     /// 3Dサウンドのリスナー位置と向きを設定する
     /// </summary>
-    void SetListener(const DirectX::XMFLOAT3 &position,
-                     const DirectX::XMFLOAT3 &forward,
-                     const DirectX::XMFLOAT3 &up = {0.0f, 1.0f, 0.0f});
+    void SetListener(
+        const DirectX::XMFLOAT3 &position,
+        const DirectX::XMFLOAT3 &forward,
+        const DirectX::XMFLOAT3 &up = {0.0f, 1.0f, 0.0f}) override;
 
     /// <summary>
     /// 3Dボイスの音源位置を更新する
     /// </summary>
     void SetVoicePosition(uint32_t voiceHandle,
-                          const DirectX::XMFLOAT3 &sourcePosition);
+                          const DirectX::XMFLOAT3 &sourcePosition) override;
     void SetVoicePosition(VoiceHandle voice,
                           const DirectX::XMFLOAT3 &sourcePosition) {
         SetVoicePosition(voice.Get(), sourcePosition);
@@ -226,7 +222,7 @@ class SoundManager {
     /// 3Dボイスの距離減衰範囲を設定する
     /// </summary>
     void SetVoice3DRange(uint32_t voiceHandle, float minDistance,
-                         float maxDistance);
+                         float maxDistance) override;
     void SetVoice3DRange(VoiceHandle voice, float minDistance,
                          float maxDistance) {
         SetVoice3DRange(voice.Get(), minDistance, maxDistance);
@@ -243,7 +239,7 @@ class SoundManager {
     /// <summary>
     /// すべての再生中ボイスを停止する
     /// </summary>
-    void StopAll();
+    void StopAll() override;
 
     /// <summary>
     /// 再生済みボイスを破棄する
@@ -253,13 +249,13 @@ class SoundManager {
     /// <summary>
     /// 指定したボイスが再生中かを取得する
     /// </summary>
-    bool IsPlaying(uint32_t voiceHandle) const;
+    bool IsPlaying(uint32_t voiceHandle) const override;
     bool IsPlaying(VoiceHandle voice) const { return IsPlaying(voice.Get()); }
 
     /// <summary>
     /// 読み込み済み音声の情報を取得する
     /// </summary>
-    const SoundInfo *GetInfo(uint32_t soundId) const;
+    const SoundInfo *GetInfo(uint32_t soundId) const override;
     const SoundInfo *GetInfo(SoundHandle sound) const {
         return GetInfo(sound.Get());
     }

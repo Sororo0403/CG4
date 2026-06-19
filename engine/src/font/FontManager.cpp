@@ -437,16 +437,17 @@ void FontManager::Initialize(TextureManager *textureManager) {
         return;
     }
 
-    static constexpr const wchar_t *kFallbackFamilies[] = {
-        L"Yu Gothic UI", L"Meiryo UI", L"Segoe UI", L"Arial"};
-    for (const wchar_t *family : kFallbackFamilies) {
-        state_->defaultFont = LoadSystemFontFamily(family);
-        if (state_->defaultFont.IsValid()) {
-            break;
-        }
-    }
+    state_->defaultFont =
+        LoadFont(L"engine/resources/fonts/MPLUS1/MPLUS1-ExtraBold.ttf");
     if (!state_->defaultFont.IsValid()) {
-        Finalize();
+        static constexpr const wchar_t *kFallbackFamilies[] = {
+            L"Yu Gothic UI", L"Meiryo UI", L"Segoe UI", L"Arial"};
+        for (const wchar_t *family : kFallbackFamilies) {
+            state_->defaultFont = LoadSystemFontFamily(family);
+            if (state_->defaultFont.IsValid()) {
+                break;
+            }
+        }
     }
 }
 
@@ -463,8 +464,7 @@ bool FontManager::Finalize(bool allowFrameAbort) {
 }
 
 bool FontManager::IsReady() const {
-    return state_->textureManager != nullptr && state_->dwriteFactory != nullptr &&
-           state_->defaultFont.IsValid();
+    return state_->textureManager != nullptr && state_->dwriteFactory != nullptr;
 }
 
 FontHandle FontManager::LoadFont(const std::wstring &filePath) {
@@ -474,6 +474,10 @@ FontHandle FontManager::LoadFont(const std::wstring &filePath) {
 
     const std::filesystem::path resolvedPath = ResolveFontPath(filePath);
     if (resolvedPath.empty()) {
+        return {};
+    }
+    std::error_code existsError;
+    if (!std::filesystem::exists(resolvedPath, existsError) || existsError) {
         return {};
     }
 

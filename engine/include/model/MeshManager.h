@@ -104,6 +104,19 @@ class MeshManager {
   private:
     struct State;
 
+    bool ReserveMeshStorage();
+    bool StoreFrameUploadBuffers(
+        const Microsoft::WRL::ComPtr<ID3D12Resource> &vertexUploadBuffer,
+        const Microsoft::WRL::ComPtr<ID3D12Resource> &indexUploadBuffer);
+    bool StoreMesh(Mesh &&mesh, uint32_t &meshId);
+    void RollBackStoredMesh(uint32_t meshId);
+    void RemoveLastStoredUploadBuffers();
+    bool RegisterMeshFrameRollback(uint32_t meshId);
+    bool KeepSubmittedUploadBuffers(
+        uint32_t meshId,
+        const Microsoft::WRL::ComPtr<ID3D12Resource> &vertexUploadBuffer,
+        const Microsoft::WRL::ComPtr<ID3D12Resource> &indexUploadBuffer);
+
     DirectXCommon *dxCommon_ = nullptr;
     std::unique_ptr<State> state_;
 };

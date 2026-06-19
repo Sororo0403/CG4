@@ -10,11 +10,6 @@ struct MeshVSInput
     float2 uv : TEXCOORD;
     float4 color : COLOR;
     float4 tangent : TANGENT;
-    float customScalar0 : CUSTOMSCALAR0;
-    float3 customPosition0 : CUSTOMPOSITION0;
-    float4 customVector0 : CUSTOMVECTOR0;
-    float3 customPosition1 : CUSTOMPOSITION1;
-    float4 customVector1 : CUSTOMVECTOR1;
 };
 
 struct MeshInstanceInput
@@ -24,11 +19,6 @@ struct MeshInstanceInput
     float2 uv : TEXCOORD;
     float4 color : COLOR;
     float4 tangent : TANGENT;
-    float customScalar0 : CUSTOMSCALAR0;
-    float3 customPosition0 : CUSTOMPOSITION0;
-    float4 customVector0 : CUSTOMVECTOR0;
-    float3 customPosition1 : CUSTOMPOSITION1;
-    float4 customVector1 : CUSTOMVECTOR1;
     float4 world0 : WORLD0;
     float4 world1 : WORLD1;
     float4 world2 : WORLD2;
@@ -45,10 +35,10 @@ struct MeshVSOutput
     float3 worldPos : TEXCOORD1;
     float3 worldNormal : TEXCOORD2;
     float4 worldTangent : TEXCOORD3;
-    float customScalar0 : TEXCOORD4;
+    float surfaceWeight : TEXCOORD4;
     float3 ditherPos : TEXCOORD5;
     nointerpolation float coverageHash : TEXCOORD6;
-    float4 customVector0 : TEXCOORD7;
+    float4 surfaceParams : TEXCOORD7;
     float4 color : COLOR;
 };
 
@@ -116,8 +106,8 @@ MeshVSOutput BuildMeshVertexOutput(
     float4x4 clipTransform,
     float2 uv,
     float tangentW,
-    float customScalar0,
-    float4 customVector0,
+    float surfaceWeight,
+    float4 surfaceParams,
     float4 color)
 {
     MeshVSOutput output;
@@ -126,10 +116,10 @@ MeshVSOutput BuildMeshVertexOutput(
     output.worldPos = worldTransform.position.xyz;
     output.worldNormal = worldTransform.normal;
     output.worldTangent = float4(worldTransform.tangent, tangentW);
-    output.customScalar0 = customScalar0;
+    output.surfaceWeight = surfaceWeight;
     output.ditherPos = worldTransform.position.xyz;
     output.coverageHash = Dither01(worldTransform.position.xyz, uv);
-    output.customVector0 = customVector0;
+    output.surfaceParams = surfaceParams;
     output.color = color;
     return output;
 }

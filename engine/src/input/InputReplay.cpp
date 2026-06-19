@@ -1,6 +1,6 @@
 #include "input/Input.h"
 
-#include "InputInternal.h"
+#include "internal/InputInternal.h"
 
 #include <algorithm>
 #include <chrono>

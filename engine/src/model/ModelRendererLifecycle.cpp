@@ -1,4 +1,4 @@
-#include "ModelRendererInternal.h"
+#include "internal/ModelRendererInternal.h"
 #include "core/Numeric.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
@@ -7,6 +7,7 @@
 #include "model/ModelRenderer.h"
 #include "model/RendererMath.h"
 #include "model/Vertex.h"
+#include "internal/RendererPipelineVariantUtils.h"
 #include "texture/TextureManager.h"
 
 #include <algorithm>
@@ -278,20 +279,14 @@ void ModelRenderer::ResetResources() {
 }
 
 bool ModelRenderer::IsReady() const {
-    const auto hasAllPipelineStates = [](const auto& pipelines) {
-        return std::all_of(std::begin(pipelines), std::end(pipelines),
-                           [](const auto &pipeline) {
-                               return pipeline != nullptr;
-                           });
-    };
-
     return state_->dxCommon != nullptr && state_->srvManager != nullptr &&
            state_->meshManager != nullptr && state_->textureManager != nullptr &&
            state_->materialManager != nullptr && state_->rootSignature &&
            state_->shadowRootSignature && state_->skinningRootSignature &&
-           hasAllPipelineStates(state_->pipelineStates) &&
-           hasAllPipelineStates(state_->instancedPipelineStates) && state_->shadowPSO &&
-           state_->instancedShadowPSO && state_->skinningPSO && GetIdentityPaletteAddress() != 0 &&
+           RendererPipelineVariantUtils::HasAllPipelineStates(state_->pipelineStates) &&
+           RendererPipelineVariantUtils::HasAllPipelineStates(state_->instancedPipelineStates) &&
+           state_->shadowPSO && state_->instancedShadowPSO &&
+           state_->skinningPSO && GetIdentityPaletteAddress() != 0 &&
            state_->uploadBuffer.GetBytesPerFrame() != 0;
 }
 

@@ -1,7 +1,7 @@
 #include "sound/SoundManager.h"
 
-#include "SoundFormatUtils.h"
-#include "SoundManagerInternal.h"
+#include "internal/SoundFormatUtils.h"
+#include "internal/SoundManagerInternal.h"
 #include "core/Numeric.h"
 
 #include <Objbase.h>
@@ -12,11 +12,6 @@ namespace {
 using SoundFormatUtils::MakeHResultMessage;
 
 } // namespace
-
-SoundManager &SoundManager::GetInstance() {
-    static SoundManager instance;
-    return instance;
-}
 
 SoundManager::SoundManager() : state_(std::make_unique<State>()) {}
 
@@ -31,7 +26,7 @@ const std::string &SoundManager::GetLastInitializeError() const {
 }
 
 void SoundManager::Finalize() {
-    StopAll();
+    SoundManager::StopAll();
     state_->sounds.clear();
     state_->pathToSoundId.clear();
 

@@ -20,11 +20,9 @@ enum class RenderObjectFlags : uint32_t {
     Transparent = 1u << 1,
     CastShadow = 1u << 2,
     ReceiveShadow = 1u << 3,
-    RaytracingVisible = 1u << 4,
-    MotionVectors = 1u << 5,
-    GpuCull = 1u << 6,
-    Foliage = 1u << 7,
-    PlanarReflective = 1u << 8,
+    MotionVectors = 1u << 4,
+    GpuCull = 1u << 5,
+    Foliage = 1u << 6,
 };
 
 inline constexpr RenderObjectFlags operator|(RenderObjectFlags lhs,
@@ -88,10 +86,8 @@ struct RenderSceneStats {
     uint32_t opaqueMeshCount = 0;
     uint32_t transparentMeshCount = 0;
     uint32_t shadowMeshCount = 0;
-    uint32_t raytracingMeshCount = 0;
     uint32_t opaqueInstancedMeshCount = 0;
     uint32_t shadowInstancedMeshCount = 0;
-    uint32_t raytracingInstancedMeshCount = 0;
 };
 
 class RenderScene {
@@ -105,12 +101,10 @@ class RenderScene {
     std::span<const RenderMeshItem> OpaqueMeshes() const;
     std::span<const RenderMeshItem> TransparentMeshes() const;
     std::span<const RenderMeshItem> ShadowMeshes() const;
-    std::span<const RenderMeshItem> RaytracingMeshes() const;
 
     std::span<const RenderInstancedMeshItem> InstancedMeshes() const;
     std::span<const RenderInstancedMeshItem> OpaqueInstancedMeshes() const;
     std::span<const RenderInstancedMeshItem> ShadowInstancedMeshes() const;
-    std::span<const RenderInstancedMeshItem> RaytracingInstancedMeshes() const;
 
     const RenderSceneStats &GetStats() const { return stats_; }
     bool Empty() const {
@@ -129,12 +123,10 @@ class RenderScene {
     std::vector<RenderMeshItem> opaqueMeshes_;
     std::vector<RenderMeshItem> transparentMeshes_;
     std::vector<RenderMeshItem> shadowMeshes_;
-    std::vector<RenderMeshItem> raytracingMeshes_;
 
     std::vector<RenderInstancedMeshItem> instancedMeshes_;
     std::vector<RenderInstancedMeshItem> opaqueInstancedMeshes_;
     std::vector<RenderInstancedMeshItem> shadowInstancedMeshes_;
-    std::vector<RenderInstancedMeshItem> raytracingInstancedMeshes_;
 
     RenderSceneStats stats_{};
 };

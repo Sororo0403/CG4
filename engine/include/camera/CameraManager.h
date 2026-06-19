@@ -9,12 +9,6 @@
 /// </summary>
 class CameraManager {
   public:
-    static CameraManager &GetInstance();
-    /// <summary>
-    /// ActiveInstanceを設定する
-    /// </summary>
-    static void SetActiveInstance(CameraManager *instance);
-
     CameraManager() = default;
     CameraManager(const CameraManager &) = delete;
     CameraManager &operator=(const CameraManager &) = delete;

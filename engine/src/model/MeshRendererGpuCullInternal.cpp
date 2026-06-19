@@ -1,6 +1,6 @@
-#include "MeshRendererGpuCullInternal.h"
+#include "internal/MeshRendererGpuCullInternal.h"
 #include "graphics/DxHelpers.h"
-#include "../graphics/FrustumPlaneUtils.h"
+#include "../graphics/internal/FrustumPlaneUtils.h"
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -43,6 +43,12 @@ uint32_t IsDistanceCullEnabled(float maxDistance) {
     const float safeMaxDistance =
         std::isfinite(maxDistance) ? (std::max)(maxDistance, 0.0f) : 0.0f;
     return safeMaxDistance > 0.0f ? 1u : 0u;
+}
+
+uint32_t IsMinDistanceCullEnabled(float minDistance) {
+    const float safeMinDistance =
+        std::isfinite(minDistance) ? (std::max)(minDistance, 0.0f) : 0.0f;
+    return safeMinDistance > 0.0f ? 1u : 0u;
 }
 
 XMFLOAT4 BuildLocalCenterAndRadius(const MeshGpuCullBounds &localBounds) {

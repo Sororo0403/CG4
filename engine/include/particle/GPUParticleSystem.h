@@ -2,6 +2,7 @@
 #include "camera/Camera.h"
 #include "core/ResourceHandle.h"
 #include "particle/ParticleEmitterSettings.h"
+#include <d3d12.h>
 #include <DirectXMath.h>
 #include <cstddef>
 #include <cstdint>
@@ -35,16 +36,7 @@ struct GPUParticleExplicitSpawn {
     DirectX::XMFLOAT4 motion{0.0f, 0.0f, 0.98f, 0.0f};
     DirectX::XMFLOAT4 accelerationAtlas{0.0f, 0.0f, 0.0f, 0.0f};
     DirectX::XMFLOAT4 drawAxis{0.0f, 0.0f, 0.0f, 0.0f};
-    DirectX::XMFLOAT4 shapeParams{0.0f, 0.0f, 0.0f, 0.0f};
     DirectX::XMUINT4 atlas{1u, 1u, 1u, 0u};
-};
-
-enum class GPUParticleProceduralShape : uint32_t {
-    SoftCircle = 0,
-    Ring = 1,
-    Spark = 2,
-    Slash = 3,
-    Smoke = 4,
 };
 
 /// <summary>
@@ -152,7 +144,6 @@ class GPUParticleSystem {
         DirectX::XMFLOAT4 params2{};
         DirectX::XMFLOAT4 params3{};
         DirectX::XMFLOAT4 params4{};
-        DirectX::XMFLOAT4 params5{};
     };
 
     struct UpdateConstantBufferData {
@@ -218,6 +209,24 @@ class GPUParticleSystem {
     /// パーティクル更新用ComputeShaderを実行する
     /// </summary>
     void DispatchUpdate();
+    bool HasUpdateDispatchResources() const;
+    bool BindDescriptorHeap(ID3D12GraphicsCommandList *&commandList);
+    bool RegisterUpdateDispatchRollback(
+        D3D12_RESOURCE_STATES previousActiveIndexState,
+        D3D12_RESOURCE_STATES previousDrawArgsState,
+        bool previousUpdatePending, bool previousClearPending,
+        std::deque<ParticleEmitterSettings> previousPendingEmitSettings,
+        std::vector<GPUParticleExplicitSpawn> previousPendingExplicitParticles);
+    void TransitionUpdateResourcesToUav(ID3D12GraphicsCommandList *commandList);
+    void ClearUpdateCounters(ID3D12GraphicsCommandList *commandList);
+    void RecordUpdateUavBarrier(ID3D12GraphicsCommandList *commandList);
+    void RecordQueuedEmitterDispatches(
+        ID3D12GraphicsCommandList *commandList,
+        const std::deque<ParticleEmitterSettings> &emitSettings);
+    bool RecordExplicitParticleDispatches(
+        ID3D12GraphicsCommandList *commandList,
+        std::vector<GPUParticleExplicitSpawn> explicitParticles);
+    void TransitionUpdateResourcesForDraw(ID3D12GraphicsCommandList *commandList);
     void RecordUpdateDispatch(const EmitterForGPU &emitter,
                               uint32_t dispatchParticleCount = 0u);
     void RecordExplicitSpawnDispatch(uint32_t spawnCount);
@@ -241,6 +250,16 @@ class GPUParticleSystem {
         const std::vector<ParticleForGPU> &particles);
     bool HasRequiredGpuResources() const;
     void QueueInitialUpdateIfNeeded();
+    bool HasDrawResources() const;
+    bool ShouldSkipDraw() const;
+    ConstantFrame *PrepareDrawFrame(ID3D12GraphicsCommandList *&commandList);
+    void UpdateDrawConstants(const Camera &camera, ConstantFrame &constantFrame);
+    bool ResolveDrawTextureHandles(D3D12_GPU_DESCRIPTOR_HANDLE &baseTextureHandle,
+                                   D3D12_GPU_DESCRIPTOR_HANDLE &noiseTextureHandle) const;
+    void RecordDrawCommands(ID3D12GraphicsCommandList *commandList,
+                            ConstantFrame &constantFrame,
+                            D3D12_GPU_DESCRIPTOR_HANDLE baseTextureHandle,
+                            D3D12_GPU_DESCRIPTOR_HANDLE noiseTextureHandle);
 
     /// <summary>
     /// 保持しているGPUリソースを解放する

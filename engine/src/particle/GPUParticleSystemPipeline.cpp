@@ -1,10 +1,10 @@
-﻿#include "particle/GPUParticleSystem.h"
-#include "GPUParticleSystemInternal.h"
-#include "GPUParticleSystemShared.h"
+#include "particle/GPUParticleSystem.h"
+#include "internal/GPUParticleSystemInternal.h"
+#include "internal/GPUParticleSystemShared.h"
 
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
-#include "../graphics/RootSignatureUtils.h"
+#include "../graphics/internal/RootSignatureUtils.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 

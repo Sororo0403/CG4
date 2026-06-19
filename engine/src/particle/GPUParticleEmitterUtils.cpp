@@ -1,4 +1,4 @@
-#include "GPUParticleEmitterUtils.h"
+#include "internal/GPUParticleEmitterUtils.h"
 
 #include "core/ResourceHandle.h"
 #include "texture/TextureManager.h"

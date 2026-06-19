@@ -1,7 +1,7 @@
 #include "graphics/DirectXCommon.h"
-#include "DirectXCommonDiagnostics.h"
-#include "DirectXCommonInternal.h"
-#include "DirectXCommonState.h"
+#include "internal/DirectXCommonDiagnostics.h"
+#include "internal/DirectXCommonInternal.h"
+#include "internal/DirectXCommonState.h"
 
 #include <algorithm>
 #include <iterator>
@@ -36,7 +36,7 @@ void DirectXCommon::CreateFence() {
     }
     state_->fence->SetName(L"DirectXCommon.FrameFence");
 
-    state_->fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+    state_->fenceEvent.Reset(CreateEvent(nullptr, FALSE, FALSE, nullptr));
     if (!state_->fenceEvent) {
         OutputDebugStringA("DirectXCommon: CreateEvent failed\n");
         state_->fence.Reset();
@@ -44,7 +44,7 @@ void DirectXCommon::CreateFence() {
 }
 
 void DirectXCommon::WaitForFrame(UINT frameIndex) {
-    if (!state_->fence || state_->fenceEvent == nullptr ||
+    if (!state_->fence || !state_->fenceEvent ||
         frameIndex >= kSwapChainBufferCount) {
         return;
     }
@@ -54,11 +54,12 @@ void DirectXCommon::WaitForFrame(UINT frameIndex) {
         return;
     }
 
-    if (LogIfFailed(state_->fence->SetEventOnCompletion(fenceValue, state_->fenceEvent),
+    if (LogIfFailed(state_->fence->SetEventOnCompletion(
+                        fenceValue, state_->fenceEvent.Get()),
                     "state_->fence->SetEventOnCompletion failed")) {
         return;
     }
-    WaitForSingleObject(state_->fenceEvent, INFINITE);
+    WaitForSingleObject(state_->fenceEvent.Get(), INFINITE);
 }
 
 void DirectXCommon::TrackGpuPhase(const char *phase) {

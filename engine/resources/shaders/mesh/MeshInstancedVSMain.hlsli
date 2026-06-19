@@ -15,8 +15,8 @@ MeshVSOutput main(MeshInstanceInput input)
         viewProjection,
         input.uv,
         input.tangent.w,
-        input.customScalar0,
-        input.customVector0,
+        0.0f,
+        float4(0.0f, 0.0f, 0.0f, 0.0f),
         color);
 }
 

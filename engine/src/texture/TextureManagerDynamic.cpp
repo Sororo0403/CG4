@@ -1,5 +1,5 @@
-#include "../graphics/GpuResourceScopes.h"
-#include "TextureManagerInternal.h"
+#include "../graphics/internal/GpuResourceScopes.h"
+#include "internal/TextureManagerInternal.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"

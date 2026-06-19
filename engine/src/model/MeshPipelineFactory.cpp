@@ -2,33 +2,59 @@
 
 #include "graphics/DxHelpers.h"
 #include "graphics/ShaderCompiler.h"
-#include "RendererPipelineVariantUtils.h"
+#include "internal/RendererPipelineVariantUtils.h"
 
 #include <algorithm>
+#include <array>
 #include <iterator>
 
 using Microsoft::WRL::ComPtr;
 
 namespace {
 
+struct MeshBlendPolicy {
+    MeshBlendMode mode = MeshBlendMode::Opaque;
+    BOOL blendEnable = FALSE;
+    D3D12_BLEND destBlend = D3D12_BLEND_INV_SRC_ALPHA;
+    D3D12_BLEND destBlendAlpha = D3D12_BLEND_ZERO;
+};
+
+const std::array<MeshBlendPolicy, 3> &MeshBlendPolicies() {
+    static const std::array<MeshBlendPolicy, 3> kPolicies = {{
+        {MeshBlendMode::Opaque, FALSE, D3D12_BLEND_INV_SRC_ALPHA,
+         D3D12_BLEND_ZERO},
+        {MeshBlendMode::Alpha, TRUE, D3D12_BLEND_INV_SRC_ALPHA,
+         D3D12_BLEND_ZERO},
+        {MeshBlendMode::Additive, TRUE, D3D12_BLEND_ONE, D3D12_BLEND_ONE},
+    }};
+    return kPolicies;
+}
+
+const MeshBlendPolicy &PolicyForMeshBlendMode(MeshBlendMode mode) {
+    const auto &policies = MeshBlendPolicies();
+    const auto found = std::find_if(
+        policies.begin(), policies.end(),
+        [mode](const MeshBlendPolicy &policy) {
+            return policy.mode == mode;
+        });
+    return found != policies.end() ? *found : policies.front();
+}
+
 D3D12_BLEND_DESC MakeMeshBlendState(MeshBlendMode mode) {
     D3D12_BLEND_DESC blend = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     blend.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    const MeshBlendPolicy &policy = PolicyForMeshBlendMode(mode);
 
-    if (mode == MeshBlendMode::Opaque) {
-        blend.RenderTarget[0].BlendEnable = FALSE;
+    blend.RenderTarget[0].BlendEnable = policy.blendEnable;
+    if (!policy.blendEnable) {
         return blend;
     }
 
-    blend.RenderTarget[0].BlendEnable = TRUE;
     blend.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-    blend.RenderTarget[0].DestBlend =
-        mode == MeshBlendMode::Additive ? D3D12_BLEND_ONE
-                                        : D3D12_BLEND_INV_SRC_ALPHA;
+    blend.RenderTarget[0].DestBlend = policy.destBlend;
     blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
     blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-    blend.RenderTarget[0].DestBlendAlpha =
-        mode == MeshBlendMode::Additive ? D3D12_BLEND_ONE : D3D12_BLEND_ZERO;
+    blend.RenderTarget[0].DestBlendAlpha = policy.destBlendAlpha;
     blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
     return blend;
 }

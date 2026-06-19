@@ -39,7 +39,6 @@ struct ExplicitParticleSpawn
     float4 motion;
     float4 accelerationAtlas;
     float4 drawAxis;
-    float4 shapeParams;
     uint4 atlas;
 };
 
@@ -206,7 +205,6 @@ void Respawn(uint index, inout Particle particle)
     particle.params3 =
         float4(emitterAccelerationAndTurbulence.xyz, max(1.0f, emitterMotion.w));
     particle.params4 = float4(0.0f, 0.0f, 0.0f, 0.0f);
-    particle.params5 = float4(0.0f, 0.0f, 0.0f, 0.0f);
     particle.isActive = 1;
 }
 
@@ -240,7 +238,6 @@ void RespawnExplicit(uint particleIndex, uint spawnIndex, inout Particle particl
     particle.params3 =
         float4(spawn.accelerationAtlas.xyz, max(1.0f, (float) spawn.atlas.y));
     particle.params4 = spawn.drawAxis;
-    particle.params5 = spawn.shapeParams;
     particle.isActive = 1;
 }
 

@@ -1,6 +1,6 @@
 #include "model/MaterialManager.h"
 
-#include "MaterialManagerInternal.h"
+#include "internal/MaterialManagerInternal.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"

@@ -1,9 +1,9 @@
 #include "graphics/PostProcessSystem.h"
-#include "PostProcessSystemInternal.h"
+#include "internal/PostProcessSystemInternal.h"
 
 #include "core/Numeric.h"
 #include "graphics/DirectXCommon.h"
-#include "ConstantBufferUtils.h"
+#include "internal/ConstantBufferUtils.h"
 
 #include <algorithm>
 

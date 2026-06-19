@@ -1,7 +1,7 @@
 #include "graphics/DepthPyramid.h"
 
-#include "DepthPyramidInternal.h"
-#include "RootSignatureUtils.h"
+#include "internal/DepthPyramidInternal.h"
+#include "internal/RootSignatureUtils.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"

@@ -26,42 +26,84 @@ bool AssetHotReloader::WatchFile(const std::filesystem::path &path,
     }
 
     WatchedFile file{};
+    file.key = Lowercase(normalized.wstring());
     file.path = normalized;
     file.lastWriteTime = lastWriteTime;
     file.callback = std::move(callback);
-    watchedFiles_[Lowercase(normalized.wstring())] = std::move(file);
+    const auto existing =
+        std::find_if(watchedFiles_.begin(), watchedFiles_.end(),
+                     [&](const WatchedFile &watched) {
+                         return watched.key == file.key;
+                     });
+    if (existing != watchedFiles_.end()) {
+        *existing = std::move(file);
+    } else {
+        watchedFiles_.push_back(std::move(file));
+    }
     return true;
 }
 
 bool AssetHotReloader::WatchDirectory(
     const std::filesystem::path &directory,
     const std::vector<std::wstring> &extensions, ReloadCallback callback) {
-    if (!callback || !std::filesystem::exists(directory)) {
+    if (!callback) {
+        return false;
+    }
+
+    std::error_code error;
+    if (!std::filesystem::exists(directory, error) || error) {
         return false;
     }
 
     bool watchedAny = false;
-    for (const std::filesystem::directory_entry &entry :
-         std::filesystem::recursive_directory_iterator(directory)) {
-        if (!entry.is_regular_file()) {
+    std::filesystem::recursive_directory_iterator it(
+        directory, std::filesystem::directory_options::skip_permission_denied,
+        error);
+    const std::filesystem::recursive_directory_iterator end{};
+    if (error) {
+        return false;
+    }
+
+    while (it != end) {
+        const std::filesystem::directory_entry entry = *it;
+        error.clear();
+        if (!entry.is_regular_file(error) || error) {
+            it.increment(error);
+            if (error) {
+                break;
+            }
             continue;
         }
         if (!extensions.empty() && !HasExtension(entry.path(), extensions)) {
+            it.increment(error);
+            if (error) {
+                break;
+            }
             continue;
         }
         watchedAny = WatchFile(entry.path(), callback) || watchedAny;
+        it.increment(error);
+        if (error) {
+            break;
+        }
     }
     return watchedAny;
 }
 
 void AssetHotReloader::Unwatch(const std::filesystem::path &path) {
-    watchedFiles_.erase(Lowercase(NormalizePath(path).wstring()));
+    const std::wstring key = Lowercase(NormalizePath(path).wstring());
+    watchedFiles_.erase(
+        std::remove_if(watchedFiles_.begin(), watchedFiles_.end(),
+                       [&](const WatchedFile &file) {
+                           return file.key == key;
+                       }),
+        watchedFiles_.end());
 }
 
 void AssetHotReloader::Clear() { watchedFiles_.clear(); }
 
 void AssetHotReloader::Poll() {
-    for (auto &[_, file] : watchedFiles_) {
+    for (WatchedFile &file : watchedFiles_) {
         std::filesystem::file_time_type lastWriteTime{};
         if (!TryGetLastWriteTime(file.path, lastWriteTime)) {
             continue;

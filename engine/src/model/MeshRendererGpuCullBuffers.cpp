@@ -1,5 +1,5 @@
-﻿#include "model/MeshRenderer.h"
-#include "MeshRendererInternal.h"
+#include "model/MeshRenderer.h"
+#include "internal/MeshRendererInternal.h"
 
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
@@ -8,7 +8,7 @@
 #include "graphics/GpuResourceLifetime.h"
 #include "graphics/SrvManager.h"
 #include "model/Vertex.h"
-#include "../graphics/SrvDescriptorAllocation.h"
+#include "../graphics/internal/SrvDescriptorAllocation.h"
 
 #include <limits>
 
@@ -56,6 +56,9 @@ enum class GpuCullEnsureStatus {
     NeedsRebuild,
 };
 
+bool CanRecreateGpuCullResources(const DirectXCommon *dxCommon,
+                                 bool hasExistingResources);
+
 template <typename Buffer>
 bool PrepareGpuCullEnsureInputs(DirectXCommon *dxCommon,
                                 const SrvManager *srvManager,
@@ -89,6 +92,26 @@ GpuCullEnsureStatus BeginGpuCullEnsure(DirectXCommon *dxCommon,
     }
     return alreadyValid ? GpuCullEnsureStatus::AlreadyValid
                         : GpuCullEnsureStatus::NeedsRebuild;
+}
+
+template <typename Buffer, typename HasResources, typename ReleaseBuffer>
+GpuCullEnsureStatus BeginGpuCullRebuild(
+    DirectXCommon *dxCommon, const SrvManager *srvManager,
+    const MeshInstanceBuffer &sourceInstances, Buffer &buffer,
+    GpuCullEnsureInputs &inputs, HasResources hasResources,
+    ReleaseBuffer releaseBuffer) {
+    const GpuCullEnsureStatus status = BeginGpuCullEnsure(
+        dxCommon, srvManager, sourceInstances, buffer, inputs);
+    if (status != GpuCullEnsureStatus::NeedsRebuild) {
+        return status;
+    }
+    if (!CanRecreateGpuCullResources(dxCommon, hasResources(buffer))) {
+        return GpuCullEnsureStatus::Invalid;
+    }
+    if (!releaseBuffer(buffer) || hasResources(buffer)) {
+        return GpuCullEnsureStatus::Invalid;
+    }
+    return GpuCullEnsureStatus::NeedsRebuild;
 }
 
 bool CanRecreateGpuCullResources(const DirectXCommon *dxCommon,
@@ -269,8 +292,12 @@ bool MeshRenderer::ReleaseGpuLodCullBuffer(
 bool MeshRenderer::EnsureGpuCullBuffer(const MeshInstanceBuffer &sourceInstances,
                                        MeshGpuCullBuffer &buffer) {
     GpuCullEnsureInputs inputs{};
-    const GpuCullEnsureStatus status = BeginGpuCullEnsure(
-        state_->dxCommon, state_->srvManager, sourceInstances, buffer, inputs);
+    const GpuCullEnsureStatus status = BeginGpuCullRebuild(
+        state_->dxCommon, state_->srvManager, sourceInstances, buffer, inputs,
+        HasGpuCullResources,
+        [this](MeshGpuCullBuffer &target) {
+            return ReleaseGpuCullBuffer(target);
+        });
     if (status == GpuCullEnsureStatus::Invalid) {
         return false;
     }
@@ -280,14 +307,6 @@ bool MeshRenderer::EnsureGpuCullBuffer(const MeshInstanceBuffer &sourceInstances
     ID3D12Device *device = inputs.device;
     ID3D12Resource *sourceResource = inputs.sourceResource;
     const uint32_t instanceCount = inputs.instanceCount;
-
-    if (!CanRecreateGpuCullResources(state_->dxCommon,
-                                     HasGpuCullResources(buffer))) {
-        return false;
-    }
-    if (!ReleaseGpuCullBuffer(buffer) || HasGpuCullResources(buffer)) {
-        return false;
-    }
 
     GpuCullResourceDescs descs{};
     if (!MakeGpuCullResourceDescs(state_->srvManager, instanceCount, 4,
@@ -353,8 +372,12 @@ bool MeshRenderer::EnsureGpuCullBuffer(const MeshInstanceBuffer &sourceInstances
 bool MeshRenderer::EnsureGpuLodCullBuffer(
     const MeshInstanceBuffer &sourceInstances, MeshGpuLodCullBuffer &buffer) {
     GpuCullEnsureInputs inputs{};
-    const GpuCullEnsureStatus status = BeginGpuCullEnsure(
-        state_->dxCommon, state_->srvManager, sourceInstances, buffer, inputs);
+    const GpuCullEnsureStatus status = BeginGpuCullRebuild(
+        state_->dxCommon, state_->srvManager, sourceInstances, buffer, inputs,
+        HasGpuLodCullResources,
+        [this](MeshGpuLodCullBuffer &target) {
+            return ReleaseGpuLodCullBuffer(target);
+        });
     if (status == GpuCullEnsureStatus::Invalid) {
         return false;
     }
@@ -364,14 +387,6 @@ bool MeshRenderer::EnsureGpuLodCullBuffer(
     ID3D12Device *device = inputs.device;
     ID3D12Resource *sourceResource = inputs.sourceResource;
     const uint32_t instanceCount = inputs.instanceCount;
-
-    if (!CanRecreateGpuCullResources(state_->dxCommon,
-                                     HasGpuLodCullResources(buffer))) {
-        return false;
-    }
-    if (!ReleaseGpuLodCullBuffer(buffer) || HasGpuLodCullResources(buffer)) {
-        return false;
-    }
 
     GpuCullResourceDescs descs{};
     if (!MakeGpuCullResourceDescs(state_->srvManager, instanceCount,

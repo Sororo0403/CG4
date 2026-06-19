@@ -1,6 +1,6 @@
 #include "scene/SceneManager.h"
 
-#include "../graphics/GpuResourceScopes.h"
+#include "../graphics/internal/GpuResourceScopes.h"
 #include "graphics/DirectXCommon.h"
 #include "model/MeshManager.h"
 #include "scene/BaseScene.h"
@@ -230,6 +230,14 @@ void SceneManager::Draw() {
 
 bool SceneManager::UsesForeground3DPass() const {
     return currentScene_ && currentScene_->UsesForeground3DPass();
+}
+
+bool SceneManager::UsesVolumetricLightingPass() const {
+    return currentScene_ && currentScene_->UsesVolumetricLightingPass();
+}
+
+bool SceneManager::UsesSpotLightShadowPass() const {
+    return currentScene_ && currentScene_->UsesSpotLightShadowPass();
 }
 
 void SceneManager::DrawForeground3D() {

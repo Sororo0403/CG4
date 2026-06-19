@@ -1,4 +1,4 @@
-#include "TextureManagerDecoding.h"
+#include "internal/TextureManagerDecoding.h"
 #include "core/ComInitialization.h"
 #include "core/PathUtils.h"
 #include "texture/TextureLimits.h"
@@ -43,36 +43,43 @@ bool IsLikelyLinearDataTexture(const std::filesystem::path &path) {
 
 bool ShouldUseSrgb(const std::filesystem::path &path,
                    TextureManagerDecoding::TextureColorSpacePolicy colorSpace) {
-    switch (colorSpace) {
-    case TextureManagerDecoding::TextureColorSpacePolicy::Srgb:
-        return true;
-    case TextureManagerDecoding::TextureColorSpacePolicy::Linear:
-        return false;
-    case TextureManagerDecoding::TextureColorSpacePolicy::Auto:
-    default:
-        return !IsLikelyLinearDataTexture(path);
-    }
+    struct ColorSpaceDecision {
+        TextureManagerDecoding::TextureColorSpacePolicy policy;
+        bool useSrgb;
+    };
+    static constexpr std::array<ColorSpaceDecision, 2> kExplicitDecisions{{
+        {TextureManagerDecoding::TextureColorSpacePolicy::Srgb, true},
+        {TextureManagerDecoding::TextureColorSpacePolicy::Linear, false},
+    }};
+
+    const auto it = std::find_if(
+        kExplicitDecisions.begin(), kExplicitDecisions.end(),
+        [colorSpace](const ColorSpaceDecision &entry) {
+            return entry.policy == colorSpace;
+        });
+    return it != kExplicitDecisions.end() ? it->useSrgb
+                                          : !IsLikelyLinearDataTexture(path);
 }
 
 DXGI_FORMAT MakeSrgbFormat(DXGI_FORMAT format) {
-    switch (format) {
-    case DXGI_FORMAT_R8G8B8A8_UNORM:
-        return DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-    case DXGI_FORMAT_B8G8R8A8_UNORM:
-        return DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
-    case DXGI_FORMAT_B8G8R8X8_UNORM:
-        return DXGI_FORMAT_B8G8R8X8_UNORM_SRGB;
-    case DXGI_FORMAT_BC1_UNORM:
-        return DXGI_FORMAT_BC1_UNORM_SRGB;
-    case DXGI_FORMAT_BC2_UNORM:
-        return DXGI_FORMAT_BC2_UNORM_SRGB;
-    case DXGI_FORMAT_BC3_UNORM:
-        return DXGI_FORMAT_BC3_UNORM_SRGB;
-    case DXGI_FORMAT_BC7_UNORM:
-        return DXGI_FORMAT_BC7_UNORM_SRGB;
-    default:
-        return format;
-    }
+    struct SrgbFormatMap {
+        DXGI_FORMAT linear;
+        DXGI_FORMAT srgb;
+    };
+    static constexpr std::array<SrgbFormatMap, 7> kSrgbFormats{{
+        {DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB},
+        {DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB},
+        {DXGI_FORMAT_B8G8R8X8_UNORM, DXGI_FORMAT_B8G8R8X8_UNORM_SRGB},
+        {DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_BC1_UNORM_SRGB},
+        {DXGI_FORMAT_BC2_UNORM, DXGI_FORMAT_BC2_UNORM_SRGB},
+        {DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_BC3_UNORM_SRGB},
+        {DXGI_FORMAT_BC7_UNORM, DXGI_FORMAT_BC7_UNORM_SRGB},
+    }};
+
+    const auto it = std::find_if(
+        kSrgbFormats.begin(), kSrgbFormats.end(),
+        [format](const SrgbFormatMap &entry) { return entry.linear == format; });
+    return it != kSrgbFormats.end() ? it->srgb : format;
 }
 
 bool DecodeResolvedTextureFile(const std::filesystem::path &resolvedPath,

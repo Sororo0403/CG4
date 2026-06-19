@@ -54,11 +54,18 @@ class VolumetricLightingSystem {
     struct State;
 
     void CreateRootSignature();
+    void CreateCompositeRootSignature();
     void CreatePipelineState();
     void CreateConstantBuffers();
     bool HasConstantBuffers() const;
     ConstantFrame *GetCurrentConstantFrame();
     const ConstantFrame *GetCurrentConstantFrame() const;
+    bool EnsureRenderTextures();
+    void DrawVolumeTexture(D3D12_GPU_DESCRIPTOR_HANDLE depthHandle,
+                           D3D12_GPU_DESCRIPTOR_HANDLE shadowHandle,
+                           D3D12_GPU_VIRTUAL_ADDRESS constantsAddress);
+    void CompositeToScene();
+    void CopyCurrentToHistory();
 
     DirectXCommon *dxCommon_ = nullptr;
     SrvManager *srvManager_ = nullptr;

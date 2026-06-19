@@ -1,12 +1,10 @@
 #include "graphics/GpuProfiler.h"
-#include "GpuProfilerInternal.h"
+#include "internal/GpuProfilerInternal.h"
 
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/GpuResourceHelpers.h"
 #include "graphics/GpuResourceLifetime.h"
-
-#include <pix_win.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -20,6 +18,15 @@ using GpuResourceHelpers::CreateCommittedResourceChecked;
 GpuProfiler::GpuProfiler() : state_(std::make_unique<State>()) {}
 
 GpuProfiler::~GpuProfiler() { Finalize(true); }
+
+GpuProfiler::ScopedEvent::ScopedEvent(GpuProfiler &profiler, const char *name)
+    : profiler_(&profiler), active_(profiler.TryBeginEvent(name)) {}
+
+GpuProfiler::ScopedEvent::~ScopedEvent() {
+    if (profiler_ != nullptr && active_) {
+        profiler_->EndEvent();
+    }
+}
 
 bool GpuProfiler::IsReady() const {
     return dxCommon_ != nullptr && state_->queryHeap &&
@@ -131,8 +138,6 @@ bool GpuProfiler::TryBeginEvent(const char *name) {
         eventIndex * State::kTimestampsPerEvent;
     state_->frames[state_->currentFrameIndex].names[eventIndex] =
         name != nullptr ? name : "Unnamed";
-    PIXBeginEvent(commandList, 0,
-                  state_->frames[state_->currentFrameIndex].names[eventIndex]);
     commandList->EndQuery(state_->queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
                           timestampIndex);
     state_->eventStack[state_->eventDepth++] = eventIndex;
@@ -161,7 +166,6 @@ void GpuProfiler::EndEvent() {
         eventIndex * State::kTimestampsPerEvent + 1u;
     commandList->EndQuery(state_->queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
                           timestampIndex);
-    PIXEndEvent(commandList);
 }
 
 void GpuProfiler::EndFrame() {

@@ -34,6 +34,11 @@ class RenderTexture {
     void BeginRender(const DirectX::XMFLOAT4 &clearColor);
 
     /// <summary>
+    /// Depth bufferをbindせずにRenderTextureへの描画を開始する
+    /// </summary>
+    void BeginRenderNoDepth(const DirectX::XMFLOAT4 &clearColor);
+
+    /// <summary>
     /// RenderTextureへの描画を終了し、シェーダーから読める状態にする
     /// </summary>
     void EndRender();
@@ -61,6 +66,8 @@ class RenderTexture {
     bool CreateResources();
     bool ReleaseTextureResources();
     bool ReleaseTextureResources(bool allowFrameAbort);
+    void BeginRenderInternal(const DirectX::XMFLOAT4 &clearColor,
+                             bool bindDepth, bool clearDepth);
 
     struct State;
 

@@ -2,8 +2,8 @@
 
 #include "core/MathUtils.h"
 #include "core/Numeric.h"
-#include "SoundFormatUtils.h"
-#include "SoundManagerInternal.h"
+#include "internal/SoundFormatUtils.h"
+#include "internal/SoundManagerInternal.h"
 
 #include <algorithm>
 #include <cmath>

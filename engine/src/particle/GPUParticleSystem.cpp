@@ -1,8 +1,8 @@
 #include "particle/GPUParticleSystem.h"
 
-#include "GPUParticleEmitterUtils.h"
-#include "GPUParticleSystemInternal.h"
-#include "GPUParticleSystemShared.h"
+#include "internal/GPUParticleEmitterUtils.h"
+#include "internal/GPUParticleSystemInternal.h"
+#include "internal/GPUParticleSystemShared.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/ShaderPaths.h"
@@ -173,7 +173,6 @@ std::vector<GPUParticleSystem::ParticleForGPU> GPUParticleSystem::CreateInitialP
         particle.params2 = {};
         particle.params3 = {};
         particle.params4 = {};
-        particle.params5 = {};
     }
     return particles;
 }

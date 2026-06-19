@@ -1,9 +1,10 @@
 #include "model/MeshRenderer.h"
-#include "MeshRendererInternal.h"
+#include "internal/MeshRendererInternal.h"
 
 #include "graphics/DirectXCommon.h"
 #include "graphics/GpuResourceLifetime.h"
 #include "graphics/SrvManager.h"
+#include "internal/RendererPipelineVariantUtils.h"
 #include "texture/TextureManager.h"
 
 #include <algorithm>
@@ -56,20 +57,6 @@ void MeshRenderer::SetMaterialReflectionsEnabled(bool enabled) {
     InvalidateCommandState();
 }
 
-void MeshRenderer::SetPlanarReflectionTexture(
-    D3D12_GPU_DESCRIPTOR_HANDLE reflectionTexture) {
-    if (reflectionTexture.ptr != 0) {
-        state_->planarReflectionGpuHandle = reflectionTexture;
-    } else if (state_->textureManager != nullptr) {
-        state_->planarReflectionGpuHandle =
-            state_->textureManager->GetGpuHandle(
-                state_->textureManager->GetWhiteTextureId());
-    } else {
-        state_->planarReflectionGpuHandle = {};
-    }
-    InvalidateCommandState();
-}
-
 size_t MeshRenderer::GetUploadBytesPerFrame() const {
     return state_->uploadBuffer.GetBytesPerFrame();
 }
@@ -98,9 +85,6 @@ void MeshRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
     state_->shadowMapGpuHandle =
         state_->textureManager->GetGpuHandle(state_->textureManager->GetWhiteTextureId());
     state_->spotLightShadowMapGpuHandle = state_->shadowMapGpuHandle;
-    state_->planarReflectionGpuHandle =
-        state_->textureManager->GetGpuHandle(
-            state_->textureManager->GetWhiteTextureId());
     state_->environmentTextureId = state_->textureManager->GetBlackCubeTextureId();
 
     CreateRootSignature();
@@ -171,11 +155,9 @@ void MeshRenderer::ResetResources() {
     InvalidateConstantCaches();
     InvalidateCommandState();
     state_->instanceScratch.clear();
-    state_->instanceScratch.shrink_to_fit();
     state_->drawIndex = 0;
     state_->shadowMapGpuHandle = {};
     state_->spotLightShadowMapGpuHandle = {};
-    state_->planarReflectionGpuHandle = {};
     ClearOcclusionPyramid();
 }
 
@@ -236,18 +218,13 @@ void MeshRenderer::InvalidateCommandState() noexcept {
 }
 
 bool MeshRenderer::IsReady() const {
-    const auto hasAllPipelineStates = [](const auto &pipelines) {
-        return std::all_of(std::begin(pipelines), std::end(pipelines),
-                           [](const auto &pipeline) {
-                               return pipeline != nullptr;
-                           });
-    };
-
     return state_->dxCommon != nullptr && state_->srvManager != nullptr &&
            state_->textureManager != nullptr && state_->rootSignature &&
-           state_->shadowRootSignature && hasAllPipelineStates(state_->pipelineStates) &&
-           hasAllPipelineStates(state_->instancedPipelineStates) && state_->shadowPSO &&
-           state_->instancedShadowPSO && state_->gpuCullRootSignature && state_->gpuCullPSO &&
+           state_->shadowRootSignature &&
+           RendererPipelineVariantUtils::HasAllPipelineStates(state_->pipelineStates) &&
+           RendererPipelineVariantUtils::HasAllPipelineStates(state_->instancedPipelineStates) &&
+           state_->shadowPSO && state_->instancedShadowPSO &&
+           state_->gpuCullRootSignature && state_->gpuCullPSO &&
            state_->gpuCullArgsPSO && state_->gpuCullCommandSignature &&
            state_->gpuLodCullRootSignature && state_->gpuLodCullPSO &&
            state_->gpuLodCullArgsPSO && state_->uploadBuffer.GetBytesPerFrame() != 0;

@@ -1,5 +1,6 @@
 #ifdef _DEBUG
 #include "imgui/ImguiManager.h"
+#include "core/AssetManager.h"
 #include "core/ResourceHandle.h"
 #include "core/WinApp.h"
 #include "graphics/DirectXCommon.h"
@@ -9,6 +10,8 @@
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"
 #include <cstdint>
+#include <filesystem>
+#include <string>
 
 namespace {
 class ImguiInitializationGuard {
@@ -57,7 +60,52 @@ class ImguiDescriptorAllocationGuard {
 
 void LoadJapaneseImguiFont() {
     ImGuiIO &io = ImGui::GetIO();
-    io.Fonts->AddFontDefault();
+    constexpr const char *kExtraJapaneseGlyphs =
+        "、。々あいうえおかがきぎくけげこさしじすずせそただちっつ"
+        "てでとなにのはぶへべぼまみむめもやょよらりるれわをん"
+        "ァアィイウェエォオカキギクグケゲコゴサシジスズセゾタダ"
+        "チッツテデトドナネノハバパビピフブプベホポマムメモャヤ"
+        "ュョラリルレロワンー一万三上下不世中丹主乱乾了予事亜交"
+        "今付代休伸位低体何余作使保倍候値停健側備傷傾像充光入全"
+        "八具内円再冠出分切到券刻前剰加効動勾化北十千午半南単厚"
+        "反口古台号合向吹告周命品四回囲土在地均垂型基場填境壌声"
+        "変夏夕外夜大天太失奥始子存季学完定実家密寒寝寸対専小少"
+        "居屋層岐川差布帯帳幅幕平年幹広床底度康延弁弱張強当形影"
+        "径待後微心必応急性息感態慣憶成戻所手打抜択押担拡持指採"
+        "推描換支敗散数整敷文料斜断新方既日昇明星映昨昼時晴暖暗"
+        "更書替最月有朝期木未末本机条東林果枝枯柔柳根桜棄検椰"
+        "楽概構標横樹機欠次止正歩残段比気水河泡活流浅海深混済温"
+        "湿満準滅滝漏演濡瀬火灯炉炭点焚無然焼熟熱燥牡物状率玉現"
+        "球理環生用画畔略疎発白的皮監盤目直相省眠着知短破硬示秋"
+        "移程種積空突立端競笛符算節範築簡粒粗糖約紅紙素細終経絵"
+        "絶緑線緯縁縦縮繰置習老聞胴胸自致色芒芯花芽苗若茶荷菊華"
+        "落葉蔽薄虫蜂蝶行表衰裕西要見視覚親角計記設証詰詳認読調"
+        "警象質足距跡路転軸軽輪込近返追退逆透通速遅運過道達違遠"
+        "適遮選部配重量金針銀錦鏡長開間降限陽階隙集離雨雪雲震静"
+        "非面音響頂類風飛食高鳥鳴黄齢";
+    static ImVector<ImWchar> fontRanges;
+    fontRanges.clear();
+    ImFontGlyphRangesBuilder glyphRangesBuilder;
+    glyphRangesBuilder.AddRanges(io.Fonts->GetGlyphRangesJapanese());
+    glyphRangesBuilder.AddText(kExtraJapaneseGlyphs);
+    glyphRangesBuilder.BuildRanges(&fontRanges);
+
+    const std::filesystem::path fontPath =
+        AssetManager::ResolvePath(
+            L"engine/resources/fonts/MPLUS1/MPLUS1-ExtraBold.ttf");
+    const std::string fontPathString = fontPath.string();
+    ImFont *font = nullptr;
+    std::error_code existsError;
+    if (!fontPathString.empty() &&
+        std::filesystem::exists(fontPath, existsError) && !existsError) {
+        font = io.Fonts->AddFontFromFileTTF(
+            fontPathString.c_str(), 18.0f, nullptr, fontRanges.Data);
+    }
+    if (font != nullptr) {
+        io.FontDefault = font;
+    } else {
+        io.Fonts->AddFontDefault();
+    }
 }
 } // namespace
 

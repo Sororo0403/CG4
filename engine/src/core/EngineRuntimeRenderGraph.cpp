@@ -1,7 +1,7 @@
 #include "core/EngineRuntime.h"
 
-#include "EngineRuntimeInternal.h"
-#include "EngineRuntimeSystems.h"
+#include "internal/EngineRuntimeInternal.h"
+#include "internal/EngineRuntimeSystems.h"
 #include "core/CpuProfiler.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/FrameHistory.h"
@@ -43,6 +43,31 @@ void AddDefaultRenderGraphDependencies(Systems &systems);
 void StoreFrameHistoryWorlds(FrameHistory &frameHistory,
                              const RenderScene &renderScene);
 
+template <typename Systems>
+bool UsesSpotLightShadowPass(const Systems &systems) {
+    return systems.lightingScene.GetStats().spotLightCount > 0u &&
+           systems.sceneManager.UsesSpotLightShadowPass();
+}
+
+template <typename ShadowRenderer>
+class ScopedShadowMapPass {
+  public:
+    explicit ScopedShadowMapPass(ShadowRenderer &renderer) : renderer_(&renderer) {
+        renderer_->Begin();
+    }
+    ~ScopedShadowMapPass() {
+        if (renderer_ != nullptr) {
+            renderer_->End();
+        }
+    }
+
+    ScopedShadowMapPass(const ScopedShadowMapPass &) = delete;
+    ScopedShadowMapPass &operator=(const ScopedShadowMapPass &) = delete;
+
+  private:
+    ShadowRenderer *renderer_ = nullptr;
+};
+
 } // namespace
 
 bool EngineRuntime::RenderFrame() {
@@ -73,17 +98,14 @@ void EngineRuntime::BeginRenderFrameSystems() {
     systems_->sceneManager.SubmitRenderScene(systems_->renderScene);
     StoreFrameHistoryWorlds(systems_->frameHistory, systems_->renderScene);
     systems_->sceneManager.SubmitLighting(systems_->lightingScene);
-    const SceneLighting lighting =
-        systems_->lightingScene.BuildLegacySceneLighting();
+    const SceneLighting &lighting = systems_->lightingScene.GetSceneLighting();
     systems_->meshRenderer.SetSceneLighting(lighting);
     if (auto *modelRenderer = systems_->modelManager.GetRenderer()) {
         modelRenderer->SetSceneLighting(lighting);
     }
     systems_->meshRenderer.BeginFrame();
     systems_->modelManager.BeginFrame();
-    if (systems_->spriteManager != nullptr) {
-        systems_->spriteManager->BeginFrame();
-    }
+    systems_->spriteManager.BeginFrame();
     systems_->transparentQueue.Clear();
 }
 
@@ -123,12 +145,12 @@ void AddDefaultRenderGraphPasses(Systems &systems) {
                                           "Render.Shadow");
         auto pass = systems.renderPassController.ScopedPass(RenderPass::Shadow);
         (void)pass;
-        systems.gpuProfiler.BeginEvent("Shadow");
-        systems.shadowMapRenderer.Begin();
-        systems.meshRenderer.PreDrawShadow();
-        systems.sceneManager.DrawShadow();
-        systems.shadowMapRenderer.End();
-        systems.gpuProfiler.EndEvent();
+        {
+            GpuProfiler::ScopedEvent gpuEvent(systems.gpuProfiler, "Shadow");
+            ScopedShadowMapPass shadowPass(systems.shadowMapRenderer);
+            systems.meshRenderer.PreDrawShadow();
+            systems.sceneManager.DrawShadow();
+        }
         systems.meshRenderer.SetShadowMap(
             systems.shadowMapRenderer.GetGpuHandle(),
             systems.shadowMapRenderer.GetLightViewProjection(),
@@ -137,27 +159,42 @@ void AddDefaultRenderGraphPasses(Systems &systems) {
             systems.shadowMapRenderer.GetGpuHandle(),
             systems.shadowMapRenderer.GetLightViewProjection(),
             SceneShadowSettings{});
+        if (!UsesSpotLightShadowPass(systems)) {
+            systems.meshRenderer.SetSpotLightShadowMap(
+                systems.shadowMapRenderer.GetGpuHandle(),
+                systems.shadowMapRenderer.GetLightViewProjection(),
+                SceneShadowSettings{});
+            systems.modelManager.GetRenderer()->SetSpotLightShadowMap(
+                systems.shadowMapRenderer.GetGpuHandle(),
+                systems.shadowMapRenderer.GetLightViewProjection(),
+                SceneShadowSettings{});
+        }
     });
-    systems.renderGraph.AddPass("SpotLightShadow", [&]() {
-        CpuProfiler::ScopedEvent cpuEvent(systems.cpuProfiler,
-                                          "Render.SpotLightShadow");
-        auto pass = systems.renderPassController.ScopedPass(RenderPass::Shadow);
-        (void)pass;
-        systems.gpuProfiler.BeginEvent("SpotLightShadow");
-        systems.spotLightShadowMapRenderer.Begin();
-        systems.meshRenderer.PreDrawShadow();
-        systems.sceneManager.DrawSpotLightShadow();
-        systems.spotLightShadowMapRenderer.End();
-        systems.gpuProfiler.EndEvent();
-        systems.meshRenderer.SetSpotLightShadowMap(
-            systems.spotLightShadowMapRenderer.GetGpuHandle(),
-            systems.spotLightShadowMapRenderer.GetLightViewProjection(),
-            SceneShadowSettings{});
-        systems.modelManager.GetRenderer()->SetSpotLightShadowMap(
-            systems.spotLightShadowMapRenderer.GetGpuHandle(),
-            systems.spotLightShadowMapRenderer.GetLightViewProjection(),
-            SceneShadowSettings{});
-    });
+    if (UsesSpotLightShadowPass(systems)) {
+        systems.renderGraph.AddPass("SpotLightShadow", [&]() {
+            CpuProfiler::ScopedEvent cpuEvent(systems.cpuProfiler,
+                                              "Render.SpotLightShadow");
+            auto pass =
+                systems.renderPassController.ScopedPass(RenderPass::Shadow);
+            (void)pass;
+            {
+                GpuProfiler::ScopedEvent gpuEvent(systems.gpuProfiler,
+                                                  "SpotLightShadow");
+                ScopedShadowMapPass shadowPass(
+                    systems.spotLightShadowMapRenderer);
+                systems.meshRenderer.PreDrawShadow();
+                systems.sceneManager.DrawSpotLightShadow();
+            }
+            systems.meshRenderer.SetSpotLightShadowMap(
+                systems.spotLightShadowMapRenderer.GetGpuHandle(),
+                systems.spotLightShadowMapRenderer.GetLightViewProjection(),
+                SceneShadowSettings{});
+            systems.modelManager.GetRenderer()->SetSpotLightShadowMap(
+                systems.spotLightShadowMapRenderer.GetGpuHandle(),
+                systems.spotLightShadowMapRenderer.GetLightViewProjection(),
+                SceneShadowSettings{});
+        });
+    }
     systems.renderGraph.AddPass("SceneColor", [&]() {
         CpuProfiler::ScopedEvent cpuEvent(systems.cpuProfiler,
                                           "Render.SceneColor");
@@ -165,10 +202,9 @@ void AddDefaultRenderGraphPasses(Systems &systems) {
         auto pass =
             systems.renderPassController.ScopedPass(RenderPass::SceneColor);
         (void)pass;
-        systems.gpuProfiler.BeginEvent("SceneColor");
+        GpuProfiler::ScopedEvent gpuEvent(systems.gpuProfiler, "SceneColor");
         systems.meshRenderer.PreDraw();
         systems.sceneManager.Draw();
-        systems.gpuProfiler.EndEvent();
     });
     if (systems.sceneManager.UsesForeground3DPass()) {
         systems.renderGraph.AddPass("Foreground3D", [&]() {
@@ -177,10 +213,10 @@ void AddDefaultRenderGraphPasses(Systems &systems) {
             auto pass = systems.renderPassController.ScopedPass(
                 RenderPass::Foreground3D);
             (void)pass;
-            systems.gpuProfiler.BeginEvent("Foreground3D");
+            GpuProfiler::ScopedEvent gpuEvent(systems.gpuProfiler,
+                                              "Foreground3D");
             systems.dxCommon.ClearDepth();
             systems.sceneManager.DrawForeground3D();
-            systems.gpuProfiler.EndEvent();
         });
     }
     systems.renderGraph.AddPass("Transparent", [&]() {
@@ -189,24 +225,28 @@ void AddDefaultRenderGraphPasses(Systems &systems) {
         auto pass =
             systems.renderPassController.ScopedPass(RenderPass::Transparent);
         (void)pass;
-        systems.gpuProfiler.BeginEvent("Transparent");
-        systems.sceneManager.DrawTransparent();
-        systems.transparentQueue.Flush();
-        systems.gpuProfiler.EndEvent();
+        {
+            GpuProfiler::ScopedEvent gpuEvent(systems.gpuProfiler,
+                                              "Transparent");
+            systems.sceneManager.DrawTransparent();
+            systems.transparentQueue.Flush();
+        }
         systems.meshRenderer.PostDraw();
         systems.dxCommon.EndScenePass();
     });
-    systems.renderGraph.AddPass("VolumetricLighting", [&]() {
-        CpuProfiler::ScopedEvent cpuEvent(systems.cpuProfiler,
-                                          "Render.VolumetricLighting");
-        systems.dxCommon.TransitionDepthToShaderResource();
-        auto pass = systems.renderPassController.ScopedPass(
-            RenderPass::VolumetricLighting);
-        (void)pass;
-        systems.gpuProfiler.BeginEvent("VolumetricLighting");
-        systems.sceneManager.DrawVolumetricLighting();
-        systems.gpuProfiler.EndEvent();
-    });
+    if (systems.sceneManager.UsesVolumetricLightingPass()) {
+        systems.renderGraph.AddPass("VolumetricLighting", [&]() {
+            CpuProfiler::ScopedEvent cpuEvent(systems.cpuProfiler,
+                                              "Render.VolumetricLighting");
+            systems.dxCommon.TransitionDepthToShaderResource();
+            auto pass = systems.renderPassController.ScopedPass(
+                RenderPass::VolumetricLighting);
+            (void)pass;
+            GpuProfiler::ScopedEvent gpuEvent(systems.gpuProfiler,
+                                              "VolumetricLighting");
+            systems.sceneManager.DrawVolumetricLighting();
+        });
+    }
     systems.renderGraph.AddPass("PostProcess", [&]() {
         CpuProfiler::ScopedEvent cpuEvent(systems.cpuProfiler,
                                           "Render.PostProcess");
@@ -215,11 +255,13 @@ void AddDefaultRenderGraphPasses(Systems &systems) {
         auto pass =
             systems.renderPassController.ScopedPass(RenderPass::PostProcess);
         (void)pass;
-        systems.gpuProfiler.BeginEvent("PostProcess");
-        systems.postProcessSystem.Draw(
-            systems.dxCommon.GetSceneSrvGpuHandle(&systems.srvManager),
-            systems.dxCommon.GetDepthStencilGpuHandle());
-        systems.gpuProfiler.EndEvent();
+        {
+            GpuProfiler::ScopedEvent gpuEvent(systems.gpuProfiler,
+                                              "PostProcess");
+            systems.postProcessSystem.Draw(
+                systems.dxCommon.GetSceneSrvGpuHandle(&systems.srvManager),
+                systems.dxCommon.GetDepthStencilGpuHandle());
+        }
         systems.dxCommon.TransitionDepthToWrite();
     });
     systems.renderGraph.AddPass("Overlay", [&]() {
@@ -227,16 +269,14 @@ void AddDefaultRenderGraphPasses(Systems &systems) {
                                           "Render.Overlay");
         auto pass = systems.renderPassController.ScopedPass(RenderPass::UI);
         (void)pass;
-        systems.gpuProfiler.BeginEvent("UI");
-        if (systems.spriteManager != nullptr &&
-            systems.spriteManager->IsReady()) {
-            systems.spriteManager->PreDraw(true);
+        GpuProfiler::ScopedEvent gpuEvent(systems.gpuProfiler, "UI");
+        if (systems.spriteManager.IsReady()) {
+            systems.spriteManager.PreDraw(true);
             systems.sceneManager.DrawPostProcessOverlay();
-            systems.spriteManager->PostDraw();
+            systems.spriteManager.PostDraw();
         } else {
             systems.sceneManager.DrawPostProcessOverlay();
         }
-        systems.gpuProfiler.EndEvent();
     });
 #ifdef _DEBUG
     systems.renderGraph.AddPass("ImGui", [&]() {
@@ -244,9 +284,8 @@ void AddDefaultRenderGraphPasses(Systems &systems) {
                                           "Render.ImGui");
         auto pass = systems.renderPassController.ScopedPass(RenderPass::UI);
         (void)pass;
-        systems.gpuProfiler.BeginEvent("ImGui");
+        GpuProfiler::ScopedEvent gpuEvent(systems.gpuProfiler, "ImGui");
         systems.imguiManager.End(systems.dxCommon.GetCommandList());
-        systems.gpuProfiler.EndEvent();
     });
 #endif
 }
@@ -255,9 +294,11 @@ template <typename Systems>
 void AddDefaultRenderGraphResources(Systems &systems, int width, int height) {
     systems.renderGraph.AddResource(
         {"ShadowMap", 0u, 0u, 1u, DXGI_FORMAT_D32_FLOAT, false, true});
-    systems.renderGraph.AddResource(
-        {"SpotLightShadowMap", 0u, 0u, 1u, DXGI_FORMAT_D32_FLOAT, false,
-         true});
+    if (UsesSpotLightShadowPass(systems)) {
+        systems.renderGraph.AddResource(
+            {"SpotLightShadowMap", 0u, 0u, 1u, DXGI_FORMAT_D32_FLOAT, false,
+             true});
+    }
     systems.renderGraph.AddResource(
         {"SceneColor", static_cast<uint32_t>(width),
          static_cast<uint32_t>(height), 1u, DirectXCommon::kSceneColorFormat,
@@ -272,14 +313,18 @@ void AddDefaultRenderGraphResources(Systems &systems, int width, int height) {
          true, true});
     systems.renderGraph.WriteResource(
         "Shadow", "ShadowMap", RenderGraph::ResourceUsage::DepthWrite);
-    systems.renderGraph.WriteResource(
-        "SpotLightShadow", "SpotLightShadowMap",
-        RenderGraph::ResourceUsage::DepthWrite);
+    if (UsesSpotLightShadowPass(systems)) {
+        systems.renderGraph.WriteResource(
+            "SpotLightShadow", "SpotLightShadowMap",
+            RenderGraph::ResourceUsage::DepthWrite);
+    }
     systems.renderGraph.ReadResource(
         "SceneColor", "ShadowMap", RenderGraph::ResourceUsage::ShaderResource);
-    systems.renderGraph.ReadResource(
-        "SceneColor", "SpotLightShadowMap",
-        RenderGraph::ResourceUsage::ShaderResource);
+    if (UsesSpotLightShadowPass(systems)) {
+        systems.renderGraph.ReadResource(
+            "SceneColor", "SpotLightShadowMap",
+            RenderGraph::ResourceUsage::ShaderResource);
+    }
     systems.renderGraph.WriteResource(
         "SceneColor", "SceneColor", RenderGraph::ResourceUsage::RenderTarget);
     systems.renderGraph.WriteResource(
@@ -298,15 +343,17 @@ void AddDefaultRenderGraphResources(Systems &systems, int width, int height) {
     systems.renderGraph.ReadResource(
         "PostProcess", "SceneColor",
         RenderGraph::ResourceUsage::ShaderResource);
-    systems.renderGraph.ReadResource(
-        "VolumetricLighting", "Depth",
-        RenderGraph::ResourceUsage::ShaderResource);
-    systems.renderGraph.ReadResource(
-        "VolumetricLighting", "ShadowMap",
-        RenderGraph::ResourceUsage::ShaderResource);
-    systems.renderGraph.WriteResource(
-        "VolumetricLighting", "SceneColor",
-        RenderGraph::ResourceUsage::RenderTarget);
+    if (systems.sceneManager.UsesVolumetricLightingPass()) {
+        systems.renderGraph.ReadResource(
+            "VolumetricLighting", "Depth",
+            RenderGraph::ResourceUsage::ShaderResource);
+        systems.renderGraph.ReadResource(
+            "VolumetricLighting", "ShadowMap",
+            RenderGraph::ResourceUsage::ShaderResource);
+        systems.renderGraph.WriteResource(
+            "VolumetricLighting", "SceneColor",
+            RenderGraph::ResourceUsage::RenderTarget);
+    }
     systems.renderGraph.ReadResource(
         "PostProcess", "Depth", RenderGraph::ResourceUsage::ShaderResource);
     systems.renderGraph.WriteResource(
@@ -323,16 +370,22 @@ void AddDefaultRenderGraphResources(Systems &systems, int width, int height) {
 template <typename Systems>
 void AddDefaultRenderGraphDependencies(Systems &systems) {
     systems.renderGraph.AddDependency("Shadow", "SceneColor");
-    systems.renderGraph.AddDependency("Shadow", "SpotLightShadow");
-    systems.renderGraph.AddDependency("SpotLightShadow", "SceneColor");
+    if (UsesSpotLightShadowPass(systems)) {
+        systems.renderGraph.AddDependency("Shadow", "SpotLightShadow");
+        systems.renderGraph.AddDependency("SpotLightShadow", "SceneColor");
+    }
     if (systems.sceneManager.UsesForeground3DPass()) {
         systems.renderGraph.AddDependency("SceneColor", "Foreground3D");
         systems.renderGraph.AddDependency("Foreground3D", "Transparent");
     } else {
         systems.renderGraph.AddDependency("SceneColor", "Transparent");
     }
-    systems.renderGraph.AddDependency("Transparent", "VolumetricLighting");
-    systems.renderGraph.AddDependency("VolumetricLighting", "PostProcess");
+    if (systems.sceneManager.UsesVolumetricLightingPass()) {
+        systems.renderGraph.AddDependency("Transparent", "VolumetricLighting");
+        systems.renderGraph.AddDependency("VolumetricLighting", "PostProcess");
+    } else {
+        systems.renderGraph.AddDependency("Transparent", "PostProcess");
+    }
     systems.renderGraph.AddDependency("PostProcess", "Overlay");
 #ifdef _DEBUG
     systems.renderGraph.AddDependency("Overlay", "ImGui");

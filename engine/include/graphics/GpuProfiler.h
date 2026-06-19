@@ -19,6 +19,21 @@ class GpuProfiler {
     GpuProfiler();
     ~GpuProfiler();
 
+    class ScopedEvent {
+      public:
+        ScopedEvent(GpuProfiler &profiler, const char *name);
+        ~ScopedEvent();
+
+        ScopedEvent(const ScopedEvent &) = delete;
+        ScopedEvent &operator=(const ScopedEvent &) = delete;
+        ScopedEvent(ScopedEvent &&) = delete;
+        ScopedEvent &operator=(ScopedEvent &&) = delete;
+
+      private:
+        GpuProfiler *profiler_ = nullptr;
+        bool active_ = false;
+    };
+
     void Initialize(DirectXCommon *dxCommon);
     bool Finalize();
     bool Finalize(bool allowFrameAbort);

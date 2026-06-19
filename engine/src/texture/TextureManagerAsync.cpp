@@ -1,5 +1,5 @@
-#include "TextureManagerDecoding.h"
-#include "TextureManagerInternal.h"
+#include "internal/TextureManagerDecoding.h"
+#include "internal/TextureManagerInternal.h"
 #include "core/PathUtils.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
@@ -13,6 +13,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <numeric>
 #include <thread>
 #include <vector>
@@ -22,6 +23,20 @@ using Microsoft::WRL::ComPtr;
 
 static constexpr size_t kMaxCompletedAsyncRequestHistory = 256;
 static constexpr size_t kMaxInFlightAsyncLoads = 4;
+static constexpr size_t kMaxPendingAsyncLoads = 64;
+
+namespace {
+
+bool IsActiveAsyncRequest(const TextureManagerAsyncRequest& request) {
+    return !request.completed && !request.failed;
+}
+
+size_t CountActiveAsyncRequests(const std::vector<TextureManagerAsyncRequest>& requests) {
+    return static_cast<size_t>(
+        std::count_if(requests.begin(), requests.end(), IsActiveAsyncRequest));
+}
+
+} // namespace
 
 uint32_t TextureManager::RequestAsyncLoad(const std::wstring& filePath) {
     if (dxCommon_ == nullptr || dxCommon_->GetDevice() == nullptr || srvManager_ == nullptr ||
@@ -33,6 +48,15 @@ uint32_t TextureManager::RequestAsyncLoad(const std::wstring& filePath) {
 
     const std::filesystem::path resolvedPath = PathUtils::ResolveAssetPath(filePath);
     const std::wstring pathKey = PathUtils::NormalizePathKey(resolvedPath);
+    const auto activeDuplicate =
+        std::find_if(state_->asyncState->requests.begin(), state_->asyncState->requests.end(),
+                     [&pathKey](const TextureManagerAsyncRequest& request) {
+                         return IsActiveAsyncRequest(request) && request.pathKey == pathKey;
+                     });
+    if (activeDuplicate != state_->asyncState->requests.end()) {
+        return activeDuplicate->requestId;
+    }
+
     auto cached = state_->filePathToTextureId.find(pathKey);
     if (cached != state_->filePathToTextureId.end()) {
         if (!IsValidTextureId(cached->second) || cached->second == state_->whiteTextureId) {
@@ -42,11 +66,16 @@ uint32_t TextureManager::RequestAsyncLoad(const std::wstring& filePath) {
         }
     }
 
+    if (CountActiveAsyncRequests(state_->asyncState->requests) >= kMaxPendingAsyncLoads) {
+        return 0;
+    }
+
     TextureManagerAsyncRequest request{};
     request.requestId = AllocateAsyncRequestId();
     if (request.requestId == 0) {
         return 0;
     }
+    request.pathKey = pathKey;
     std::error_code ec;
     if (!std::filesystem::exists(resolvedPath, ec) ||
         !TextureLimits::IsFileWithinInputBudget(resolvedPath)) {
@@ -205,22 +234,23 @@ void TextureManager::UpdateAsyncLoads() {
             continue;
         }
 
-        if (request.worker.joinable()) {
-            request.worker.join();
-        }
         TextureManagerDecodedTexture decoded = std::move(request.job->decoded);
         request.job.reset();
         if (!decoded.succeeded) {
             request.failed = true;
             request.filePath.clear();
+            request.pathKey.clear();
             continue;
         }
 
         if (!TryCompleteAsyncTextureUpload(request, decoded)) {
             request.failed = true;
+            request.filePath.clear();
+            request.pathKey.clear();
             continue;
         }
         request.filePath.clear();
+        request.pathKey.clear();
         request.completed = true;
     }
 
@@ -271,7 +301,7 @@ void TextureManager::PruneCompletedAsyncRequests() {
     state_->asyncState->requests.erase(
         std::remove_if(state_->asyncState->requests.begin(), state_->asyncState->requests.end(),
                        [&removeCount](const TextureManagerAsyncRequest& request) {
-                           if (removeCount == 0 || (!request.completed && !request.failed)) {
+                           if (removeCount == 0 || IsActiveAsyncRequest(request)) {
                                return false;
                            }
                            --removeCount;
@@ -280,55 +310,73 @@ void TextureManager::PruneCompletedAsyncRequests() {
         state_->asyncState->requests.end());
 }
 
-void TextureManager::StartQueuedAsyncLoads() {
-    size_t inFlightCount = static_cast<size_t>(std::count_if(
-        state_->asyncState->requests.begin(), state_->asyncState->requests.end(),
-        [](const TextureManagerAsyncRequest &request) {
-            return !request.completed && !request.failed &&
-                   request.job != nullptr;
-        }));
+void TextureManager::EnsureAsyncWorkers() {
+    if (state_->asyncState->workerPool.IsRunning()) {
+        return;
+    }
 
-    for (TextureManagerAsyncRequest& request : state_->asyncState->requests) {
-        if (inFlightCount >= kMaxInFlightAsyncLoads) {
-            return;
-        }
-        if (request.completed || request.failed || request.job != nullptr ||
-            request.filePath.empty()) {
-            continue;
-        }
-
-        const std::wstring resolvedPath = request.filePath;
-        std::shared_ptr<TextureManagerAsyncJob> job;
-        try {
-            job = std::make_shared<TextureManagerAsyncJob>();
-            request.worker = std::thread([resolvedPath, job]() {
+    if (!state_->asyncState->workerPool.Start(
+            kMaxInFlightAsyncLoads, [](TextureManagerAsyncWorkItem &item) {
                 try {
-                    TextureManagerDecodedTexture decoded =
-                        TextureManagerDecoding::DecodeResolvedFileForAsync(resolvedPath);
-                    job->decoded = std::move(decoded);
+                    item.job->decoded =
+                        TextureManagerDecoding::DecodeResolvedFileForAsync(item.filePath);
                 } catch (...) {
-                    job->decoded = {};
+                    item.job->decoded = {};
                 }
-                job->ready.store(true, std::memory_order_release);
-            });
-        } catch (...) {
-            request.failed = true;
-            request.filePath.clear();
-            continue;
+                item.job->ready.store(true, std::memory_order_release);
+            })) {
+        for (TextureManagerAsyncRequest &request : state_->asyncState->requests) {
+            if (IsActiveAsyncRequest(request) && !request.queued) {
+                request.failed = true;
+                request.filePath.clear();
+                request.pathKey.clear();
+            }
         }
-        request.job = std::move(job);
-        ++inFlightCount;
     }
 }
 
-void TextureManager::StopAsyncLoads() {
+void TextureManager::StartQueuedAsyncLoads() {
+    EnsureAsyncWorkers();
+    if (!state_->asyncState->workerPool.IsRunning()) {
+        for (TextureManagerAsyncRequest& request : state_->asyncState->requests) {
+            if (IsActiveAsyncRequest(request) && !request.queued) {
+                request.failed = true;
+                request.filePath.clear();
+                request.pathKey.clear();
+            }
+        }
+        return;
+    }
+
     for (TextureManagerAsyncRequest& request : state_->asyncState->requests) {
-        if (!request.worker.joinable()) {
+        if (!IsActiveAsyncRequest(request) || request.queued || request.filePath.empty()) {
             continue;
         }
-        request.worker.join();
+
+        std::shared_ptr<TextureManagerAsyncJob> job;
+        try {
+            job = std::make_shared<TextureManagerAsyncJob>();
+        } catch (...) {
+            request.failed = true;
+            request.filePath.clear();
+            request.pathKey.clear();
+            continue;
+        }
+        request.job = std::move(job);
+        state_->asyncState->workerPool.Enqueue(
+            TextureManagerAsyncWorkItem{request.requestId, request.filePath, request.job});
+        request.queued = true;
     }
+}
+
+void TextureManager::StopAsyncWorkers() {
+    state_->asyncState->StopWorkers();
+}
+
+void TextureManager::StopAsyncLoads() {
+    StopAsyncWorkers();
     state_->asyncState->requests.clear();
+    state_->asyncState->workerPool.ClearPending();
 }
 
 uint32_t TextureManager::AllocateAsyncRequestId() {

@@ -1,11 +1,11 @@
 #include "graphics/PostProcessSystem.h"
-#include "PostProcessSystemInternal.h"
+#include "internal/PostProcessSystemInternal.h"
 
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
-#include "RootSignatureUtils.h"
+#include "internal/RootSignatureUtils.h"
 
 namespace {
 
