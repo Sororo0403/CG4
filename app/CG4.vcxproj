@@ -79,7 +79,9 @@ if exist "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145
 ) else (
   echo Error: assimp-vc145-mt.dll is missing. Expected at "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll".
   exit /b 1
-)</Command>
+)
+xcopy /E /Y /I "$(MSBuildThisFileDirectory)resources" "$(OutDir)app\resources"
+xcopy /E /Y /I "$(MSBuildThisFileDirectory)..\engine\resources" "$(OutDir)engine\resources"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -113,7 +115,9 @@ if exist "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145
 ) else (
   echo Error: assimp-vc145-mt.dll is missing. Expected at "$(MSBuildThisFileDirectory)..\engine\externals\assimp\bin\assimp-vc145-mt.dll".
   exit /b 1
-)</Command>
+)
+xcopy /E /Y /I "$(MSBuildThisFileDirectory)resources" "$(OutDir)app\resources"
+xcopy /E /Y /I "$(MSBuildThisFileDirectory)..\engine\resources" "$(OutDir)engine\resources"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
