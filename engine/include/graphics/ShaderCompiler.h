@@ -70,6 +70,7 @@ inline std::string NarrowAscii(const std::wstring &value) {
 }
 
 inline constexpr uint32_t kShaderCacheVersion = 1u;
+inline constexpr bool kShaderDiskCacheEnabled = false;
 inline constexpr uint64_t kShaderHashOffset = 1469598103934665603ull;
 inline constexpr uint64_t kShaderHashPrime = 1099511628211ull;
 
@@ -326,14 +327,16 @@ Compile(const std::wstring &path, const std::string &entry,
         return {};
     }
 
-    uint64_t dependencyHash = 0u;
-    std::filesystem::path cachePath;
-    if (ComputeShaderDependencyHash(resolvedPath, entry, normalizedTarget,
-                                    dependencyHash)) {
-        cachePath = ShaderCachePath(dependencyHash);
-        if (Microsoft::WRL::ComPtr<IDxcBlob> cached =
-                TryLoadCachedShader(cachePath)) {
-            return cached;
+    if constexpr (kShaderDiskCacheEnabled) {
+        uint64_t dependencyHash = 0u;
+        if (ComputeShaderDependencyHash(resolvedPath, entry, normalizedTarget,
+                                        dependencyHash)) {
+            const std::filesystem::path cachePath =
+                ShaderCachePath(dependencyHash);
+            if (Microsoft::WRL::ComPtr<IDxcBlob> cached =
+                    TryLoadCachedShader(cachePath)) {
+                return cached;
+            }
         }
     }
 
@@ -422,8 +425,14 @@ Compile(const std::wstring &path, const std::string &entry,
         OutputDebugStringA("ShaderCompiler: DXC GetOutput object failed\n");
         return {};
     }
-    if (!cachePath.empty()) {
-        SaveCachedShader(cachePath, shader.Get());
+    if constexpr (kShaderDiskCacheEnabled) {
+        uint64_t dependencyHash = 0u;
+        if (ComputeShaderDependencyHash(resolvedPath, entry, normalizedTarget,
+                                        dependencyHash)) {
+            const std::filesystem::path cachePath =
+                ShaderCachePath(dependencyHash);
+            SaveCachedShader(cachePath, shader.Get());
+        }
     }
     return shader;
 }
