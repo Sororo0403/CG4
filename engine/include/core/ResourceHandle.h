@@ -2,15 +2,14 @@
 #include <cstdint>
 #include <limits>
 
-inline constexpr uint32_t kInvalidResourceId =
-    (std::numeric_limits<uint32_t>::max)();
+inline constexpr uint32_t kInvalidResourceId = (std::numeric_limits<uint32_t>::max)();
 
-constexpr bool IsValidResourceId(uint32_t id) noexcept {
+[[nodiscard]] constexpr bool IsValidResourceId(uint32_t id) noexcept {
     return id != kInvalidResourceId;
 }
 
 template <typename Tag> class ResourceHandle {
-  public:
+public:
     static constexpr uint32_t kInvalidIndex = kInvalidResourceId;
 
     /// <summary>
@@ -19,32 +18,34 @@ template <typename Tag> class ResourceHandle {
     constexpr ResourceHandle() = default;
     explicit constexpr ResourceHandle(uint32_t index) : index_(index) {}
 
-    constexpr bool IsValid() const { return index_ != kInvalidIndex; }
-    constexpr uint32_t Get() const { return index_; }
+    [[nodiscard]] constexpr bool IsValid() const {
+        return index_ != kInvalidIndex;
+    }
+    [[nodiscard]] constexpr uint32_t Get() const {
+        return index_;
+    }
 
-    explicit constexpr operator bool() const { return IsValid(); }
+    explicit constexpr operator bool() const {
+        return IsValid();
+    }
 
-    friend constexpr bool operator==(ResourceHandle lhs,
-                                     ResourceHandle rhs) {
+    friend constexpr bool operator==(ResourceHandle lhs, ResourceHandle rhs) {
         return lhs.index_ == rhs.index_;
     }
 
-    friend constexpr bool operator!=(ResourceHandle lhs,
-                                     ResourceHandle rhs) {
+    friend constexpr bool operator!=(ResourceHandle lhs, ResourceHandle rhs) {
         return !(lhs == rhs);
     }
 
-  private:
+private:
     uint32_t index_ = kInvalidIndex;
 };
 
-template <typename Tag>
-constexpr ResourceHandle<Tag> MakeResourceHandle(uint32_t id) noexcept {
+template <typename Tag> constexpr ResourceHandle<Tag> MakeResourceHandle(uint32_t id) noexcept {
     return ResourceHandle<Tag>(id);
 }
 
-template <typename Tag>
-constexpr uint32_t ToResourceId(ResourceHandle<Tag> handle) noexcept {
+template <typename Tag> constexpr uint32_t ToResourceId(ResourceHandle<Tag> handle) noexcept {
     return handle.Get();
 }
 

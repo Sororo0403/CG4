@@ -1,6 +1,7 @@
 #pragma once
 #include "collision/AABB.h"
 #include "collision/OBB.h"
+
 #include <DirectXMath.h>
 
 /// <summary>
@@ -23,7 +24,7 @@ struct CollisionResult {
 /// <summary>
 /// TestOBBを実行する
 /// </summary>
-CollisionResult TestOBB(const OBB &a, const OBB &b);
+CollisionResult TestOBB(const OBB& a, const OBB& b);
 
 /// <summary>
 /// 2つのOBBが交差しているかを判定する
@@ -34,7 +35,7 @@ CollisionResult TestOBB(const OBB &a, const OBB &b);
 /// <summary>
 /// CheckOBBを実行する
 /// </summary>
-bool CheckOBB(const OBB &a, const OBB &b);
+bool CheckOBB(const OBB& a, const OBB& b);
 
 /// <summary>
 /// 2つのAABBが交差しているかを判定する
@@ -45,6 +46,6 @@ bool CheckOBB(const OBB &a, const OBB &b);
 /// <summary>
 /// CheckAABBを実行する
 /// </summary>
-bool CheckAABB(const AABB &a, const AABB &b);
+bool CheckAABB(const AABB& a, const AABB& b);
 
 } // namespace CollisionUtil

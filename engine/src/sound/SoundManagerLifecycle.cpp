@@ -1,8 +1,7 @@
-#include "sound/SoundManager.h"
-
+#include "core/Numeric.h"
 #include "internal/SoundFormatUtils.h"
 #include "internal/SoundManagerInternal.h"
-#include "core/Numeric.h"
+#include "sound/SoundManager.h"
 
 #include <Objbase.h>
 #include <mfapi.h>
@@ -15,13 +14,15 @@ using SoundFormatUtils::MakeHResultMessage;
 
 SoundManager::SoundManager() : state_(std::make_unique<State>()) {}
 
-SoundManager::~SoundManager() { Finalize(); }
+SoundManager::~SoundManager() {
+    Finalize();
+}
 
 bool SoundManager::IsInitialized() const {
     return state_->xAudio2 != nullptr && state_->masterVoice != nullptr;
 }
 
-const std::string &SoundManager::GetLastInitializeError() const {
+const std::string& SoundManager::GetLastInitializeError() const {
     return state_->lastInitializeError;
 }
 
@@ -43,8 +44,8 @@ void SoundManager::Initialize() {
         state_->lastInitializeError.clear();
         return;
     }
-    if (state_->xAudio2 || state_->masterVoice ||
-        state_->mediaFoundationStarted || state_->comInitialized) {
+    if (state_->xAudio2 || state_->masterVoice || state_->mediaFoundationStarted ||
+        state_->comInitialized) {
         Finalize();
     }
     state_->lastInitializeError.clear();
@@ -66,15 +67,13 @@ bool SoundManager::InitializeComAndMediaFoundation() {
     if (SUCCEEDED(coResult)) {
         state_->comInitialized = true;
     } else if (coResult != RPC_E_CHANGED_MODE) {
-        state_->lastInitializeError =
-            MakeHResultMessage(coResult, "CoInitializeEx failed");
+        state_->lastInitializeError = MakeHResultMessage(coResult, "CoInitializeEx failed");
         return false;
     }
 
     const HRESULT mfResult = MFStartup(MF_VERSION);
     if (FAILED(mfResult)) {
-        state_->lastInitializeError =
-            MakeHResultMessage(mfResult, "MFStartup failed");
+        state_->lastInitializeError = MakeHResultMessage(mfResult, "MFStartup failed");
         ShutdownAudioBackend();
         return false;
     }
@@ -85,8 +84,7 @@ bool SoundManager::InitializeComAndMediaFoundation() {
 bool SoundManager::InitializeXAudioBackend() {
     HRESULT audioResult = XAudio2Create(&state_->xAudio2, 0);
     if (SUCCEEDED(audioResult)) {
-        audioResult =
-            state_->xAudio2->CreateMasteringVoice(&state_->masterVoice);
+        audioResult = state_->xAudio2->CreateMasteringVoice(&state_->masterVoice);
     }
     if (FAILED(audioResult)) {
         state_->lastInitializeError =
@@ -120,4 +118,6 @@ void SoundManager::SetMasterVolume(float volume) {
     }
 }
 
-float SoundManager::GetMasterVolume() const { return state_->masterVolume; }
+float SoundManager::GetMasterVolume() const {
+    return state_->masterVolume;
+}

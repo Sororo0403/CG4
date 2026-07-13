@@ -1,5 +1,5 @@
 #include "Engine.h"
-#include "scene/EvaluationScene.h"
+#include "scene/GameScene.h"
 
 #include <Windows.h>
 #include <filesystem>
@@ -50,10 +50,10 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int showCommand) {
     EngineRuntimeConfig config{};
     config.width = 1280;
     config.height = 720;
-    config.title = L"CG4 Evaluation Assignment";
+    config.title = L"CG4";
     config.cursorVisible = true;
 
     EngineRuntime runtime;
     return runtime.Run(instance, showCommand,
-                       std::make_unique<EvaluationScene>(), config);
+                       std::make_unique<GameScene>(), config);
 }

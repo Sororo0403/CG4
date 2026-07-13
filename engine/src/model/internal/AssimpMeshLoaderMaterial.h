@@ -2,6 +2,7 @@
 
 #include "core/ResourceHandle.h"
 #include "model/Material.h"
+
 #include <assimp/scene.h>
 #include <cstdint>
 #include <string>
@@ -11,7 +12,7 @@ class TextureManager;
 namespace AssimpMeshLoaderMaterial {
 
 struct MaterialSource {
-    aiMaterial *material = nullptr;
+    aiMaterial* material = nullptr;
     uint32_t baseColorTextureId = kInvalidResourceId;
     uint32_t normalTextureId = kInvalidResourceId;
     uint32_t roughnessTextureId = kInvalidResourceId;
@@ -23,8 +24,8 @@ struct MaterialSource {
     bool hasMetallicTexture = false;
 };
 
-MaterialSource LoadSource(TextureManager &textureManager, const aiScene &scene,
-                          const aiMesh &mesh, const std::string &path);
-Material BuildMaterial(const MaterialSource &source);
+MaterialSource LoadSource(TextureManager& textureManager, const aiScene& scene, const aiMesh& mesh,
+                          const std::string& path);
+Material BuildMaterial(const MaterialSource& source);
 
 } // namespace AssimpMeshLoaderMaterial

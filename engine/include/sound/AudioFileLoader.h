@@ -21,7 +21,7 @@ struct SoundData {
         size_t decodedBytes = 0;
     } info{};
 
-    bool CopyFormat(WAVEFORMATEX &outFormat) const {
+    bool CopyFormat(WAVEFORMATEX& outFormat) const {
         if (waveFormat.size() < sizeof(WAVEFORMATEX)) {
             outFormat = {};
             return false;
@@ -34,7 +34,7 @@ struct SoundData {
 /// <summary>
 /// Loadを実行する
 /// </summary>
-SoundData Load(const std::wstring &path);
-bool TryLoad(const std::wstring &path, SoundData &outData);
+SoundData Load(const std::wstring& path);
+bool TryLoad(const std::wstring& path, SoundData& outData);
 
 } // namespace AudioFileLoader

@@ -8,9 +8,9 @@
 
 namespace SrvDescriptorAllocation {
 
-inline bool Allocate(SrvManager *srvManager, uint32_t &index,
-                     D3D12_CPU_DESCRIPTOR_HANDLE &cpuHandle,
-                     D3D12_GPU_DESCRIPTOR_HANDLE &gpuHandle) {
+inline bool Allocate(SrvManager* srvManager, uint32_t& index,
+                     D3D12_CPU_DESCRIPTOR_HANDLE& cpuHandle,
+                     D3D12_GPU_DESCRIPTOR_HANDLE& gpuHandle) {
     index = kInvalidResourceId;
     cpuHandle = {};
     gpuHandle = {};
@@ -37,7 +37,7 @@ inline bool Allocate(SrvManager *srvManager, uint32_t &index,
     return true;
 }
 
-inline void Release(SrvManager *srvManager, uint32_t &index) noexcept {
+inline void Release(SrvManager* srvManager, uint32_t& index) noexcept {
     if (srvManager != nullptr && IsValidResourceId(index)) {
         srvManager->FreeIfAllocated(index);
     }

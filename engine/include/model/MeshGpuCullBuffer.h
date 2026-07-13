@@ -1,5 +1,6 @@
 #pragma once
 #include "core/ResourceHandle.h"
+
 #include <DirectXMath.h>
 #include <array>
 #include <cassert>
@@ -21,7 +22,7 @@ struct MeshGpuCullBuffer {
 
     D3D12_VERTEX_BUFFER_VIEW outputView{};
     uint32_t maxInstanceCount = 0;
-    ID3D12Resource *sourceResource = nullptr;
+    ID3D12Resource* sourceResource = nullptr;
     uint32_t sourceInstanceCount = 0;
 
     uint32_t sourceSrvIndex = kInvalidResourceId;
@@ -38,32 +39,27 @@ struct MeshGpuCullBuffer {
     D3D12_CPU_DESCRIPTOR_HANDLE drawArgsUavCpuHandle{};
     D3D12_GPU_DESCRIPTOR_HANDLE drawArgsUavGpuHandle{};
 
-    D3D12_RESOURCE_STATES outputState =
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    D3D12_RESOURCE_STATES drawArgsState =
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    D3D12_RESOURCE_STATES outputState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    D3D12_RESOURCE_STATES drawArgsState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 
     MeshGpuCullBuffer() = default;
-    MeshGpuCullBuffer(const MeshGpuCullBuffer &) = delete;
-    MeshGpuCullBuffer &operator=(const MeshGpuCullBuffer &) = delete;
-    MeshGpuCullBuffer(MeshGpuCullBuffer &&) = delete;
-    MeshGpuCullBuffer &operator=(MeshGpuCullBuffer &&) = delete;
+    MeshGpuCullBuffer(const MeshGpuCullBuffer&) = delete;
+    MeshGpuCullBuffer& operator=(const MeshGpuCullBuffer&) = delete;
+    MeshGpuCullBuffer(MeshGpuCullBuffer&&) = delete;
+    MeshGpuCullBuffer& operator=(MeshGpuCullBuffer&&) = delete;
 
     ~MeshGpuCullBuffer() {
         if (!IsEmpty()) {
-            assert(false &&
-                   "MeshRenderer::ReleaseGpuCullBuffer must be called before "
-                   "MeshGpuCullBuffer destruction");
+            assert(false && "MeshRenderer::ReleaseGpuCullBuffer must be called before "
+                            "MeshGpuCullBuffer destruction");
             Reset();
         }
     }
 
-    bool IsValidFor(uint32_t instanceCount,
-                    const ID3D12Resource *source) const noexcept {
+    bool IsValidFor(uint32_t instanceCount, const ID3D12Resource* source) const noexcept {
         return outputResource && countResource && drawArgsResource &&
                outputView.BufferLocation != 0 && outputView.SizeInBytes > 0 &&
-               outputView.StrideInBytes > 0 &&
-               maxInstanceCount >= instanceCount &&
+               outputView.StrideInBytes > 0 && maxInstanceCount >= instanceCount &&
                sourceResource == source && sourceInstanceCount == instanceCount &&
                sourceSrvGpuHandle.ptr != 0 && outputUavGpuHandle.ptr != 0 &&
                countUavGpuHandle.ptr != 0 && drawArgsUavGpuHandle.ptr != 0;
@@ -106,34 +102,27 @@ struct MeshGpuCullBuffer {
     }
 
     bool HasDescriptors() const noexcept {
-        return IsValidResourceId(sourceSrvIndex) ||
-               IsValidResourceId(outputUavIndex) ||
-               IsValidResourceId(countUavIndex) ||
-               IsValidResourceId(drawArgsUavIndex) ||
+        return IsValidResourceId(sourceSrvIndex) || IsValidResourceId(outputUavIndex) ||
+               IsValidResourceId(countUavIndex) || IsValidResourceId(drawArgsUavIndex) ||
                sourceSrvCpuHandle.ptr != 0 || sourceSrvGpuHandle.ptr != 0 ||
                outputUavCpuHandle.ptr != 0 || outputUavGpuHandle.ptr != 0 ||
                countUavCpuHandle.ptr != 0 || countUavGpuHandle.ptr != 0 ||
-               drawArgsUavCpuHandle.ptr != 0 ||
-               drawArgsUavGpuHandle.ptr != 0;
+               drawArgsUavCpuHandle.ptr != 0 || drawArgsUavGpuHandle.ptr != 0;
     }
 
-    bool IsEmpty() const noexcept { return !HasResources() && !HasDescriptors(); }
+    bool IsEmpty() const noexcept {
+        return !HasResources() && !HasDescriptors();
+    }
 };
 
 struct MeshGpuLodCullBuffer {
-    std::array<Microsoft::WRL::ComPtr<ID3D12Resource>,
-               kMeshGpuCullLodCount>
-        outputResources;
-    std::array<Microsoft::WRL::ComPtr<ID3D12Resource>,
-               kMeshGpuCullLodCount>
-        countResources;
-    std::array<Microsoft::WRL::ComPtr<ID3D12Resource>,
-               kMeshGpuCullLodCount>
-        drawArgsResources;
+    std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, kMeshGpuCullLodCount> outputResources;
+    std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, kMeshGpuCullLodCount> countResources;
+    std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, kMeshGpuCullLodCount> drawArgsResources;
 
     std::array<D3D12_VERTEX_BUFFER_VIEW, kMeshGpuCullLodCount> outputViews{};
     uint32_t maxInstanceCount = 0;
-    ID3D12Resource *sourceResource = nullptr;
+    ID3D12Resource* sourceResource = nullptr;
     uint32_t sourceInstanceCount = 0;
 
     uint32_t sourceSrvIndex = kInvalidResourceId;
@@ -146,59 +135,44 @@ struct MeshGpuLodCullBuffer {
 
     D3D12_CPU_DESCRIPTOR_HANDLE sourceSrvCpuHandle{};
     D3D12_GPU_DESCRIPTOR_HANDLE sourceSrvGpuHandle{};
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, kMeshGpuCullLodCount>
-        outputUavCpuHandles{};
-    std::array<D3D12_GPU_DESCRIPTOR_HANDLE, kMeshGpuCullLodCount>
-        outputUavGpuHandles{};
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, kMeshGpuCullLodCount>
-        countUavCpuHandles{};
-    std::array<D3D12_GPU_DESCRIPTOR_HANDLE, kMeshGpuCullLodCount>
-        countUavGpuHandles{};
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, kMeshGpuCullLodCount>
-        drawArgsUavCpuHandles{};
-    std::array<D3D12_GPU_DESCRIPTOR_HANDLE, kMeshGpuCullLodCount>
-        drawArgsUavGpuHandles{};
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, kMeshGpuCullLodCount> outputUavCpuHandles{};
+    std::array<D3D12_GPU_DESCRIPTOR_HANDLE, kMeshGpuCullLodCount> outputUavGpuHandles{};
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, kMeshGpuCullLodCount> countUavCpuHandles{};
+    std::array<D3D12_GPU_DESCRIPTOR_HANDLE, kMeshGpuCullLodCount> countUavGpuHandles{};
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, kMeshGpuCullLodCount> drawArgsUavCpuHandles{};
+    std::array<D3D12_GPU_DESCRIPTOR_HANDLE, kMeshGpuCullLodCount> drawArgsUavGpuHandles{};
 
     std::array<D3D12_RESOURCE_STATES, kMeshGpuCullLodCount> outputStates{
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS};
     std::array<D3D12_RESOURCE_STATES, kMeshGpuCullLodCount> drawArgsStates{
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS};
 
     MeshGpuLodCullBuffer() = default;
-    MeshGpuLodCullBuffer(const MeshGpuLodCullBuffer &) = delete;
-    MeshGpuLodCullBuffer &operator=(const MeshGpuLodCullBuffer &) = delete;
-    MeshGpuLodCullBuffer(MeshGpuLodCullBuffer &&) = delete;
-    MeshGpuLodCullBuffer &operator=(MeshGpuLodCullBuffer &&) = delete;
+    MeshGpuLodCullBuffer(const MeshGpuLodCullBuffer&) = delete;
+    MeshGpuLodCullBuffer& operator=(const MeshGpuLodCullBuffer&) = delete;
+    MeshGpuLodCullBuffer(MeshGpuLodCullBuffer&&) = delete;
+    MeshGpuLodCullBuffer& operator=(MeshGpuLodCullBuffer&&) = delete;
 
     ~MeshGpuLodCullBuffer() {
         if (!IsEmpty()) {
-            assert(false &&
-                   "MeshRenderer::ReleaseGpuLodCullBuffer must be called "
-                   "before MeshGpuLodCullBuffer destruction");
+            assert(false && "MeshRenderer::ReleaseGpuLodCullBuffer must be called "
+                            "before MeshGpuLodCullBuffer destruction");
             Reset();
         }
     }
 
-    bool IsValidFor(uint32_t instanceCount,
-                    const ID3D12Resource *source) const noexcept {
+    bool IsValidFor(uint32_t instanceCount, const ID3D12Resource* source) const noexcept {
         if (maxInstanceCount < instanceCount || sourceResource != source ||
-            sourceInstanceCount != instanceCount ||
-            sourceSrvGpuHandle.ptr == 0) {
+            sourceInstanceCount != instanceCount || sourceSrvGpuHandle.ptr == 0) {
             return false;
         }
         for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-            if (!outputResources[lod] || !countResources[lod] ||
-                !drawArgsResources[lod] ||
-                outputViews[lod].BufferLocation == 0 ||
-                outputViews[lod].SizeInBytes == 0 ||
-                outputViews[lod].StrideInBytes == 0 ||
-                outputUavGpuHandles[lod].ptr == 0 ||
-                countUavGpuHandles[lod].ptr == 0 ||
-                drawArgsUavGpuHandles[lod].ptr == 0) {
+            if (!outputResources[lod] || !countResources[lod] || !drawArgsResources[lod] ||
+                outputViews[lod].BufferLocation == 0 || outputViews[lod].SizeInBytes == 0 ||
+                outputViews[lod].StrideInBytes == 0 || outputUavGpuHandles[lod].ptr == 0 ||
+                countUavGpuHandles[lod].ptr == 0 || drawArgsUavGpuHandles[lod].ptr == 0) {
                 return false;
             }
         }
@@ -206,13 +180,13 @@ struct MeshGpuLodCullBuffer {
     }
 
     void ResetResourcesOnly() noexcept {
-        for (auto &resource : outputResources) {
+        for (auto& resource : outputResources) {
             resource.Reset();
         }
-        for (auto &resource : countResources) {
+        for (auto& resource : countResources) {
             resource.Reset();
         }
-        for (auto &resource : drawArgsResources) {
+        for (auto& resource : drawArgsResources) {
             resource.Reset();
         }
         outputViews = {};
@@ -229,12 +203,9 @@ struct MeshGpuLodCullBuffer {
 
     void ResetDescriptorsOnly() noexcept {
         sourceSrvIndex = kInvalidResourceId;
-        outputUavIndices = {kInvalidResourceId, kInvalidResourceId,
-                            kInvalidResourceId};
-        countUavIndices = {kInvalidResourceId, kInvalidResourceId,
-                           kInvalidResourceId};
-        drawArgsUavIndices = {kInvalidResourceId, kInvalidResourceId,
-                              kInvalidResourceId};
+        outputUavIndices = {kInvalidResourceId, kInvalidResourceId, kInvalidResourceId};
+        countUavIndices = {kInvalidResourceId, kInvalidResourceId, kInvalidResourceId};
+        drawArgsUavIndices = {kInvalidResourceId, kInvalidResourceId, kInvalidResourceId};
         sourceSrvCpuHandle = {};
         sourceSrvGpuHandle = {};
         outputUavCpuHandles = {};
@@ -252,8 +223,7 @@ struct MeshGpuLodCullBuffer {
 
     bool HasResources() const noexcept {
         for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-            if (outputResources[lod] || countResources[lod] ||
-                drawArgsResources[lod]) {
+            if (outputResources[lod] || countResources[lod] || drawArgsResources[lod]) {
                 return true;
             }
         }
@@ -268,12 +238,9 @@ struct MeshGpuLodCullBuffer {
         for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
             if (IsValidResourceId(outputUavIndices[lod]) ||
                 IsValidResourceId(countUavIndices[lod]) ||
-                IsValidResourceId(drawArgsUavIndices[lod]) ||
-                outputUavCpuHandles[lod].ptr != 0 ||
-                outputUavGpuHandles[lod].ptr != 0 ||
-                countUavCpuHandles[lod].ptr != 0 ||
-                countUavGpuHandles[lod].ptr != 0 ||
-                drawArgsUavCpuHandles[lod].ptr != 0 ||
+                IsValidResourceId(drawArgsUavIndices[lod]) || outputUavCpuHandles[lod].ptr != 0 ||
+                outputUavGpuHandles[lod].ptr != 0 || countUavCpuHandles[lod].ptr != 0 ||
+                countUavGpuHandles[lod].ptr != 0 || drawArgsUavCpuHandles[lod].ptr != 0 ||
                 drawArgsUavGpuHandles[lod].ptr != 0) {
                 return true;
             }
@@ -281,5 +248,7 @@ struct MeshGpuLodCullBuffer {
         return false;
     }
 
-    bool IsEmpty() const noexcept { return !HasResources() && !HasDescriptors(); }
+    bool IsEmpty() const noexcept {
+        return !HasResources() && !HasDescriptors();
+    }
 };

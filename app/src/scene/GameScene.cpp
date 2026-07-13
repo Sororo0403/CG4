@@ -1,4 +1,4 @@
-#include "scene/EvaluationScene.h"
+#include "scene/GameScene.h"
 
 #include "animation/SkeletonPoseBuilder.h"
 
@@ -163,16 +163,15 @@ XMFLOAT4 AlignYAxisTo(const XMFLOAT3 &direction) {
     const float dot = std::clamp(XMVectorGetX(XMVector3Dot(from, to)), -1.0f,
                                  1.0f);
 
-    XMVECTOR quat = XMQuaternionIdentity();
     if (dot > 0.9995f) {
-        quat = XMQuaternionIdentity();
-    } else if (dot < -0.9995f) {
-        quat = XMQuaternionRotationAxis(XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f),
-                                        XM_PI);
-    } else {
-        XMVECTOR axis = XMVector3Normalize(XMVector3Cross(from, to));
-        quat = XMQuaternionRotationAxis(axis, std::acos(dot));
+        return {0.0f, 0.0f, 0.0f, 1.0f};
     }
+
+    const XMVECTOR quat =
+        dot < -0.9995f
+            ? XMQuaternionRotationAxis(XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f), XM_PI)
+            : XMQuaternionRotationAxis(XMVector3Normalize(XMVector3Cross(from, to)),
+                                       std::acos(dot));
 
     XMFLOAT4 result{};
     XMStoreFloat4(&result, quat);
@@ -185,16 +184,15 @@ XMFLOAT4 AlignXAxisTo(const XMFLOAT3 &direction) {
     const float dot = std::clamp(XMVectorGetX(XMVector3Dot(from, to)), -1.0f,
                                  1.0f);
 
-    XMVECTOR quat = XMQuaternionIdentity();
     if (dot > 0.9995f) {
-        quat = XMQuaternionIdentity();
-    } else if (dot < -0.9995f) {
-        quat = XMQuaternionRotationAxis(XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f),
-                                        XM_PI);
-    } else {
-        XMVECTOR axis = XMVector3Normalize(XMVector3Cross(from, to));
-        quat = XMQuaternionRotationAxis(axis, std::acos(dot));
+        return {0.0f, 0.0f, 0.0f, 1.0f};
     }
+
+    const XMVECTOR quat =
+        dot < -0.9995f
+            ? XMQuaternionRotationAxis(XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f), XM_PI)
+            : XMQuaternionRotationAxis(XMVector3Normalize(XMVector3Cross(from, to)),
+                                       std::acos(dot));
 
     XMFLOAT4 result{};
     XMStoreFloat4(&result, quat);
@@ -203,21 +201,21 @@ XMFLOAT4 AlignXAxisTo(const XMFLOAT3 &direction) {
 
 } // namespace
 
-EvaluationScene::~EvaluationScene() {
+GameScene::~GameScene() {
     if (ctx_ != nullptr && ctx_->rendering.dxCommon != nullptr) {
         ctx_->rendering.dxCommon->WaitForGpuIfPossible();
     }
     handParticles_.Release();
 }
 
-void EvaluationScene::Initialize(const SceneContext &ctx) {
+void GameScene::Initialize(const SceneContext &ctx) {
     BaseScene::Initialize(ctx);
     InitializeCamera();
     InitializeModels();
     InitializeParticles();
 }
 
-void EvaluationScene::InitializeCamera() {
+void GameScene::InitializeCamera() {
     float aspect = 16.0f / 9.0f;
     if (ctx_ != nullptr && ctx_->systems.winApp != nullptr &&
         ctx_->systems.winApp->GetHeight() > 0) {
@@ -232,7 +230,7 @@ void EvaluationScene::InitializeCamera() {
     camera_.SetClipRange(0.01f, 120.0f);
 }
 
-void EvaluationScene::InitializeModels() {
+void GameScene::InitializeModels() {
     if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
         ctx_->rendering.texture == nullptr) {
         return;
@@ -318,7 +316,7 @@ void EvaluationScene::InitializeModels() {
     }
 }
 
-void EvaluationScene::InitializeParticles() {
+void GameScene::InitializeParticles() {
     if (ctx_ == nullptr || ctx_->rendering.dxCommon == nullptr ||
         ctx_->rendering.srv == nullptr || ctx_->rendering.texture == nullptr) {
         return;
@@ -337,7 +335,7 @@ void EvaluationScene::InitializeParticles() {
     handParticles_.SetMaterialSettings(material);
 }
 
-void EvaluationScene::Update() {
+void GameScene::Update() {
     const float deltaTime =
         ctx_ != nullptr ? ctx_->frame.deltaTime : 1.0f / 60.0f;
 
@@ -353,7 +351,7 @@ void EvaluationScene::Update() {
     }
 }
 
-void EvaluationScene::UpdateMovement(float deltaTime) {
+void GameScene::UpdateMovement(float deltaTime) {
     if (ctx_ == nullptr || ctx_->systems.input == nullptr) {
         return;
     }
@@ -404,7 +402,7 @@ void EvaluationScene::UpdateMovement(float deltaTime) {
     characterTransform_.rotation = QuaternionFromYaw(characterYaw_);
 }
 
-void EvaluationScene::UpdateDebugControls() {
+void GameScene::UpdateDebugControls() {
     if (ctx_ == nullptr || ctx_->systems.input == nullptr ||
         ctx_->rendering.model == nullptr) {
         return;
@@ -446,7 +444,7 @@ void EvaluationScene::UpdateDebugControls() {
     }
 }
 
-void EvaluationScene::UpdateModelAnimation(float deltaTime) {
+void GameScene::UpdateModelAnimation(float deltaTime) {
     if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
         humanModelId_ == kInvalidResourceId) {
         return;
@@ -506,14 +504,14 @@ void EvaluationScene::UpdateModelAnimation(float deltaTime) {
     XMStoreFloat4x4(&humanModel->rootAnimationMatrix, XMMatrixIdentity());
 }
 
-void EvaluationScene::UpdateAttachmentPoints() {
+void GameScene::UpdateAttachmentPoints() {
     rightHandWorld_ = BoneWorldPosition(rightHandBone_);
     leftHandWorld_ = BoneWorldPosition(leftHandBone_);
     rightFootWorld_ = BoneWorldPosition(rightFootBone_);
     leftFootWorld_ = BoneWorldPosition(leftFootBone_);
 }
 
-void EvaluationScene::EmitHandParticles(float deltaTime) {
+void GameScene::EmitHandParticles(float deltaTime) {
     if (!handParticlesReady_) {
         return;
     }
@@ -548,7 +546,7 @@ void EvaluationScene::EmitHandParticles(float deltaTime) {
     handParticles_.EmitOnce(emit);
 }
 
-void EvaluationScene::SubmitLighting(LightingScene &lightingScene) {
+void GameScene::SubmitLighting(LightingScene &lightingScene) {
     SceneLighting lighting{};
     lighting.keyLightDirection = {-0.35f, -0.95f, 0.25f};
     lighting.keyLightColor = {1.18f, 1.10f, 0.96f, 1.0f};
@@ -562,29 +560,29 @@ void EvaluationScene::SubmitLighting(LightingScene &lightingScene) {
     lightingScene.SetSceneLighting(lighting);
 }
 
-void EvaluationScene::Draw() {
+void GameScene::Draw() {
     DrawSceneProps();
     DrawCharacter();
     DrawWeapon();
 }
 
-void EvaluationScene::DrawForeground3D() {
+void GameScene::DrawForeground3D() {
     // Bone debug is drawn in DrawPostProcessOverlay as screen-space lines.
 }
 
-void EvaluationScene::DrawTransparent() {
+void GameScene::DrawTransparent() {
     if (handParticlesReady_) {
         handParticles_.Draw(camera_);
     }
 }
 
-void EvaluationScene::DrawPostProcessOverlay() {
+void GameScene::DrawPostProcessOverlay() {
     DrawBoneDebugOverlay();
     DrawBoneLabels();
     DrawDebugPanel();
 }
 
-void EvaluationScene::DrawCharacter() {
+void GameScene::DrawCharacter() {
     if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
         humanModelId_ == kInvalidResourceId) {
         return;
@@ -592,7 +590,7 @@ void EvaluationScene::DrawCharacter() {
     ctx_->rendering.model->Draw(humanModelId_, characterTransform_, camera_);
 }
 
-void EvaluationScene::DrawWeapon() {
+void GameScene::DrawWeapon() {
     if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
         humanModelId_ == kInvalidResourceId ||
         rightHandBone_ == kInvalidResourceId) {
@@ -646,7 +644,7 @@ void EvaluationScene::DrawWeapon() {
     ctx_->rendering.model->Draw(weaponBladeModelId_, blade, camera_);
 }
 
-void EvaluationScene::DrawBoneRig() {
+void GameScene::DrawBoneRig() {
     if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
         humanModelId_ == kInvalidResourceId ||
         boneJointModelId_ == kInvalidResourceId) {
@@ -696,7 +694,7 @@ void EvaluationScene::DrawBoneRig() {
     }
 }
 
-void EvaluationScene::DrawBindPoseRig() {
+void GameScene::DrawBindPoseRig() {
     if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
         humanModelId_ == kInvalidResourceId ||
         boneBindModelId_ == kInvalidResourceId) {
@@ -731,7 +729,7 @@ void EvaluationScene::DrawBindPoseRig() {
     }
 }
 
-void EvaluationScene::DrawSceneProps() {
+void GameScene::DrawSceneProps() {
     if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
         groundModelId_ == kInvalidResourceId) {
         return;
@@ -743,7 +741,7 @@ void EvaluationScene::DrawSceneProps() {
     ctx_->rendering.model->Draw(groundModelId_, ground, camera_);
 }
 
-void EvaluationScene::DrawBoneDebugOverlay() {
+void GameScene::DrawBoneDebugOverlay() {
 #ifdef _DEBUG
     if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
         humanModelId_ == kInvalidResourceId) {
@@ -755,71 +753,73 @@ void EvaluationScene::DrawBoneDebugOverlay() {
         return;
     }
 
-    ImDrawList *drawList = ImGui::GetForegroundDrawList();
-    if (drawList == nullptr) {
+    if (ImGui::GetForegroundDrawList() == nullptr) {
         return;
     }
 
     if (debugBindPoseEnabled_) {
-        for (uint32_t i = 0; i < static_cast<uint32_t>(model->bones.size());
-             ++i) {
-            const BoneInfo &bone = model->bones[i];
-            if (debugMajorBonesOnly_ && !IsMajorDebugBone(bone.name) &&
-                static_cast<int>(i) != selectedBoneIndex_) {
-                continue;
-            }
-            if (bone.parentIndex < 0 ||
-                bone.parentIndex >= static_cast<int>(model->bones.size())) {
-                continue;
-            }
-            DrawScreenBoneLine(
-                BindBoneWorldPosition(static_cast<uint32_t>(bone.parentIndex)),
-                BindBoneWorldPosition(i), IM_COL32(255, 220, 40, 120), 1.5f);
-        }
+        DrawBindPoseBoneOverlay(*model);
     }
 
     if (debugRigEnabled_) {
-        for (uint32_t i = 0; i < static_cast<uint32_t>(model->bones.size());
-             ++i) {
-            const BoneInfo &bone = model->bones[i];
-            if (debugMajorBonesOnly_ && !IsMajorDebugBone(bone.name) &&
-                static_cast<int>(i) != selectedBoneIndex_) {
-                continue;
-            }
-
-            const XMFLOAT3 child = BoneWorldPosition(i);
-            XMFLOAT2 jointScreen{};
-            if (ProjectWorldToScreen(child, jointScreen)) {
-                const bool selected = static_cast<int>(i) == selectedBoneIndex_;
-                drawList->AddCircleFilled(
-                    ImVec2(jointScreen.x, jointScreen.y), selected ? 5.5f : 3.0f,
-                    selected ? IM_COL32(255, 228, 40, 255)
-                             : IM_COL32(90, 255, 120, 230));
-            }
-
-            if (bone.parentIndex < 0 ||
-                bone.parentIndex >= static_cast<int>(model->bones.size())) {
-                continue;
-            }
-
-            const XMFLOAT3 parent =
-                BoneWorldPosition(static_cast<uint32_t>(bone.parentIndex));
-            const ImU32 color =
-                bone.name.find("Left") != std::string::npos
-                    ? IM_COL32(70, 135, 255, 235)
-                    : (bone.name.find("Right") != std::string::npos
-                           ? IM_COL32(255, 80, 65, 235)
-                           : IM_COL32(225, 230, 238, 225));
-            DrawScreenBoneLine(parent, child, color,
-                               static_cast<int>(i) == selectedBoneIndex_ ? 4.0f
-                                                                         : 2.5f);
-        }
+        DrawAnimatedBoneOverlay(*model);
     }
-
 #endif
 }
 
-void EvaluationScene::DrawDebugPanel() {
+void GameScene::DrawBindPoseBoneOverlay(const Model& model) {
+#ifdef _DEBUG
+    for (uint32_t i = 0; i < static_cast<uint32_t>(model.bones.size()); ++i) {
+        const BoneInfo& bone = model.bones[i];
+        if ((debugMajorBonesOnly_ && !IsMajorDebugBone(bone.name) &&
+             static_cast<int>(i) != selectedBoneIndex_) ||
+            bone.parentIndex < 0 || bone.parentIndex >= static_cast<int>(model.bones.size())) {
+            continue;
+        }
+        DrawScreenBoneLine(BindBoneWorldPosition(static_cast<uint32_t>(bone.parentIndex)),
+                           BindBoneWorldPosition(i), IM_COL32(255, 220, 40, 120), 1.5f);
+    }
+#else
+    (void)model;
+#endif
+}
+
+void GameScene::DrawAnimatedBoneOverlay(const Model& model) {
+#ifdef _DEBUG
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    for (uint32_t i = 0; i < static_cast<uint32_t>(model.bones.size()); ++i) {
+        const BoneInfo& bone = model.bones[i];
+        const bool selected = static_cast<int>(i) == selectedBoneIndex_;
+        if (debugMajorBonesOnly_ && !IsMajorDebugBone(bone.name) && !selected) {
+            continue;
+        }
+
+        const XMFLOAT3 child = BoneWorldPosition(i);
+        XMFLOAT2 jointScreen{};
+        if (ProjectWorldToScreen(child, jointScreen)) {
+            drawList->AddCircleFilled(ImVec2(jointScreen.x, jointScreen.y),
+                                      selected ? 5.5f : 3.0f,
+                                      selected ? IM_COL32(255, 228, 40, 255)
+                                               : IM_COL32(90, 255, 120, 230));
+        }
+        if (bone.parentIndex < 0 || bone.parentIndex >= static_cast<int>(model.bones.size())) {
+            continue;
+        }
+
+        const ImU32 color = bone.name.find("Left") != std::string::npos
+                                ? IM_COL32(70, 135, 255, 235)
+                            : bone.name.find("Right") != std::string::npos
+                                ? IM_COL32(255, 80, 65, 235)
+                                : IM_COL32(225, 230, 238, 225);
+        DrawScreenBoneLine(BoneWorldPosition(static_cast<uint32_t>(bone.parentIndex)), child,
+                           color, selected ? 4.0f : 2.5f);
+    }
+#else
+    (void)model;
+#endif
+}
+
+void GameScene::DrawDebugPanel() {
 #ifdef _DEBUG
     if (ctx_ == nullptr || ctx_->rendering.model == nullptr) {
         return;
@@ -905,7 +905,7 @@ void EvaluationScene::DrawDebugPanel() {
 #endif
 }
 
-void EvaluationScene::DrawBoneLabels() {
+void GameScene::DrawBoneLabels() {
     if (!debugLabelsEnabled_ || ctx_ == nullptr || ctx_->rendering.model == nullptr) {
         return;
     }
@@ -944,7 +944,7 @@ void EvaluationScene::DrawBoneLabels() {
 }
 
 uint32_t
-EvaluationScene::FindBoneIndex(const std::vector<std::string> &candidates) const {
+GameScene::FindBoneIndex(const std::vector<std::string> &candidates) const {
     if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
         humanModelId_ == kInvalidResourceId) {
         return kInvalidResourceId;
@@ -955,24 +955,26 @@ EvaluationScene::FindBoneIndex(const std::vector<std::string> &candidates) const
         return kInvalidResourceId;
     }
 
-    for (const std::string &name : candidates) {
-        auto found = model->boneMap.find(name);
-        if (found != model->boneMap.end()) {
-            return found->second;
-        }
+    const auto exactMatch = std::ranges::find_if(candidates, [model](const std::string& name) {
+        return model->boneMap.contains(name);
+    });
+    if (exactMatch != candidates.end()) {
+        return model->boneMap.at(*exactMatch);
     }
 
     for (uint32_t i = 0; i < static_cast<uint32_t>(model->bones.size()); ++i) {
-        for (const std::string &name : candidates) {
-            if (model->bones[i].name.find(name) != std::string::npos) {
-                return i;
-            }
+        const bool containsCandidate =
+            std::ranges::any_of(candidates, [model, i](const std::string& name) {
+                return model->bones[i].name.find(name) != std::string::npos;
+            });
+        if (containsCandidate) {
+            return i;
         }
     }
     return kInvalidResourceId;
 }
 
-XMFLOAT3 EvaluationScene::BoneWorldPosition(uint32_t boneIndex) const {
+XMFLOAT3 GameScene::BoneWorldPosition(uint32_t boneIndex) const {
     if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
         humanModelId_ == kInvalidResourceId) {
         return characterTransform_.position;
@@ -1005,7 +1007,7 @@ XMFLOAT3 EvaluationScene::BoneWorldPosition(uint32_t boneIndex) const {
     return result;
 }
 
-XMFLOAT3 EvaluationScene::BindBoneWorldPosition(uint32_t boneIndex) const {
+XMFLOAT3 GameScene::BindBoneWorldPosition(uint32_t boneIndex) const {
     if (boneIndex == kInvalidResourceId || boneIndex >= bindPoseMatrices_.size()) {
         return characterTransform_.position;
     }
@@ -1019,7 +1021,7 @@ XMFLOAT3 EvaluationScene::BindBoneWorldPosition(uint32_t boneIndex) const {
     return result;
 }
 
-XMMATRIX EvaluationScene::CharacterWorldMatrix() const {
+XMMATRIX GameScene::CharacterWorldMatrix() const {
     return XMMatrixScaling(characterTransform_.scale.x, characterTransform_.scale.y,
                            characterTransform_.scale.z) *
            XMMatrixRotationQuaternion(XMLoadFloat4(&characterTransform_.rotation)) *
@@ -1028,7 +1030,7 @@ XMMATRIX EvaluationScene::CharacterWorldMatrix() const {
                                characterTransform_.position.z);
 }
 
-uint32_t EvaluationScene::BoneSegmentModelId(const std::string &boneName) const {
+uint32_t GameScene::BoneSegmentModelId(const std::string &boneName) const {
     if (boneName.find("Left") != std::string::npos) {
         return boneLeftModelId_;
     }
@@ -1038,14 +1040,14 @@ uint32_t EvaluationScene::BoneSegmentModelId(const std::string &boneName) const 
     return boneCenterModelId_;
 }
 
-bool EvaluationScene::IsMajorDebugBone(const std::string &boneName) const {
+bool GameScene::IsMajorDebugBone(const std::string &boneName) const {
     return ContainsAny(boneName,
                        {"Root", "Hips", "Spine", "Neck", "Head", "Shoulder",
                         "Arm", "ForeArm", "Hand", "UpLeg", "Leg", "Foot",
                         "Toe"});
 }
 
-std::string EvaluationScene::DisplayBoneName(const std::string &boneName) const {
+std::string GameScene::DisplayBoneName(const std::string &boneName) const {
     constexpr const char *prefix = "mixamorig:";
     if (boneName.rfind(prefix, 0) == 0) {
         return boneName.substr(std::char_traits<char>::length(prefix));
@@ -1053,7 +1055,7 @@ std::string EvaluationScene::DisplayBoneName(const std::string &boneName) const 
     return boneName;
 }
 
-bool EvaluationScene::ProjectWorldToScreen(const XMFLOAT3 &world,
+bool GameScene::ProjectWorldToScreen(const XMFLOAT3 &world,
                                            XMFLOAT2 &screen) const {
     if (ctx_ == nullptr || ctx_->systems.winApp == nullptr) {
         return false;
@@ -1079,7 +1081,7 @@ bool EvaluationScene::ProjectWorldToScreen(const XMFLOAT3 &world,
     return true;
 }
 
-Transform EvaluationScene::MakeTransformAt(const XMFLOAT3 &position,
+Transform GameScene::MakeTransformAt(const XMFLOAT3 &position,
                                            const XMFLOAT3 &scale) const {
     Transform transform{};
     transform.position = position;
@@ -1088,7 +1090,7 @@ Transform EvaluationScene::MakeTransformAt(const XMFLOAT3 &position,
     return transform;
 }
 
-Transform EvaluationScene::MakeBoneSegmentTransform(const XMFLOAT3 &parent,
+Transform GameScene::MakeBoneSegmentTransform(const XMFLOAT3 &parent,
                                                     const XMFLOAT3 &child) const {
     XMFLOAT3 direction{child.x - parent.x, child.y - parent.y,
                        child.z - parent.z};
@@ -1101,7 +1103,7 @@ Transform EvaluationScene::MakeBoneSegmentTransform(const XMFLOAT3 &parent,
     return transform;
 }
 
-void EvaluationScene::DrawScreenBoneLine(const XMFLOAT3 &a, const XMFLOAT3 &b,
+void GameScene::DrawScreenBoneLine(const XMFLOAT3 &a, const XMFLOAT3 &b,
                                          uint32_t color, float thickness) {
 #ifdef _DEBUG
     XMFLOAT2 screenA{};

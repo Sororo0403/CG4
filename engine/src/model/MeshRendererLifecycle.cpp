@@ -1,14 +1,72 @@
-#include "model/MeshRenderer.h"
-#include "internal/MeshRendererInternal.h"
-
 #include "graphics/DirectXCommon.h"
 #include "graphics/GpuResourceLifetime.h"
 #include "graphics/SrvManager.h"
+#include "internal/MeshRendererInternal.h"
 #include "internal/RendererPipelineVariantUtils.h"
+#include "model/MeshRenderer.h"
 #include "texture/TextureManager.h"
 
 #include <algorithm>
+#include <exception>
 #include <iterator>
+#include <new>
+
+namespace {
+
+template <typename State> bool HasRetiredStaticInstanceBuffers(const State& state) {
+    return std::any_of(state.retiredStaticInstanceBuffers.begin(),
+                       state.retiredStaticInstanceBuffers.end(),
+                       [](const auto& buffers) { return !buffers.empty(); });
+}
+
+template <typename State> bool HasMeshRendererGpuResources(const State& state) {
+    const bool resources[] = {
+        static_cast<bool>(state.rootSignature),
+        static_cast<bool>(state.shadowRootSignature),
+        static_cast<bool>(state.pipelineStates[0]),
+        static_cast<bool>(state.instancedPipelineStates[0]),
+        static_cast<bool>(state.shadowPSO),
+        static_cast<bool>(state.instancedShadowPSO),
+        state.uploadBuffer.GetBytesPerFrame() != 0,
+        !state.customPipelines.empty(),
+        !state.customInstancedPipelines.empty(),
+        static_cast<bool>(state.fallbackOcclusionTexture),
+        IsValidResourceId(state.fallbackOcclusionSrvIndex),
+        static_cast<bool>(state.gpuCullRootSignature),
+        static_cast<bool>(state.gpuCullPSO),
+        static_cast<bool>(state.gpuCullArgsPSO),
+        static_cast<bool>(state.gpuCullCommandSignature),
+        static_cast<bool>(state.gpuLodCullRootSignature),
+        static_cast<bool>(state.gpuLodCullPSO),
+        static_cast<bool>(state.gpuLodCullArgsPSO),
+    };
+    return std::any_of(std::begin(resources), std::end(resources),
+                       [](bool value) { return value; });
+}
+
+template <typename State> bool HasRequiredManagers(const State& state) {
+    return state.dxCommon != nullptr && state.srvManager != nullptr &&
+           state.textureManager != nullptr;
+}
+
+template <typename State> bool HasRequiredForwardPipelines(const State& state) {
+    return state.rootSignature && state.shadowRootSignature &&
+           RendererPipelineVariantUtils::HasAllPipelineStates(state.pipelineStates) &&
+           RendererPipelineVariantUtils::HasAllPipelineStates(state.instancedPipelineStates) &&
+           state.shadowPSO && state.instancedShadowPSO;
+}
+
+template <typename State> bool HasRequiredGpuCullPipelines(const State& state) {
+    return state.gpuCullRootSignature && state.gpuCullPSO && state.gpuCullArgsPSO &&
+           state.gpuCullCommandSignature && state.gpuLodCullRootSignature && state.gpuLodCullPSO &&
+           state.gpuLodCullArgsPSO;
+}
+
+template <typename State> bool HasRequiredFallbackOcclusion(const State& state) {
+    return state.fallbackOcclusionTexture && state.fallbackOcclusionGpuHandle.ptr != 0;
+}
+
+} // namespace
 
 MeshRenderer::MeshRenderer() : state_(std::make_unique<State>()) {}
 
@@ -24,24 +82,22 @@ size_t MeshRenderer::GetCustomInstancedPipelineCount() const noexcept {
     return state_->customInstancedPipelines.size();
 }
 
-void MeshRenderer::SetSceneLighting(const SceneLighting &lighting) {
+void MeshRenderer::SetSceneLighting(const SceneLighting& lighting) {
     state_->currentLighting = lighting;
     InvalidateConstantCaches();
 }
 
-void MeshRenderer::SetSceneFog(const SceneFog &fog) {
+void MeshRenderer::SetSceneFog(const SceneFog& fog) {
     state_->currentFog = fog;
     InvalidateConstantCaches();
 }
 
 void MeshRenderer::SetEnvironmentTexture(uint32_t textureId) {
-    if (state_->textureManager != nullptr &&
-        IsValidResourceId(textureId) &&
+    if (state_->textureManager != nullptr && IsValidResourceId(textureId) &&
         state_->textureManager->IsCubeTextureId(textureId)) {
         state_->environmentTextureId = textureId;
     } else if (state_->textureManager != nullptr) {
-        state_->environmentTextureId =
-            state_->textureManager->GetBlackCubeTextureId();
+        state_->environmentTextureId = state_->textureManager->GetBlackCubeTextureId();
     } else {
         state_->environmentTextureId = kInvalidResourceId;
     }
@@ -69,8 +125,8 @@ size_t MeshRenderer::GetUploadFrameOffset() const {
     return state_->uploadBuffer.GetFrameOffset();
 }
 
-void MeshRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
-                              TextureManager *textureManager) {
+void MeshRenderer::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager,
+                              TextureManager* textureManager) {
     if (!dxCommon || !dxCommon->GetDevice() || !srvManager || !textureManager) {
         Finalize();
         return;
@@ -87,7 +143,12 @@ void MeshRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
     state_->spotLightShadowMapGpuHandle = state_->shadowMapGpuHandle;
     state_->environmentTextureId = state_->textureManager->GetBlackCubeTextureId();
     const UINT frameCount = (std::max)(1u, dxCommon->GetSwapChainBufferCount());
-    state_->retiredStaticInstanceBuffers.resize(frameCount);
+    try {
+        state_->retiredStaticInstanceBuffers.resize(frameCount);
+    } catch (const std::exception&) {
+        Finalize(true);
+        return;
+    }
 
     CreateRootSignature();
     CreateShadowRootSignature();
@@ -101,23 +162,14 @@ void MeshRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
     }
 }
 
-bool MeshRenderer::Finalize() { return Finalize(false); }
+bool MeshRenderer::Finalize() {
+    return Finalize(false);
+}
 
 bool MeshRenderer::Finalize(bool allowFrameAbort) {
-    const bool hasGpuResources =
-        state_->rootSignature || state_->shadowRootSignature || state_->pipelineStates[0] ||
-        state_->instancedPipelineStates[0] || state_->shadowPSO || state_->instancedShadowPSO ||
-        state_->uploadBuffer.GetBytesPerFrame() != 0 || !state_->customPipelines.empty() ||
-        !state_->customInstancedPipelines.empty() || state_->fallbackOcclusionTexture ||
-        IsValidResourceId(state_->fallbackOcclusionSrvIndex) || state_->gpuCullRootSignature ||
-        state_->gpuCullPSO || state_->gpuCullArgsPSO || state_->gpuCullCommandSignature ||
-        state_->gpuLodCullRootSignature || state_->gpuLodCullPSO || state_->gpuLodCullArgsPSO;
-    const bool hasRetiredStaticInstanceBuffers = std::any_of(
-        state_->retiredStaticInstanceBuffers.begin(),
-        state_->retiredStaticInstanceBuffers.end(),
-        [](const auto &buffers) { return !buffers.empty(); });
     if (!CanReleaseGpuResources(state_->dxCommon,
-                                hasGpuResources || hasRetiredStaticInstanceBuffers,
+                                HasMeshRendererGpuResources(*state_) ||
+                                    HasRetiredStaticInstanceBuffers(*state_),
                                 allowFrameAbort)) {
         return false;
     }
@@ -128,8 +180,7 @@ bool MeshRenderer::Finalize(bool allowFrameAbort) {
 
 void MeshRenderer::ResetResources() {
     state_->fallbackOcclusionTexture.Reset();
-    if (state_->srvManager != nullptr &&
-        IsValidResourceId(state_->fallbackOcclusionSrvIndex)) {
+    if (state_->srvManager != nullptr && IsValidResourceId(state_->fallbackOcclusionSrvIndex)) {
         state_->srvManager->FreeIfAllocated(state_->fallbackOcclusionSrvIndex);
     }
     state_->fallbackOcclusionSrvIndex = kInvalidResourceId;
@@ -141,10 +192,10 @@ void MeshRenderer::ResetResources() {
     state_->environmentTextureId = kInvalidResourceId;
     state_->rootSignature.Reset();
     state_->shadowRootSignature.Reset();
-    for (auto &pipeline : state_->pipelineStates) {
+    for (auto& pipeline : state_->pipelineStates) {
         pipeline.Reset();
     }
-    for (auto &pipeline : state_->instancedPipelineStates) {
+    for (auto& pipeline : state_->instancedPipelineStates) {
         pipeline.Reset();
     }
     state_->shadowPSO.Reset();
@@ -169,14 +220,13 @@ void MeshRenderer::ResetResources() {
     ClearOcclusionPyramid();
 }
 
-bool MeshRenderer::ReleasePipeline(uint32_t pipelineId,
-                                   bool allowFrameAbort) noexcept {
+bool MeshRenderer::ReleasePipeline(uint32_t pipelineId, bool allowFrameAbort) noexcept {
     if (pipelineId >= state_->customPipelines.size()) {
         return false;
     }
 
     bool hasGpuResources = false;
-    for (const auto &pipeline : state_->customPipelines[pipelineId].pipelineStates) {
+    for (const auto& pipeline : state_->customPipelines[pipelineId].pipelineStates) {
         hasGpuResources = hasGpuResources || static_cast<bool>(pipeline);
     }
     if (!CanReleaseGpuResources(state_->dxCommon, hasGpuResources, allowFrameAbort)) {
@@ -188,22 +238,20 @@ bool MeshRenderer::ReleasePipeline(uint32_t pipelineId,
     return true;
 }
 
-bool MeshRenderer::ReleaseInstancedPipeline(uint32_t pipelineId,
-                                            bool allowFrameAbort) noexcept {
+bool MeshRenderer::ReleaseInstancedPipeline(uint32_t pipelineId, bool allowFrameAbort) noexcept {
     if (pipelineId >= state_->customInstancedPipelines.size()) {
         return false;
     }
 
-    const InstancedPipelineSet &pipelineSet =
-        state_->customInstancedPipelines[pipelineId];
+    const InstancedPipelineSet& pipelineSet = state_->customInstancedPipelines[pipelineId];
     bool hasGpuResources = false;
-    for (const auto &pipeline : pipelineSet.pipelineStates) {
+    for (const auto& pipeline : pipelineSet.pipelineStates) {
         hasGpuResources = hasGpuResources || static_cast<bool>(pipeline);
     }
-    for (const auto &pipeline : pipelineSet.shadowPipelineStates) {
+    for (const auto& pipeline : pipelineSet.shadowPipelineStates) {
         hasGpuResources = hasGpuResources || static_cast<bool>(pipeline);
     }
-    for (const auto &pipeline : pipelineSet.opaqueShadowPipelineStates) {
+    for (const auto& pipeline : pipelineSet.opaqueShadowPipelineStates) {
         hasGpuResources = hasGpuResources || static_cast<bool>(pipeline);
     }
     if (!CanReleaseGpuResources(state_->dxCommon, hasGpuResources, allowFrameAbort)) {
@@ -226,16 +274,9 @@ void MeshRenderer::InvalidateCommandState() noexcept {
 }
 
 bool MeshRenderer::IsReady() const {
-    return state_->dxCommon != nullptr && state_->srvManager != nullptr &&
-           state_->textureManager != nullptr && state_->rootSignature &&
-           state_->shadowRootSignature &&
-           RendererPipelineVariantUtils::HasAllPipelineStates(state_->pipelineStates) &&
-           RendererPipelineVariantUtils::HasAllPipelineStates(state_->instancedPipelineStates) &&
-           state_->shadowPSO && state_->instancedShadowPSO &&
-           state_->gpuCullRootSignature && state_->gpuCullPSO &&
-           state_->gpuCullArgsPSO && state_->gpuCullCommandSignature &&
-           state_->gpuLodCullRootSignature && state_->gpuLodCullPSO &&
-           state_->gpuLodCullArgsPSO && state_->uploadBuffer.GetBytesPerFrame() != 0;
+    return HasRequiredManagers(*state_) && HasRequiredForwardPipelines(*state_) &&
+           HasRequiredGpuCullPipelines(*state_) && HasRequiredFallbackOcclusion(*state_) &&
+           state_->uploadBuffer.GetBytesPerFrame() != 0;
 }
 
 void MeshRenderer::BeginFrame() {
@@ -267,14 +308,14 @@ void MeshRenderer::PreDraw() {
     PreDrawWithRootSignature(state_->rootSignature.Get());
 }
 
-void MeshRenderer::PreDrawWithRootSignature(ID3D12RootSignature *rootSignature) {
-    auto *cmd = state_->dxCommon->GetCommandList();
-    ID3D12DescriptorHeap *heap = state_->srvManager->GetHeap();
+void MeshRenderer::PreDrawWithRootSignature(ID3D12RootSignature* rootSignature) {
+    auto* cmd = state_->dxCommon->GetCommandList();
+    ID3D12DescriptorHeap* heap = state_->srvManager->GetHeap();
     if (cmd == nullptr || heap == nullptr) {
         state_->drawIndex = 0;
         return;
     }
-    ID3D12DescriptorHeap *heaps[] = {heap};
+    ID3D12DescriptorHeap* heaps[] = {heap};
     InvalidateCommandState();
     cmd->SetDescriptorHeaps(1, heaps);
     SetGraphicsRootSignatureCached(rootSignature);

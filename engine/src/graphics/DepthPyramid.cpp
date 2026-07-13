@@ -1,7 +1,5 @@
 #include "graphics/DepthPyramid.h"
 
-#include "internal/DepthPyramidInternal.h"
-#include "internal/RootSignatureUtils.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
@@ -10,9 +8,11 @@
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
+#include "internal/DepthPyramidInternal.h"
+#include "internal/RootSignatureUtils.h"
 
 #include <algorithm>
-#include <cmath>
+#include <exception>
 #include <utility>
 #include <vector>
 
@@ -22,7 +22,7 @@ namespace {
 using GpuResourceHelpers::CreateCommittedResourceChecked;
 
 uint32_t HalfCeil(uint32_t value) {
-    return (std::max)(1u, (value + 1u) / 2u);
+    return (std::max)(1u, value / 2u + value % 2u);
 }
 
 uint32_t CalculateMipCount(uint32_t width, uint32_t height) {
@@ -140,6 +140,34 @@ bool DepthPyramid::Build(D3D12_GPU_DESCRIPTOR_HANDLE sceneDepth) {
     if (commandList == nullptr || heap == nullptr) {
         return false;
     }
+    if (!ValidateBuildDescriptors()) {
+        return false;
+    }
+
+    BindBuildPipeline(commandList, heap);
+
+    uint32_t sourceWidth = resources_->sourceWidth;
+    uint32_t sourceHeight = resources_->sourceHeight;
+    uint32_t targetWidth = resources_->width;
+    uint32_t targetHeight = resources_->height;
+
+    for (uint32_t mip = 0; mip < resources_->mipCount; ++mip) {
+        if (!DispatchBuildMip(commandList, sceneDepth, mip, sourceWidth, sourceHeight, targetWidth,
+                              targetHeight)) {
+            return false;
+        }
+    }
+
+    if (resources_->mipCount > 0u) {
+        if (!TransitionSubresource(resources_->mipCount - 1u,
+                                   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool DepthPyramid::ValidateBuildDescriptors() const {
     if (!IsValidResourceId(resources_->descriptorStart)) {
         return false;
     }
@@ -153,62 +181,57 @@ bool DepthPyramid::Build(D3D12_GPU_DESCRIPTOR_HANDLE sceneDepth) {
             return false;
         }
     }
+    return true;
+}
 
+void DepthPyramid::BindBuildPipeline(ID3D12GraphicsCommandList* commandList,
+                                     ID3D12DescriptorHeap* heap) const {
     ID3D12DescriptorHeap* heaps[] = {heap};
     commandList->SetDescriptorHeaps(1, heaps);
     commandList->SetComputeRootSignature(resources_->rootSignature.Get());
     commandList->SetPipelineState(resources_->pipelineState.Get());
+}
 
-    uint32_t sourceWidth = resources_->sourceWidth;
-    uint32_t sourceHeight = resources_->sourceHeight;
-    uint32_t targetWidth = resources_->width;
-    uint32_t targetHeight = resources_->height;
-
-    for (uint32_t mip = 0; mip < resources_->mipCount; ++mip) {
-        if (!TransitionSubresource(mip, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)) {
-            return false;
-        }
-
-        BuildConstants constants{};
-        constants.sourceWidth = (std::max)(sourceWidth, 1u);
-        constants.sourceHeight = (std::max)(sourceHeight, 1u);
-        constants.targetWidth = (std::max)(targetWidth, 1u);
-        constants.targetHeight = (std::max)(targetHeight, 1u);
-        constants.sourceMip = mip == 0u ? 0u : mip - 1u;
-
-        D3D12_GPU_DESCRIPTOR_HANDLE sourceHandle = sceneDepth;
-        if (mip > 0u) {
-            if (!TransitionSubresource(mip - 1u, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)) {
-                return false;
-            }
-            sourceHandle = srvManager_->GetGpuHandle(resources_->descriptorStart + 1u + (mip - 1u));
-        }
-        const D3D12_GPU_DESCRIPTOR_HANDLE targetHandle = srvManager_->GetGpuHandle(
-            resources_->descriptorStart + 1u + resources_->mipCount + mip);
-        if (sourceHandle.ptr == 0 || targetHandle.ptr == 0) {
-            return false;
-        }
-
-        commandList->SetComputeRoot32BitConstants(0, sizeof(BuildConstants) / sizeof(uint32_t),
-                                                  &constants, 0);
-        commandList->SetComputeRootDescriptorTable(1, sourceHandle);
-        commandList->SetComputeRootDescriptorTable(2, targetHandle);
-        commandList->Dispatch((targetWidth + 7u) / 8u, (targetHeight + 7u) / 8u, 1u);
-        D3D12_RESOURCE_BARRIER uav = CD3DX12_RESOURCE_BARRIER::UAV(resources_->resource.Get());
-        commandList->ResourceBarrier(1, &uav);
-
-        sourceWidth = targetWidth;
-        sourceHeight = targetHeight;
-        targetWidth = HalfCeil(targetWidth);
-        targetHeight = HalfCeil(targetHeight);
+bool DepthPyramid::DispatchBuildMip(ID3D12GraphicsCommandList* commandList,
+                                    D3D12_GPU_DESCRIPTOR_HANDLE sceneDepth, uint32_t mip,
+                                    uint32_t& sourceWidth, uint32_t& sourceHeight,
+                                    uint32_t& targetWidth, uint32_t& targetHeight) {
+    if (!TransitionSubresource(mip, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)) {
+        return false;
     }
 
-    if (resources_->mipCount > 0u) {
-        if (!TransitionSubresource(resources_->mipCount - 1u,
-                                   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)) {
+    BuildConstants constants{};
+    constants.sourceWidth = (std::max)(sourceWidth, 1u);
+    constants.sourceHeight = (std::max)(sourceHeight, 1u);
+    constants.targetWidth = (std::max)(targetWidth, 1u);
+    constants.targetHeight = (std::max)(targetHeight, 1u);
+    constants.sourceMip = mip == 0u ? 0u : mip - 1u;
+
+    D3D12_GPU_DESCRIPTOR_HANDLE sourceHandle = sceneDepth;
+    if (mip > 0u) {
+        if (!TransitionSubresource(mip - 1u, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)) {
             return false;
         }
+        sourceHandle = srvManager_->GetGpuHandle(resources_->descriptorStart + 1u + (mip - 1u));
     }
+    const D3D12_GPU_DESCRIPTOR_HANDLE targetHandle =
+        srvManager_->GetGpuHandle(resources_->descriptorStart + 1u + resources_->mipCount + mip);
+    if (sourceHandle.ptr == 0 || targetHandle.ptr == 0) {
+        return false;
+    }
+
+    commandList->SetComputeRoot32BitConstants(0, sizeof(BuildConstants) / sizeof(uint32_t),
+                                              &constants, 0);
+    commandList->SetComputeRootDescriptorTable(1, sourceHandle);
+    commandList->SetComputeRootDescriptorTable(2, targetHandle);
+    commandList->Dispatch((targetWidth + 7u) / 8u, (targetHeight + 7u) / 8u, 1u);
+    D3D12_RESOURCE_BARRIER uav = CD3DX12_RESOURCE_BARRIER::UAV(resources_->resource.Get());
+    commandList->ResourceBarrier(1, &uav);
+
+    sourceWidth = targetWidth;
+    sourceHeight = targetHeight;
+    targetWidth = HalfCeil(targetWidth);
+    targetHeight = HalfCeil(targetHeight);
     return true;
 }
 
@@ -284,8 +307,26 @@ bool DepthPyramid::CreateResources(uint32_t width, uint32_t height) {
         return false;
     }
 
+    const auto descriptorCpuHandle = [&](uint32_t offset) {
+        return srvManager_->GetCpuHandle(nextDescriptorStart + offset);
+    };
+    const auto descriptorGpuHandle = [&](uint32_t offset) {
+        return srvManager_->GetGpuHandle(nextDescriptorStart + offset);
+    };
+    for (uint32_t offset = 0; offset < newDescriptorCount; ++offset) {
+        if (descriptorCpuHandle(offset).ptr == 0 || descriptorGpuHandle(offset).ptr == 0) {
+            rollbackDescriptorAllocation();
+            return false;
+        }
+    }
+
     std::vector<D3D12_RESOURCE_STATES> nextSubresourceStates;
-    nextSubresourceStates.assign(newMipCount, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    try {
+        nextSubresourceStates.assign(newMipCount, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    } catch (const std::exception&) {
+        rollbackDescriptorAllocation();
+        return false;
+    }
     D3D12_RESOURCE_DESC desc{};
     desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     desc.Width = width;
@@ -312,23 +353,22 @@ bool DepthPyramid::CreateResources(uint32_t width, uint32_t height) {
     fullSrv.Format = DXGI_FORMAT_R32_FLOAT;
     fullSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     fullSrv.Texture2D.MipLevels = newMipCount;
-    dxCommon_->GetDevice()->CreateShaderResourceView(
-        newResource.Get(), &fullSrv, srvManager_->GetCpuHandle(nextDescriptorStart));
+    dxCommon_->GetDevice()->CreateShaderResourceView(newResource.Get(), &fullSrv,
+                                                     descriptorCpuHandle(0));
 
     for (uint32_t mip = 0; mip < newMipCount; ++mip) {
         D3D12_SHADER_RESOURCE_VIEW_DESC mipSrv = fullSrv;
         mipSrv.Texture2D.MostDetailedMip = mip;
         mipSrv.Texture2D.MipLevels = 1;
-        dxCommon_->GetDevice()->CreateShaderResourceView(
-            newResource.Get(), &mipSrv, srvManager_->GetCpuHandle(nextDescriptorStart + 1u + mip));
+        dxCommon_->GetDevice()->CreateShaderResourceView(newResource.Get(), &mipSrv,
+                                                         descriptorCpuHandle(1u + mip));
 
         D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};
         uav.Format = DXGI_FORMAT_R32_FLOAT;
         uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
         uav.Texture2D.MipSlice = mip;
         dxCommon_->GetDevice()->CreateUnorderedAccessView(
-            newResource.Get(), nullptr, &uav,
-            srvManager_->GetCpuHandle(nextDescriptorStart + 1u + newMipCount + mip));
+            newResource.Get(), nullptr, &uav, descriptorCpuHandle(1u + newMipCount + mip));
     }
 
     if (needsNewDescriptors) {

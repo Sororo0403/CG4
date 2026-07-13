@@ -1,28 +1,22 @@
-#include "internal/MeshRendererInternal.h"
-#include "internal/RendererUploadUtils.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/GpuResourceHelpers.h"
 #include "graphics/GpuResourceLifetime.h"
-#include "graphics/ShaderCompiler.h"
-#include "graphics/ShaderPaths.h"
-#include "graphics/SrvManager.h"
+#include "internal/MeshRendererInternal.h"
+#include "internal/RendererUploadUtils.h"
 #include "model/MeshRenderer.h"
 #include "model/RendererMath.h"
 #include "model/RendererSceneConstants.h"
-#include "model/Vertex.h"
-#include "texture/TextureManager.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <exception>
 #include <limits>
 #include <utility>
-#include <vector>
 
 using namespace DirectX;
-using Microsoft::WRL::ComPtr;
 
 namespace {
 using GpuResourceHelpers::CreateCommittedResourceChecked;
@@ -34,24 +28,29 @@ bool CanCreateStaticInstanceBuffer(uint32_t instanceCount) {
     if (instanceCount == 0) {
         return false;
     }
-    if (instanceCount > (std::numeric_limits<size_t>::max)() / sizeof(InstanceData)) {
-        return false;
-    }
-    return sizeof(InstanceData) * static_cast<size_t>(instanceCount) <=
-           kMaxStaticInstanceBufferBytes;
+    const size_t byteSize = sizeof(InstanceData) * static_cast<size_t>(instanceCount);
+    return byteSize <= kMaxStaticInstanceBufferBytes;
 }
 
 } // namespace
 
-void MeshRenderer::MarkStaticInstanceBufferUsed(
-    const MeshInstanceBuffer &buffer) const {
+struct MeshRenderer::StaticInstanceBufferBuild {
+    uint32_t instanceCount = 0;
+    UINT bufferSize = 0;
+    uint64_t contentHash = 0;
+    bool ownsUploadPass = false;
+    bool releaseUploadResource = false;
+    bool unchanged = false;
+    MeshInstanceBuffer nextBuffer{};
+};
+
+void MeshRenderer::MarkStaticInstanceBufferUsed(const MeshInstanceBuffer& buffer) const {
     if (state_->dxCommon != nullptr && buffer.IsValid()) {
         buffer.lastUsedFrameIndex = state_->dxCommon->GetBackBufferIndex();
     }
 }
 
-bool MeshRenderer::RetireStaticInstanceBuffer(
-    MeshInstanceBuffer &buffer) noexcept {
+bool MeshRenderer::RetireStaticInstanceBuffer(MeshInstanceBuffer& buffer) noexcept {
     if (!buffer.resource && !buffer.uploadResource) {
         buffer.Reset();
         return true;
@@ -63,9 +62,14 @@ bool MeshRenderer::RetireStaticInstanceBuffer(
     }
     try {
         if (frameIndex < state_->retiredStaticInstanceBuffers.size()) {
-            state_->retiredStaticInstanceBuffers[frameIndex].push_back(
-                std::move(buffer));
-            buffer.Reset();
+            MeshInstanceBuffer retiredBuffer{};
+            retiredBuffer.resource = std::move(buffer.resource);
+            retiredBuffer.uploadResource = std::move(buffer.uploadResource);
+            retiredBuffer.view = std::exchange(buffer.view, {});
+            retiredBuffer.instanceCount = std::exchange(buffer.instanceCount, 0u);
+            retiredBuffer.contentHash = std::exchange(buffer.contentHash, 0u);
+            retiredBuffer.lastUsedFrameIndex = std::exchange(buffer.lastUsedFrameIndex, UINT_MAX);
+            state_->retiredStaticInstanceBuffers[frameIndex].push_back(std::move(retiredBuffer));
             return true;
         }
     } catch (...) {
@@ -180,7 +184,11 @@ MeshRenderer::WriteInstances(const InstanceData* instances, uint32_t instanceCou
         return {};
     }
 
-    state_->instanceScratch.resize(instanceCount);
+    try {
+        state_->instanceScratch.resize(instanceCount);
+    } catch (const std::exception&) {
+        return {};
+    }
     for (uint32_t index = 0; index < instanceCount; ++index) {
         state_->instanceScratch[index] = SanitizeInstanceDataForDraw(instances[index]);
     }
@@ -196,22 +204,40 @@ MeshRenderer::WriteInstances(const InstanceData* instances, uint32_t instanceCou
 
 bool MeshRenderer::CreateStaticInstanceBuffer(const InstanceData* instances, uint32_t instanceCount,
                                               MeshInstanceBuffer& buffer) {
-    if (!state_->dxCommon || !state_->dxCommon->GetDevice()) {
-        return false;
-    }
     if (instanceCount == 0u || instances == nullptr) {
         return ReleaseStaticInstanceBuffer(buffer);
     }
-    const bool ownsUploadPass = !state_->dxCommon->IsCommandListRecording();
-    if (!ownsUploadPass && !state_->dxCommon->IsUploadPassActive()) {
+    StaticInstanceBufferBuild build{};
+    if (!PrepareStaticInstanceBufferBuild(instances, instanceCount, buffer, build)) {
+        return false;
+    }
+    if (build.unchanged) {
+        return true;
+    }
+    return CreateStaticInstanceResources(build) && UploadStaticInstanceBuffer(build) &&
+           CommitStaticInstanceBuffer(buffer, build);
+}
+
+bool MeshRenderer::PrepareStaticInstanceBufferBuild(const InstanceData* instances,
+                                                    uint32_t instanceCount,
+                                                    const MeshInstanceBuffer& currentBuffer,
+                                                    StaticInstanceBufferBuild& build) {
+    if (!state_->dxCommon || !state_->dxCommon->GetDevice()) {
+        return false;
+    }
+    build.ownsUploadPass = !state_->dxCommon->IsCommandListRecording();
+    if (!build.ownsUploadPass && !state_->dxCommon->IsUploadPassActive()) {
         return false;
     }
     if (!CanCreateStaticInstanceBuffer(instanceCount) ||
         instanceCount > (std::numeric_limits<UINT>::max)() / sizeof(InstanceData)) {
         return false;
     }
-
-    state_->instanceScratch.resize(instanceCount);
+    try {
+        state_->instanceScratch.resize(instanceCount);
+    } catch (const std::exception&) {
+        return false;
+    }
     for (uint32_t index = 0; index < instanceCount; ++index) {
         state_->instanceScratch[index] = SanitizeInstanceDataForDraw(instances[index]);
     }
@@ -219,67 +245,81 @@ bool MeshRenderer::CreateStaticInstanceBuffer(const InstanceData* instances, uin
         static_cast<UINT>(sizeof(InstanceData) * state_->instanceScratch.size());
     const uint64_t contentHash =
         RendererUploadUtils::HashBytes(state_->instanceScratch.data(), bufferSize);
-    if (buffer.IsValid() && buffer.instanceCount == instanceCount &&
-        buffer.contentHash == contentHash) {
-        return true;
-    }
-    MeshInstanceBuffer nextBuffer{};
+    build.instanceCount = instanceCount;
+    build.bufferSize = bufferSize;
+    build.contentHash = contentHash;
+    build.unchanged = currentBuffer.IsValid() && currentBuffer.instanceCount == instanceCount &&
+                      currentBuffer.contentHash == contentHash;
+    return true;
+}
+
+bool MeshRenderer::CreateStaticInstanceResources(StaticInstanceBufferBuild& build) {
     CD3DX12_HEAP_PROPERTIES defaultHeap(D3D12_HEAP_TYPE_DEFAULT);
     CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
-    auto resourceDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
-    auto uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
+    auto resourceDesc = CD3DX12_RESOURCE_DESC::Buffer(build.bufferSize);
+    auto uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(build.bufferSize);
 
     if (!CreateCommittedResourceChecked(
             state_->dxCommon->GetDevice(), &defaultHeap, D3D12_HEAP_FLAG_NONE, &resourceDesc,
-            D3D12_RESOURCE_STATE_COPY_DEST, nextBuffer.resource.GetAddressOf())) {
+            D3D12_RESOURCE_STATE_COPY_DEST, build.nextBuffer.resource.GetAddressOf())) {
         return false;
     }
     if (!CreateCommittedResourceChecked(
             state_->dxCommon->GetDevice(), &uploadHeap, D3D12_HEAP_FLAG_NONE, &uploadDesc,
-            D3D12_RESOURCE_STATE_GENERIC_READ, nextBuffer.uploadResource.GetAddressOf())) {
+            D3D12_RESOURCE_STATE_GENERIC_READ, build.nextBuffer.uploadResource.GetAddressOf())) {
         return false;
     }
-    nextBuffer.resource->SetName(L"MeshRenderer.StaticInstanceBuffer");
-    nextBuffer.uploadResource->SetName(L"MeshRenderer.StaticInstanceUploadBuffer");
+    build.nextBuffer.resource->SetName(L"MeshRenderer.StaticInstanceBuffer");
+    build.nextBuffer.uploadResource->SetName(L"MeshRenderer.StaticInstanceUploadBuffer");
 
     void* mapped = nullptr;
-    if (!MapResourceChecked(nextBuffer.uploadResource.Get(), &mapped)) {
+    if (!MapResourceChecked(build.nextBuffer.uploadResource.Get(), &mapped)) {
         return false;
     }
-    std::memcpy(mapped, state_->instanceScratch.data(), bufferSize);
-    nextBuffer.uploadResource->Unmap(0, nullptr);
+    std::memcpy(mapped, state_->instanceScratch.data(), build.bufferSize);
+    build.nextBuffer.uploadResource->Unmap(0, nullptr);
+    return true;
+}
 
+bool MeshRenderer::UploadStaticInstanceBuffer(StaticInstanceBufferBuild& build) {
     if (!state_->dxCommon->BeginUpload()) {
         return false;
     }
     ID3D12GraphicsCommandList* cmd = state_->dxCommon->GetCommandList();
     if (cmd == nullptr) {
-        if (ownsUploadPass) {
+        if (build.ownsUploadPass) {
             state_->dxCommon->AbortFrame();
+        } else {
+            static_cast<void>(state_->dxCommon->EndUploadPass());
         }
         return false;
     }
-    cmd->CopyBufferRegion(nextBuffer.resource.Get(), 0, nextBuffer.uploadResource.Get(), 0,
-                          bufferSize);
+    cmd->CopyBufferRegion(build.nextBuffer.resource.Get(), 0, build.nextBuffer.uploadResource.Get(),
+                          0, build.bufferSize);
     auto toVertex = CD3DX12_RESOURCE_BARRIER::Transition(
-        nextBuffer.resource.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+        build.nextBuffer.resource.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
         D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
     cmd->ResourceBarrier(1, &toVertex);
     const DirectXCommon::UploadPassResult uploadResult = state_->dxCommon->EndUploadPass();
     if (uploadResult == DirectXCommon::UploadPassResult::Failed) {
         return false;
     }
+    build.releaseUploadResource =
+        build.ownsUploadPass && uploadResult == DirectXCommon::UploadPassResult::Completed;
+    return true;
+}
 
-    nextBuffer.view.BufferLocation = nextBuffer.resource->GetGPUVirtualAddress();
-    nextBuffer.view.SizeInBytes = bufferSize;
-    nextBuffer.view.StrideInBytes = sizeof(InstanceData);
-    nextBuffer.instanceCount = instanceCount;
-    nextBuffer.contentHash = contentHash;
-    if (ownsUploadPass && uploadResult == DirectXCommon::UploadPassResult::Completed) {
-        nextBuffer.uploadResource.Reset();
+bool MeshRenderer::CommitStaticInstanceBuffer(MeshInstanceBuffer& buffer,
+                                              StaticInstanceBufferBuild& build) {
+    build.nextBuffer.view.BufferLocation = build.nextBuffer.resource->GetGPUVirtualAddress();
+    build.nextBuffer.view.SizeInBytes = build.bufferSize;
+    build.nextBuffer.view.StrideInBytes = sizeof(InstanceData);
+    build.nextBuffer.instanceCount = build.instanceCount;
+    build.nextBuffer.contentHash = build.contentHash;
+    if (build.releaseUploadResource) {
+        build.nextBuffer.uploadResource.Reset();
     }
-    if ((buffer.resource || buffer.uploadResource) &&
-        !RetireStaticInstanceBuffer(buffer)) {
+    if ((buffer.resource || buffer.uploadResource) && !RetireStaticInstanceBuffer(buffer)) {
         if (state_->dxCommon && !state_->dxCommon->IsDeviceRemoved()) {
             if (state_->dxCommon->IsCommandListRecording()) {
                 return false;
@@ -290,7 +330,7 @@ bool MeshRenderer::CreateStaticInstanceBuffer(const InstanceData* instances, uin
         }
         buffer.Reset();
     }
-    buffer = std::move(nextBuffer);
+    buffer = std::move(build.nextBuffer);
     return true;
 }
 

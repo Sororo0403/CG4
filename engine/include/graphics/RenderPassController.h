@@ -11,44 +11,55 @@ class DirectXCommon;
 class SrvManager;
 
 class RenderPassController {
-  public:
+public:
     class PassScope {
-      public:
-        PassScope(RenderPassController &controller, RenderPass pass);
+    public:
+        PassScope(RenderPassController& controller, RenderPass pass);
         ~PassScope();
 
-        PassScope(const PassScope &) = delete;
-        PassScope &operator=(const PassScope &) = delete;
+        PassScope(const PassScope&) = delete;
+        PassScope& operator=(const PassScope&) = delete;
 
-        const RenderContext &GetContext() const { return context_; }
-        const RenderContext *operator->() const { return &context_; }
-        const RenderContext &operator*() const { return context_; }
+        const RenderContext& GetContext() const {
+            return context_;
+        }
+        const RenderContext* operator->() const {
+            return &context_;
+        }
+        const RenderContext& operator*() const {
+            return context_;
+        }
 
-      private:
-        RenderPassController *controller_ = nullptr;
+    private:
+        RenderPassController* controller_ = nullptr;
         RenderPass previousPass_ = RenderPass::None;
-        const RenderContext &context_;
+        const RenderContext& context_;
     };
 
     /// <summary>
     /// 必要なリソースを初期化する
     /// </summary>
-    void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager);
+    void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager);
 
-    void BeginFrame(const FrameTime &frameTime, float deltaTime, uint32_t width,
-                    uint32_t height);
-    const RenderContext &BeginPass(RenderPass pass);
+    void BeginFrame(const FrameTime& frameTime, float deltaTime, uint32_t width, uint32_t height);
+    const RenderContext& BeginPass(RenderPass pass);
     /// <summary>
     /// ScopedPassを実行する
     /// </summary>
     PassScope ScopedPass(RenderPass pass);
     void EndPass();
 
-    void SetCamera(const Camera *camera);
+    void SetCamera(const Camera* camera);
 
-    const RenderContext &GetContext() const { return context_; }
-    const RenderContext *GetContextPtr() const { return &context_; }
-    RenderPass GetCurrentPass() const { return context_.pass; }
+    const RenderContext& GetContext() const {
+        return context_;
+    }
+    const RenderContext* GetContextPtr() const {
+        return &context_;
+    }
+    RenderPass GetCurrentPass() const {
+        return context_.pass;
+    }
     bool IsReady() const {
         return dxCommon_ != nullptr && srvManager_ != nullptr;
     }
@@ -58,8 +69,8 @@ class RenderPassController {
     /// </summary>
     static std::string_view GetPassName(RenderPass pass);
 
-  private:
-    DirectXCommon *dxCommon_ = nullptr;
-    SrvManager *srvManager_ = nullptr;
+private:
+    DirectXCommon* dxCommon_ = nullptr;
+    SrvManager* srvManager_ = nullptr;
     RenderContext context_{};
 };

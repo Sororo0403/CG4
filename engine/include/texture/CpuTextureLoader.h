@@ -12,14 +12,18 @@ struct CpuTextureRgbaImage {
     std::vector<uint8_t> pixels;
 
     bool IsValid() const noexcept {
-        return width > 0u && height > 0u && rowPitch >= width * 4u &&
-               pixels.size() >= static_cast<size_t>(rowPitch) * height;
+        if (width == 0u || height == 0u) {
+            return false;
+        }
+        const size_t minimumRowPitch = static_cast<size_t>(width) * 4u;
+        const size_t rowBytes = static_cast<size_t>(rowPitch);
+        return rowBytes >= minimumRowPitch &&
+               pixels.size() >= rowBytes * static_cast<size_t>(height);
     }
 };
 
 namespace CpuTextureLoader {
 
-bool LoadRgba8FromFile(const std::wstring &filePath,
-                       CpuTextureRgbaImage &image);
+bool LoadRgba8FromFile(const std::wstring& filePath, CpuTextureRgbaImage& image);
 
 } // namespace CpuTextureLoader

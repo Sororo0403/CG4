@@ -44,8 +44,8 @@ public:
     }
 
     void Restore() noexcept {
-        std::vector<Entry> entries = std::move(entries_);
-        entries_.clear();
+        std::vector<Entry> entries;
+        entries.swap(entries_);
         for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
             if (it->rollback) {
                 try {

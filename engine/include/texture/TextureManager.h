@@ -1,9 +1,11 @@
 #pragma once
 #include "core/ResourceHandle.h"
 #include "texture/Texture.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <d3d12.h>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -14,6 +16,7 @@ class DirectXCommon;
 class SrvManager;
 struct TextureManagerDecodedTexture;
 struct TextureManagerAsyncRequest;
+struct TextureManagerAsyncTerminalState;
 
 namespace DirectX {
 struct Image;
@@ -24,11 +27,11 @@ struct TexMetadata;
 /// テクスチャ読み込みとSRV管理を担当する
 /// </summary>
 class TextureManager {
-  private:
+private:
     struct Entry;
     struct State;
 
-  public:
+public:
     TextureManager();
     ~TextureManager();
 
@@ -37,7 +40,7 @@ class TextureManager {
     /// </summary>
     /// <param name="dxCommon">DirectXCommonインスタンス</param>
     /// <param name="srvManager">SrvManagerインスタンス</param>
-    void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager);
+    void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager);
 
     /// <summary>
     /// 管理中のテクスチャとSRV割り当てを解放する
@@ -50,28 +53,27 @@ class TextureManager {
     /// </summary>
     /// <param name="filePath">ロードするテクスチャのファイルパス</param>
     /// <returns>テクスチャid</returns>
-    uint32_t Load(const std::wstring &filePath);
-    uint32_t LoadSrgb(const std::wstring &filePath);
-    uint32_t LoadLinear(const std::wstring &filePath);
-    TextureHandle LoadHandle(const std::wstring &filePath) {
+    uint32_t Load(const std::wstring& filePath);
+    uint32_t LoadSrgb(const std::wstring& filePath);
+    uint32_t LoadLinear(const std::wstring& filePath);
+    TextureHandle LoadHandle(const std::wstring& filePath) {
         return TextureHandle(Load(filePath));
     }
 
     /// <summary>
     /// 複数テクスチャをまとめて読み込み、ID配列を返す
     /// </summary>
-    std::vector<uint32_t> LoadBatch(const std::vector<std::wstring> &filePaths);
+    std::vector<uint32_t> LoadBatch(const std::vector<std::wstring>& filePaths);
 
     /// <summary>
     /// テクスチャのファイル読み込みとデコードをバックグラウンドで開始する
     /// </summary>
-    uint32_t RequestAsyncLoad(const std::wstring &filePath);
+    uint32_t RequestAsyncLoad(const std::wstring& filePath);
 
     /// <summary>
     /// 複数テクスチャの非同期読み込みをまとめて開始する
     /// </summary>
-    std::vector<uint32_t>
-    RequestAsyncLoadBatch(const std::vector<std::wstring> &filePaths);
+    std::vector<uint32_t> RequestAsyncLoadBatch(const std::vector<std::wstring>& filePaths);
 
     /// <summary>
     /// 完了した非同期読み込みを現在のコマンドリストへ転送する
@@ -87,11 +89,9 @@ class TextureManager {
     /// 非同期読み込み結果のテクスチャIDを取得する
     /// </summary>
     std::optional<uint32_t> GetAsyncTextureId(uint32_t requestId) const;
-    std::optional<TextureHandle>
-    GetAsyncTextureHandle(uint32_t requestId) const {
+    std::optional<TextureHandle> GetAsyncTextureHandle(uint32_t requestId) const {
         const std::optional<uint32_t> textureId = GetAsyncTextureId(requestId);
-        return textureId ? std::optional<TextureHandle>(TextureHandle(*textureId))
-                         : std::nullopt;
+        return textureId ? std::optional<TextureHandle>(TextureHandle(*textureId)) : std::nullopt;
     }
 
     /// <summary>
@@ -108,33 +108,28 @@ class TextureManager {
     /// <summary>
     /// FromMemoryを読み込む
     /// </summary>
-    uint32_t LoadFromMemory(const uint8_t *data, size_t size);
-    uint32_t LoadFromMemorySrgb(const uint8_t *data, size_t size);
-    uint32_t LoadFromMemoryLinear(const uint8_t *data, size_t size);
-    TextureHandle LoadFromMemoryHandle(const uint8_t *data, size_t size) {
+    uint32_t LoadFromMemory(const uint8_t* data, size_t size);
+    uint32_t LoadFromMemorySrgb(const uint8_t* data, size_t size);
+    uint32_t LoadFromMemoryLinear(const uint8_t* data, size_t size);
+    TextureHandle LoadFromMemoryHandle(const uint8_t* data, size_t size) {
         return TextureHandle(LoadFromMemory(data, size));
     }
 
     /// <summary>
     /// RGBA8ピクセル配列から2Dテクスチャを作成する
     /// </summary>
-    uint32_t CreateFromRgbaPixels(uint32_t width, uint32_t height,
-                                  const uint8_t *pixels);
-    uint32_t CreateFromRgbaPixelsSrgb(uint32_t width, uint32_t height,
-                                      const uint8_t *pixels);
+    uint32_t CreateFromRgbaPixels(uint32_t width, uint32_t height, const uint8_t* pixels);
+    uint32_t CreateFromRgbaPixelsSrgb(uint32_t width, uint32_t height, const uint8_t* pixels);
     TextureHandle CreateFromRgbaPixelsHandle(uint32_t width, uint32_t height,
-                                             const uint8_t *pixels) {
+                                             const uint8_t* pixels) {
         return TextureHandle(CreateFromRgbaPixels(width, height, pixels));
     }
 
     /// <summary>
     /// 6面のRGBA8ピクセル配列からCubeテクスチャを作成する
     /// </summary>
-    uint32_t CreateCubeFromRgbaPixels(uint32_t size,
-                                      const uint8_t *const *facePixels);
-    TextureHandle
-    CreateCubeFromRgbaPixelsHandle(uint32_t size,
-                                   const uint8_t *const *facePixels) {
+    uint32_t CreateCubeFromRgbaPixels(uint32_t size, const uint8_t* const* facePixels);
+    TextureHandle CreateCubeFromRgbaPixelsHandle(uint32_t size, const uint8_t* const* facePixels) {
         return TextureHandle(CreateCubeFromRgbaPixels(size, facePixels));
     }
 
@@ -142,29 +137,23 @@ class TextureManager {
     /// 既存Cubeテクスチャの6面RGBA8ピクセル内容を更新する
     /// </summary>
     void UpdateCubeFromRgbaPixels(uint32_t textureId, uint32_t size,
-                                  const uint8_t *const *facePixels);
+                                  const uint8_t* const* facePixels);
 
     /// <summary>
     /// 任意フォーマットのピクセル配列から2Dテクスチャを作成する
     /// </summary>
-    uint32_t CreateTexture2D(uint32_t width, uint32_t height,
-                             DXGI_FORMAT format, const uint8_t *pixels,
-                             size_t rowPitch);
-    TextureHandle CreateTexture2DHandle(uint32_t width, uint32_t height,
-                                        DXGI_FORMAT format,
-                                        const uint8_t *pixels,
-                                        size_t rowPitch) {
-        return TextureHandle(
-            CreateTexture2D(width, height, format, pixels, rowPitch));
+    uint32_t CreateTexture2D(uint32_t width, uint32_t height, DXGI_FORMAT format,
+                             const uint8_t* pixels, size_t rowPitch);
+    TextureHandle CreateTexture2DHandle(uint32_t width, uint32_t height, DXGI_FORMAT format,
+                                        const uint8_t* pixels, size_t rowPitch) {
+        return TextureHandle(CreateTexture2D(width, height, format, pixels, rowPitch));
     }
 
     /// <summary>
     /// 既存2Dテクスチャのピクセル内容を更新する
     /// </summary>
-    void UpdateTexture2D(uint32_t textureId, const uint8_t *pixels,
-                         size_t rowPitch);
-    void UpdateTexture2D(TextureHandle texture, const uint8_t *pixels,
-                         size_t rowPitch) {
+    void UpdateTexture2D(uint32_t textureId, const uint8_t* pixels, size_t rowPitch);
+    void UpdateTexture2D(TextureHandle texture, const uint8_t* pixels, size_t rowPitch) {
         UpdateTexture2D(texture.Get(), pixels, rowPitch);
     }
 
@@ -226,8 +215,8 @@ class TextureManager {
     /// </summary>
     /// <param name="textureId">テクスチャID</param>
     /// <returns>ID3D12Resourceへのポインタ</returns>
-    ID3D12Resource *GetResource(uint32_t textureId) const;
-    ID3D12Resource *GetResource(TextureHandle texture) const {
+    ID3D12Resource* GetResource(uint32_t textureId) const;
+    ID3D12Resource* GetResource(TextureHandle texture) const {
         return GetResource(texture.Get());
     }
 
@@ -254,11 +243,10 @@ class TextureManager {
     uint64_t GetTextureGpuBytes() const;
     uint64_t GetUploadBytes() const;
 
-  private:
-    void ResetStateForInitialize();
+private:
+    bool ResetStateForInitialize();
     bool CreateDefaultTextures();
-    bool HasExpectedDefaultTexture(uint32_t textureId, UINT16 arraySize,
-                                   bool isCube) const;
+    bool HasExpectedDefaultTexture(uint32_t textureId, UINT16 arraySize, bool isCube) const;
     bool HasValidDefaultTextures() const;
     uint32_t GetWhiteFallbackTextureId() const;
 
@@ -269,36 +257,51 @@ class TextureManager {
     /// <param name="imageCount">画像枚数</param>
     /// <param name="metadata">テクスチャメタデータ</param>
     /// <returns>生成されたテクスチャID</returns>
-    uint32_t CreateTexture(const DirectX::Image *images, size_t imageCount,
-                           const DirectX::TexMetadata &metadata);
+    uint32_t CreateTexture(const DirectX::Image* images, size_t imageCount,
+                           const DirectX::TexMetadata& metadata);
     bool ReserveTextureStorage();
-    bool StoreTextureUploadBuffer(
-        const Microsoft::WRL::ComPtr<ID3D12Resource> &uploadBuffer,
-        bool ownsUploadPass);
-    bool StoreTextureEntry(Texture &&texture, uint32_t srvIndex,
-                           uint32_t &textureId);
+    bool StoreTextureUploadBuffer(const Microsoft::WRL::ComPtr<ID3D12Resource>& uploadBuffer,
+                                  bool ownsUploadPass);
+    bool StoreTextureEntry(Texture&& texture, uint32_t srvIndex, uint32_t& textureId);
     void RollBackTextureEntry(uint32_t textureId, uint32_t srvIndex);
     bool RegisterTextureFrameRollback(uint32_t textureId, uint32_t srvIndex);
-    uint32_t LoadWithColorSpace(const std::wstring &filePath,
-                                int colorSpacePolicy);
-    uint32_t LoadFromMemoryWithColorSpace(const uint8_t *data, size_t size,
-                                          int colorSpacePolicy);
+    struct TextureCreationWork;
+    bool InitializeTextureCreationWork(const DirectX::Image* images, size_t imageCount,
+                                       const DirectX::TexMetadata& metadata,
+                                       uint32_t fallbackTextureId, TextureCreationWork& work);
+    bool BeginTextureCreationUpload(const TextureCreationWork& work);
+    bool CreateTextureGpuResources(TextureCreationWork& work);
+    bool AllocateAndStoreTexture(TextureCreationWork& work);
+    bool CopyAndCreateTextureSrv(TextureCreationWork& work);
+    uint32_t LoadWithColorSpace(const std::wstring& filePath, int colorSpacePolicy);
+    uint32_t LoadFromMemoryWithColorSpace(const uint8_t* data, size_t size, int colorSpacePolicy);
 
-  private:
+private:
     uint32_t AllocateAsyncRequestId();
     uint32_t EnqueueCompletedAsyncRequest(uint32_t textureId);
-    bool TryCompleteAsyncTextureUpload(TextureManagerAsyncRequest &request,
-                                       TextureManagerDecodedTexture &decoded);
-    void RestoreAsyncTextureCache(const std::wstring &pathKey,
-                                  bool hadPreviousCache,
+    bool CanRequestAsyncLoad() const;
+    static bool TryResolveAsyncLoadPath(const std::wstring& filePath,
+                                        std::filesystem::path& resolvedPath, std::wstring& pathKey);
+    std::optional<uint32_t> FindReusableAsyncRequestOrTexture(const std::wstring& pathKey);
+    bool InitializeAsyncLoadRequest(const std::filesystem::path& resolvedPath,
+                                    const std::wstring& pathKey,
+                                    TextureManagerAsyncRequest& request);
+    uint32_t StoreAsyncLoadRequest(TextureManagerAsyncRequest&& request);
+    bool TryCompleteAsyncTextureUpload(TextureManagerAsyncRequest& request,
+                                       TextureManagerDecodedTexture& decoded);
+    void RestoreAsyncTextureCache(const std::wstring& pathKey, bool hadPreviousCache,
                                   uint32_t previousTextureId);
+    void RecordAsyncTerminalState(uint32_t requestId, std::optional<uint32_t> textureId,
+                                  bool failed);
+    std::optional<TextureManagerAsyncTerminalState> FindAsyncTerminalState(
+        uint32_t requestId) const;
     void PruneCompletedAsyncRequests();
     void EnsureAsyncWorkers();
     void StartQueuedAsyncLoads();
     void StopAsyncWorkers();
     void StopAsyncLoads();
 
-    DirectXCommon *dxCommon_ = nullptr;
-    SrvManager *srvManager_ = nullptr;
+    DirectXCommon* dxCommon_ = nullptr;
+    SrvManager* srvManager_ = nullptr;
     std::unique_ptr<State> state_;
 };

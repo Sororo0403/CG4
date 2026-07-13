@@ -23,9 +23,8 @@ struct SpriteRenderer::QueuedDraw {
 
 struct SpriteRenderer::State {
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState>
-        pipelineStates[static_cast<uint32_t>(RenderTargetKind::Count)]
-                      [static_cast<uint32_t>(PipelineKind::Count)];
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineStates[static_cast<uint32_t>(
+        RenderTargetKind::Count)][static_cast<uint32_t>(PipelineKind::Count)];
 
     UploadRingBuffer uploadBuffer;
     uint32_t drawCursor = 0;

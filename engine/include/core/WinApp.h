@@ -6,7 +6,7 @@
 /// Win32ウィンドウの生成とメッセージ処理を管理する
 /// </summary>
 class WinApp {
-  public:
+public:
     /// <summary>
     /// Win32ウィンドウ管理オブジェクトを破棄する
     /// </summary>
@@ -22,13 +22,13 @@ class WinApp {
     /// <param name="title">ウィンドウタイトル</param>
     /// <param name="fullscreen">起動時にボーダーレス全画面にする場合はtrue。</param>
     void Initialize(HINSTANCE hInstance, int nCmdShow, int width, int height,
-                    const std::wstring &title, bool fullscreen = false);
+                    const std::wstring& title, bool fullscreen = false);
 
     /// <summary>
     /// Windowsメッセージを処理する
     /// </summary>
     /// <returns>true: アプリケーション継続 / false: 終了要求あり</returns>
-    bool ProcessMessage();
+    bool ProcessMessage() const;
 
     /// <summary>
     /// 次のメッセージ処理でアプリケーションを終了するよう要求する。
@@ -39,7 +39,7 @@ class WinApp {
     /// ウィンドウ上のOSマウスカーソル表示を切り替える。
     /// </summary>
     /// <param name="visible">表示する場合はtrue、隠す場合はfalse。</param>
-    void SetCursorVisible(bool visible);
+    void SetCursorVisible(bool visible) const;
 
     /// <summary>
     /// ボーダーレス全画面と通常ウィンドウを切り替える。
@@ -49,7 +49,9 @@ class WinApp {
     /// <summary>
     /// 現在ボーダーレス全画面で表示している場合はtrue。
     /// </summary>
-    bool IsFullscreen() const { return fullscreen_; }
+    bool IsFullscreen() const {
+        return fullscreen_;
+    }
 
     /// <summary>
     /// クライアント領域の幅を取得する
@@ -67,20 +69,30 @@ class WinApp {
     /// ウィンドウハンドルを取得する
     /// </summary>
     /// <returns>ウィンドウハンドル</returns>
-    HWND GetHwnd() const { return hwnd_; }
+    HWND GetHwnd() const {
+        return hwnd_;
+    }
 
-  private:
+private:
     /// <summary>
     /// 現在のクライアント領域サイズを更新する
     /// </summary>
-    void UpdateClientSize();
+    void UpdateClientSize() const;
 
-  private:
+private:
     /// <summary>
     /// ウィンドウプロシージャ
     /// </summary>
-    static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
-                                       LPARAM lParam);
+    static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+    static bool TryHandleWindowMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+                                       LRESULT& result);
+    static LRESULT HandleSetCursorMessage(HWND hwnd, WPARAM, LPARAM lParam, bool& handled);
+    static LRESULT HandleActivateAppMessage(HWND, WPARAM wParam, LPARAM, bool& handled);
+    static LRESULT HandleFocusMessage(HWND, WPARAM, LPARAM, bool& handled);
+    static LRESULT HandleKillFocusMessage(HWND, WPARAM, LPARAM, bool& handled);
+    static LRESULT HandleKeyDownMessage(HWND, WPARAM wParam, LPARAM, bool& handled);
+    static LRESULT HandleSysCommandMessage(HWND, WPARAM wParam, LPARAM, bool& handled);
+    static LRESULT HandleDestroyMessage(HWND hwnd, WPARAM, LPARAM, bool& handled);
     static void ApplyHiddenCursorState(HWND hwnd, bool lockToClient);
     static void ApplyVisibleCursorState();
     static void ApplyRequestedCursorState(HWND hwnd);
@@ -94,14 +106,14 @@ class WinApp {
     /// </summary>
     static void RestoreCursorForAppInteraction();
 
-  private:
-    static constexpr const wchar_t *kClassName = L"WindowClass";
+private:
+    static constexpr const wchar_t* kClassName = L"WindowClass";
     static bool cursorVisible_;
     static bool requestedCursorVisible_;
     static HWND cursorWindow_;
 
-    int width_ = 0;
-    int height_ = 0;
+    mutable int width_ = 0;
+    mutable int height_ = 0;
     bool fullscreen_ = false;
     RECT windowedRect_{100, 100, 1380, 820};
     DWORD windowedStyle_ = WS_OVERLAPPEDWINDOW;

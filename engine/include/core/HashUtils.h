@@ -29,13 +29,11 @@ constexpr uint32_t Combine(uint32_t value, uint32_t salt) {
 }
 
 constexpr float UnitFloat24(uint32_t hash) {
-    return static_cast<float>(hash & 0x00FFFFFFu) /
-           static_cast<float>(0x01000000u);
+    return static_cast<float>(hash & 0x00FFFFFFu) / static_cast<float>(0x01000000u);
 }
 
 constexpr float UnitFloat24Inclusive(uint32_t hash) {
-    return static_cast<float>(hash & 0x00FFFFFFu) /
-           static_cast<float>(0x00FFFFFFu);
+    return static_cast<float>(hash & 0x00FFFFFFu) / static_cast<float>(0x00FFFFFFu);
 }
 
 constexpr float UnitFloat01(uint32_t value) {

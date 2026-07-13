@@ -1,6 +1,7 @@
 #pragma once
 #include "core/ResourceHandle.h"
 #include "model/Material.h"
+
 #include <cstdint>
 #include <d3d12.h>
 #include <memory>
@@ -11,7 +12,7 @@ class DirectXCommon;
 /// マテリアル定数バッファの生成と参照を管理する
 /// </summary>
 class MaterialManager {
-  public:
+public:
     MaterialManager();
     ~MaterialManager();
 
@@ -19,7 +20,7 @@ class MaterialManager {
     /// マテリアル用GPUリソースを生成できるようDirectX参照を設定する
     /// </summary>
     /// <param name="dxCommon">DirectXCommonインスタンス</param>
-    void Initialize(DirectXCommon *dxCommon);
+    void Initialize(DirectXCommon* dxCommon);
 
     /// <summary>
     /// マテリアル定数バッファを明示的に解放する
@@ -32,8 +33,8 @@ class MaterialManager {
     /// </summary>
     /// <param name="material">Material構造体</param>
     /// <returns>マテリアルのID</returns>
-    uint32_t CreateMaterial(const Material &material);
-    MaterialHandle CreateMaterialHandle(const Material &material) {
+    uint32_t CreateMaterial(const Material& material);
+    MaterialHandle CreateMaterialHandle(const Material& material) {
         return MaterialHandle(CreateMaterial(material));
     }
 
@@ -47,8 +48,8 @@ class MaterialManager {
     /// </summary>
     /// <param name="materialId">更新対象のマテリアルID</param>
     /// <param name="material">設定するマテリアル値</param>
-    void SetMaterial(uint32_t materialId, const Material &material);
-    void SetMaterial(MaterialHandle materialId, const Material &material) {
+    void SetMaterial(uint32_t materialId, const Material& material);
+    void SetMaterial(MaterialHandle materialId, const Material& material) {
         SetMaterial(materialId.Get(), material);
     }
 
@@ -68,8 +69,8 @@ class MaterialManager {
     /// </summary>
     /// <param name="materialId">対象マテリアルID</param>
     /// <returns>マテリアル情報</returns>
-    const Material &GetMaterial(uint32_t materialId) const;
-    const Material &GetMaterial(MaterialHandle materialId) const {
+    const Material& GetMaterial(uint32_t materialId) const;
+    const Material& GetMaterial(MaterialHandle materialId) const {
         return GetMaterial(materialId.Get());
     }
 
@@ -84,11 +85,11 @@ class MaterialManager {
     void ReleaseDeferredResources();
     void ReleaseCompletedFrameResources();
 
-  private:
+private:
     struct MaterialResource;
     struct State;
 
-  private:
-    DirectXCommon *dxCommon_ = nullptr;
+private:
+    DirectXCommon* dxCommon_ = nullptr;
     std::unique_ptr<State> state_;
 };

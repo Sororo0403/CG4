@@ -1,20 +1,19 @@
 #include "model/ModelManager.h"
 
-#include "internal/ModelPrimitiveFactory.h"
-#include "internal/ModelSkinClusterResourceUtils.h"
 #include "core/AssetManager.h"
 #include "core/ResourceHandle.h"
+#include "geometry/ModelVertex.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/GpuResourceLifetime.h"
 #include "graphics/SrvManager.h"
+#include "internal/ModelPrimitiveFactory.h"
+#include "internal/ModelSkinClusterResourceUtils.h"
 #include "model/MaterialManager.h"
-#include "geometry/ModelVertex.h"
 #include "model/Vertex.h"
-#include "texture/TextureManager.h"
 
-#include <DirectXMath.h>
 #include <algorithm>
 #include <cwctype>
+#include <exception>
 #include <filesystem>
 #include <limits>
 #include <system_error>
@@ -29,12 +28,21 @@ std::filesystem::path ResolveModelPath(const std::filesystem::path& path) {
 
 std::filesystem::path SafeCurrentPath() {
     std::error_code ec;
-    const std::filesystem::path path = std::filesystem::current_path(ec);
-    return ec ? std::filesystem::path(L".") : path;
+    try {
+        const std::filesystem::path path = std::filesystem::current_path(ec);
+        return ec ? std::filesystem::path(L".") : path;
+    } catch (const std::exception&) {
+        return std::filesystem::path(L".");
+    }
 }
 
 std::wstring NormalizeModelPathKey(const std::filesystem::path& path) {
-    std::wstring key = path.lexically_normal().wstring();
+    std::wstring key;
+    try {
+        key = path.lexically_normal().wstring();
+    } catch (const std::exception&) {
+        return {};
+    }
 #ifdef _WIN32
     std::transform(key.begin(), key.end(), key.begin(),
                    [](wchar_t c) { return static_cast<wchar_t>(towlower(c)); });
@@ -44,16 +52,23 @@ std::wstring NormalizeModelPathKey(const std::filesystem::path& path) {
 
 std::string MakeAssimpModelPath(const std::filesystem::path& resolvedPath) {
     std::error_code ec;
-    const std::filesystem::path relative =
-        std::filesystem::relative(resolvedPath, SafeCurrentPath(), ec);
-    if (!ec && !relative.empty()) {
-        auto begin = relative.begin();
-        if (begin != relative.end() && *begin != L"..") {
-            return relative.generic_string();
+    try {
+        const std::filesystem::path relative =
+            std::filesystem::relative(resolvedPath, SafeCurrentPath(), ec);
+        if (!ec && !relative.empty()) {
+            auto begin = relative.begin();
+            if (begin != relative.end() && *begin != L"..") {
+                return relative.generic_string();
+            }
         }
+    } catch (const std::exception&) {
     }
 
-    return resolvedPath.string();
+    try {
+        return resolvedPath.string();
+    } catch (const std::exception&) {
+        return {};
+    }
 }
 
 void ResetModelPlayback(Model& model) {
@@ -77,17 +92,31 @@ uint32_t AppendModel(std::vector<Model>& models, Model&& model) {
     if (!CanAppendModel(models)) {
         return kInvalidResourceId;
     }
-    models.reserve(models.size() + 1u);
-    models.push_back(std::move(model));
+    try {
+        models.reserve(models.size() + 1u);
+        models.push_back(std::move(model));
+    } catch (const std::exception&) {
+        return kInvalidResourceId;
+    }
     return static_cast<uint32_t>(models.size() - 1);
 }
 
-void ReserveSingleSubMesh(Model& model) {
-    model.subMeshes.reserve(1u);
+bool ReserveSingleSubMesh(Model& model) {
+    try {
+        model.subMeshes.reserve(1u);
+    } catch (const std::exception&) {
+        return false;
+    }
+    return true;
 }
 
-void AppendSingleSubMesh(Model& model, const ModelSubMesh& subMesh) {
-    model.subMeshes.push_back(subMesh);
+bool AppendSingleSubMesh(Model& model, const ModelSubMesh& subMesh) {
+    try {
+        model.subMeshes.push_back(subMesh);
+    } catch (const std::exception&) {
+        return false;
+    }
+    return true;
 }
 
 void DestroyCreatedSubMesh(MeshManager& meshManager, MaterialManager& materialManager,
@@ -166,17 +195,20 @@ uint32_t AppendPrimitiveModel(std::vector<Model>& models, MeshManager& meshManag
                               DirectXCommon* dxCommon, SrvManager* srvManager, uint32_t textureId,
                               ModelPrimitiveFactory::PrimitiveMeshData&& primitive) {
     Model model{};
-    ReserveSingleSubMesh(model);
+    if (!ReserveSingleSubMesh(model)) {
+        return kInvalidResourceId;
+    }
 
-    for (ModelVertex &vertex : primitive.vertices) {
+    for (ModelVertex& vertex : primitive.vertices) {
         vertex.sourcePosition = vertex.position;
     }
 
     ModelSubMesh subMesh{};
     subMesh.vertexCount = static_cast<uint32_t>(primitive.vertices.size());
-    subMesh.meshId = meshManager.CreateMesh(
-        primitive.vertices.data(), sizeof(ModelVertex), static_cast<uint32_t>(primitive.vertices.size()),
-        primitive.indices.data(), static_cast<uint32_t>(primitive.indices.size()));
+    subMesh.meshId = meshManager.CreateMesh(primitive.vertices.data(), sizeof(ModelVertex),
+                                            static_cast<uint32_t>(primitive.vertices.size()),
+                                            primitive.indices.data(),
+                                            static_cast<uint32_t>(primitive.indices.size()));
     if (!IsValidResourceId(subMesh.meshId)) {
         return kInvalidResourceId;
     }
@@ -187,7 +219,10 @@ uint32_t AppendPrimitiveModel(std::vector<Model>& models, MeshManager& meshManag
         return kInvalidResourceId;
     }
 
-    AppendSingleSubMesh(model, subMesh);
+    if (!AppendSingleSubMesh(model, subMesh)) {
+        DestroyCreatedSubMesh(meshManager, materialManager, subMesh);
+        return kInvalidResourceId;
+    }
     model.meshId = subMesh.meshId;
     model.textureId = textureId;
     model.materialId = subMesh.materialId;
@@ -271,13 +306,30 @@ void ModelManager::ReleaseCompletedFrameResources() {
 }
 
 uint32_t ModelManager::Load(const std::wstring& path) {
-    std::filesystem::path p = ResolveModelPath(path);
+    std::filesystem::path p;
+    try {
+        p = ResolveModelPath(path);
+    } catch (const std::exception&) {
+        return kInvalidResourceId;
+    }
     std::error_code ec;
-    if (!std::filesystem::exists(p, ec)) {
+    try {
+        if (!std::filesystem::exists(p, ec)) {
+            return kInvalidResourceId;
+        }
+    } catch (const std::exception&) {
         return kInvalidResourceId;
     }
 
-    const std::wstring pathKey = NormalizeModelPathKey(p);
+    std::wstring pathKey;
+    try {
+        pathKey = NormalizeModelPathKey(p);
+    } catch (const std::exception&) {
+        return kInvalidResourceId;
+    }
+    if (pathKey.empty()) {
+        return kInvalidResourceId;
+    }
     auto it = modelPathToId_.find(pathKey);
     if (it != modelPathToId_.end()) {
         if (it->second >= models_.size()) {
@@ -291,7 +343,15 @@ uint32_t ModelManager::Load(const std::wstring& path) {
         }
     }
 
-    std::string pathStr = MakeAssimpModelPath(p);
+    std::string pathStr;
+    try {
+        pathStr = MakeAssimpModelPath(p);
+    } catch (const std::exception&) {
+        return kInvalidResourceId;
+    }
+    if (pathStr.empty()) {
+        return kInvalidResourceId;
+    }
 
     Model model = assimpLoader_.Load(pathStr);
     if (model.subMeshes.empty()) {
@@ -312,7 +372,10 @@ uint32_t ModelManager::Load(const std::wstring& path) {
     if (!IsValidResourceId(modelId)) {
         return modelId;
     }
-    modelPathToId_[pathKey] = modelId;
+    try {
+        modelPathToId_[pathKey] = modelId;
+    } catch (const std::exception&) {
+    }
     return modelId;
 }
 uint32_t ModelManager::CreatePlane(uint32_t textureId, const Material& material) {

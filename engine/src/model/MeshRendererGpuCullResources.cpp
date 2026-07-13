@@ -1,6 +1,3 @@
-#include "model/MeshRenderer.h"
-
-#include "internal/MeshRendererInternal.h"
 #include "../graphics/internal/RootSignatureUtils.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
@@ -9,6 +6,8 @@
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
+#include "internal/MeshRendererInternal.h"
+#include "model/MeshRenderer.h"
 
 namespace {
 
@@ -21,7 +20,17 @@ void MeshRenderer::CreateGpuCullResources() {
         return;
     }
 
-    ID3D12Device *device = state_->dxCommon->GetDevice();
+    ID3D12Device* device = state_->dxCommon->GetDevice();
+    if (!CreateSingleGpuCullResources(device)) {
+        return;
+    }
+    if (!CreateGpuCullCommandSignature(device)) {
+        return;
+    }
+    (void)CreateLodGpuCullResources(device);
+}
+
+bool MeshRenderer::CreateSingleGpuCullResources(ID3D12Device* device) {
     CD3DX12_ROOT_PARAMETER params[6]{};
     params[0].InitAsConstantBufferView(0);
 
@@ -48,43 +57,42 @@ void MeshRenderer::CreateGpuCullResources() {
     CD3DX12_ROOT_SIGNATURE_DESC desc;
     desc.Init(_countof(params), params, 0, nullptr);
 
-    if (!RootSignatureUtils::CreateRootSignature(
-            device, desc, state_->gpuCullRootSignature)) {
-        return;
+    if (!RootSignatureUtils::CreateRootSignature(device, desc, state_->gpuCullRootSignature)) {
+        return false;
     }
 
-    auto cullCs =
-        ShaderCompiler::Compile(ShaderPaths::MeshGpuCullCS, "main", "cs_6_6");
-    auto argsCs = ShaderCompiler::Compile(ShaderPaths::MeshGpuCullArgsCS,
-                                          "main", "cs_6_6");
+    auto cullCs = ShaderCompiler::Compile(ShaderPaths::MeshGpuCullCS, "main", "cs_6_6");
+    auto argsCs = ShaderCompiler::Compile(ShaderPaths::MeshGpuCullArgsCS, "main", "cs_6_6");
     if (!cullCs || !argsCs) {
         state_->gpuCullRootSignature.Reset();
-        return;
+        return false;
     }
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC cullPso{};
     cullPso.pRootSignature = state_->gpuCullRootSignature.Get();
     cullPso.CS = {cullCs->GetBufferPointer(), cullCs->GetBufferSize()};
-    if (FAILED(device->CreateComputePipelineState(
-            &cullPso, IID_PPV_ARGS(&state_->gpuCullPSO))) ||
+    if (FAILED(device->CreateComputePipelineState(&cullPso, IID_PPV_ARGS(&state_->gpuCullPSO))) ||
         !state_->gpuCullPSO) {
         state_->gpuCullRootSignature.Reset();
         state_->gpuCullPSO.Reset();
-        return;
+        return false;
     }
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC argsPso{};
     argsPso.pRootSignature = state_->gpuCullRootSignature.Get();
     argsPso.CS = {argsCs->GetBufferPointer(), argsCs->GetBufferSize()};
-    if (FAILED(device->CreateComputePipelineState(
-            &argsPso, IID_PPV_ARGS(&state_->gpuCullArgsPSO))) ||
+    if (FAILED(
+            device->CreateComputePipelineState(&argsPso, IID_PPV_ARGS(&state_->gpuCullArgsPSO))) ||
         !state_->gpuCullArgsPSO) {
         state_->gpuCullRootSignature.Reset();
         state_->gpuCullPSO.Reset();
         state_->gpuCullArgsPSO.Reset();
-        return;
+        return false;
     }
+    return true;
+}
 
+bool MeshRenderer::CreateGpuCullCommandSignature(ID3D12Device* device) {
     D3D12_INDIRECT_ARGUMENT_DESC indirectArgument{};
     indirectArgument.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED;
 
@@ -92,17 +100,19 @@ void MeshRenderer::CreateGpuCullResources() {
     commandSignatureDesc.ByteStride = sizeof(D3D12_DRAW_INDEXED_ARGUMENTS);
     commandSignatureDesc.NumArgumentDescs = 1;
     commandSignatureDesc.pArgumentDescs = &indirectArgument;
-    if (FAILED(device->CreateCommandSignature(
-            &commandSignatureDesc, nullptr,
-            IID_PPV_ARGS(&state_->gpuCullCommandSignature))) ||
+    if (FAILED(device->CreateCommandSignature(&commandSignatureDesc, nullptr,
+                                              IID_PPV_ARGS(&state_->gpuCullCommandSignature))) ||
         !state_->gpuCullCommandSignature) {
         state_->gpuCullRootSignature.Reset();
         state_->gpuCullPSO.Reset();
         state_->gpuCullArgsPSO.Reset();
         state_->gpuCullCommandSignature.Reset();
-        return;
+        return false;
     }
+    return true;
+}
 
+bool MeshRenderer::CreateLodGpuCullResources(ID3D12Device* device) {
     CD3DX12_ROOT_PARAMETER lodParams[12]{};
     lodParams[0].InitAsConstantBufferView(0);
 
@@ -122,67 +132,60 @@ void MeshRenderer::CreateGpuCullResources() {
 
     CD3DX12_DESCRIPTOR_RANGE lodCountRanges[kMeshGpuCullLodCount]{};
     for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        lodCountRanges[lod].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1,
-                                 3u + lod);
+        lodCountRanges[lod].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 3u + lod);
         lodParams[6 + lod].InitAsDescriptorTable(1, &lodCountRanges[lod]);
     }
 
     CD3DX12_DESCRIPTOR_RANGE lodDrawArgsRanges[kMeshGpuCullLodCount]{};
     for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        lodDrawArgsRanges[lod].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1,
-                                    6u + lod);
-        lodParams[9 + lod].InitAsDescriptorTable(
-            1, &lodDrawArgsRanges[lod]);
+        lodDrawArgsRanges[lod].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 6u + lod);
+        lodParams[9 + lod].InitAsDescriptorTable(1, &lodDrawArgsRanges[lod]);
     }
 
     CD3DX12_ROOT_SIGNATURE_DESC lodDesc;
     lodDesc.Init(_countof(lodParams), lodParams, 0, nullptr);
-    if (!RootSignatureUtils::CreateRootSignature(
-            device, lodDesc, state_->gpuLodCullRootSignature)) {
-        return;
+    if (!RootSignatureUtils::CreateRootSignature(device, lodDesc,
+                                                 state_->gpuLodCullRootSignature)) {
+        return false;
     }
 
-    auto lodCullCs = ShaderCompiler::Compile(ShaderPaths::MeshGpuLodCullCS,
-                                             "main", "cs_6_6");
-    auto lodArgsCs = ShaderCompiler::Compile(ShaderPaths::MeshGpuLodCullArgsCS,
-                                             "main", "cs_6_6");
+    auto lodCullCs = ShaderCompiler::Compile(ShaderPaths::MeshGpuLodCullCS, "main", "cs_6_6");
+    auto lodArgsCs = ShaderCompiler::Compile(ShaderPaths::MeshGpuLodCullArgsCS, "main", "cs_6_6");
     if (!lodCullCs || !lodArgsCs) {
         state_->gpuLodCullRootSignature.Reset();
-        return;
+        return false;
     }
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC lodCullPso{};
     lodCullPso.pRootSignature = state_->gpuLodCullRootSignature.Get();
-    lodCullPso.CS = {lodCullCs->GetBufferPointer(),
-                     lodCullCs->GetBufferSize()};
-    if (FAILED(device->CreateComputePipelineState(
-            &lodCullPso, IID_PPV_ARGS(&state_->gpuLodCullPSO))) ||
+    lodCullPso.CS = {lodCullCs->GetBufferPointer(), lodCullCs->GetBufferSize()};
+    if (FAILED(device->CreateComputePipelineState(&lodCullPso,
+                                                  IID_PPV_ARGS(&state_->gpuLodCullPSO))) ||
         !state_->gpuLodCullPSO) {
         state_->gpuLodCullRootSignature.Reset();
         state_->gpuLodCullPSO.Reset();
-        return;
+        return false;
     }
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC lodArgsPso{};
     lodArgsPso.pRootSignature = state_->gpuLodCullRootSignature.Get();
-    lodArgsPso.CS = {lodArgsCs->GetBufferPointer(),
-                     lodArgsCs->GetBufferSize()};
-    if (FAILED(device->CreateComputePipelineState(
-            &lodArgsPso, IID_PPV_ARGS(&state_->gpuLodCullArgsPSO))) ||
+    lodArgsPso.CS = {lodArgsCs->GetBufferPointer(), lodArgsCs->GetBufferSize()};
+    if (FAILED(device->CreateComputePipelineState(&lodArgsPso,
+                                                  IID_PPV_ARGS(&state_->gpuLodCullArgsPSO))) ||
         !state_->gpuLodCullArgsPSO) {
         state_->gpuLodCullRootSignature.Reset();
         state_->gpuLodCullPSO.Reset();
         state_->gpuLodCullArgsPSO.Reset();
+        return false;
     }
+    return true;
 }
 
 bool MeshRenderer::CreateFallbackOcclusionTexture() {
-    if (!state_->dxCommon || !state_->dxCommon->GetDevice() ||
-        !state_->srvManager) {
+    if (!state_->dxCommon || !state_->dxCommon->GetDevice() || !state_->srvManager) {
         return false;
     }
-    if (state_->fallbackOcclusionTexture &&
-        state_->fallbackOcclusionGpuHandle.ptr != 0) {
+    if (state_->fallbackOcclusionTexture && state_->fallbackOcclusionGpuHandle.ptr != 0) {
         return true;
     }
 
@@ -207,28 +210,35 @@ bool MeshRenderer::CreateFallbackOcclusionTexture() {
     desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 
     CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-    if (!CreateCommittedResourceChecked(
-            state_->dxCommon->GetDevice(), &heapProps, D3D12_HEAP_FLAG_NONE,
-            &desc, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
-            state_->fallbackOcclusionTexture.GetAddressOf())) {
-        state_->srvManager->FreeIfAllocated(
-            state_->fallbackOcclusionSrvIndex);
+    if (!CreateCommittedResourceChecked(state_->dxCommon->GetDevice(), &heapProps,
+                                        D3D12_HEAP_FLAG_NONE, &desc,
+                                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+                                        state_->fallbackOcclusionTexture.GetAddressOf())) {
+        state_->srvManager->FreeIfAllocated(state_->fallbackOcclusionSrvIndex);
         state_->fallbackOcclusionSrvIndex = kInvalidResourceId;
         state_->fallbackOcclusionGpuHandle = {};
         return false;
     }
-    state_->fallbackOcclusionTexture->SetName(
-        L"MeshRenderer.FallbackOcclusion");
+    state_->fallbackOcclusionTexture->SetName(L"MeshRenderer.FallbackOcclusion");
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
     srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Texture2D.MipLevels = 1;
-    state_->dxCommon->GetDevice()->CreateShaderResourceView(
-        state_->fallbackOcclusionTexture.Get(), &srvDesc,
-        state_->srvManager->GetCpuHandle(state_->fallbackOcclusionSrvIndex));
-    state_->fallbackOcclusionGpuHandle =
+    const D3D12_CPU_DESCRIPTOR_HANDLE srvCpuHandle =
+        state_->srvManager->GetCpuHandle(state_->fallbackOcclusionSrvIndex);
+    const D3D12_GPU_DESCRIPTOR_HANDLE srvGpuHandle =
         state_->srvManager->GetGpuHandle(state_->fallbackOcclusionSrvIndex);
+    if (srvCpuHandle.ptr == 0 || srvGpuHandle.ptr == 0) {
+        state_->fallbackOcclusionTexture.Reset();
+        state_->srvManager->FreeIfAllocated(state_->fallbackOcclusionSrvIndex);
+        state_->fallbackOcclusionSrvIndex = kInvalidResourceId;
+        state_->fallbackOcclusionGpuHandle = {};
+        return false;
+    }
+    state_->dxCommon->GetDevice()->CreateShaderResourceView(state_->fallbackOcclusionTexture.Get(),
+                                                            &srvDesc, srvCpuHandle);
+    state_->fallbackOcclusionGpuHandle = srvGpuHandle;
     return state_->fallbackOcclusionGpuHandle.ptr != 0;
 }

@@ -1,10 +1,12 @@
 #include "graphics/SrvManager.h"
 
-#include "internal/SrvManagerInternal.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
+#include "internal/SrvManagerInternal.h"
 
 #include <algorithm>
+#include <exception>
+#include <new>
 #include <utility>
 
 SrvManager::SrvManager() : state_(std::make_unique<State>()) {}
@@ -32,8 +34,18 @@ void SrvManager::Initialize(const DirectXCommon* dxCommon, UINT maxSrvCount) {
 
     std::vector<bool> newAllocated;
     std::vector<UINT> newFreeList;
-    newAllocated.assign(maxSrvCount, false);
-    newFreeList.reserve(maxSrvCount);
+    try {
+        newAllocated.assign(maxSrvCount, false);
+        newFreeList.reserve(maxSrvCount);
+    } catch (const std::exception&) {
+        state_->heap.Reset();
+        state_->descriptorSize = 0;
+        state_->maxSrvCount = 0;
+        state_->currentIndex = 0;
+        state_->freeList.clear();
+        state_->allocated.clear();
+        return;
+    }
     D3D12_DESCRIPTOR_HEAP_DESC desc{};
     desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     desc.NumDescriptors = maxSrvCount;
@@ -130,7 +142,11 @@ bool SrvManager::FreeIfAllocated(UINT index) {
         return false;
     }
 
-    state_->freeList.push_back(index);
+    try {
+        state_->freeList.push_back(index);
+    } catch (const std::exception&) {
+        return false;
+    }
     state_->allocated[index] = false;
     return true;
 }
@@ -177,8 +193,8 @@ SrvManager::GetCpuHandle(UINT index) const {
         return {};
     }
 
-    return CD3DX12_CPU_DESCRIPTOR_HANDLE(state_->heap->GetCPUDescriptorHandleForHeapStart(), index,
-                                         state_->descriptorSize);
+    return CD3DX12_CPU_DESCRIPTOR_HANDLE(state_->heap->GetCPUDescriptorHandleForHeapStart(),
+                                         static_cast<INT>(index), state_->descriptorSize);
 }
 
 D3D12_GPU_DESCRIPTOR_HANDLE
@@ -187,6 +203,6 @@ SrvManager::GetGpuHandle(UINT index) const {
         return {};
     }
 
-    return CD3DX12_GPU_DESCRIPTOR_HANDLE(state_->heap->GetGPUDescriptorHandleForHeapStart(), index,
-                                         state_->descriptorSize);
+    return CD3DX12_GPU_DESCRIPTOR_HANDLE(state_->heap->GetGPUDescriptorHandleForHeapStart(),
+                                         static_cast<INT>(index), state_->descriptorSize);
 }

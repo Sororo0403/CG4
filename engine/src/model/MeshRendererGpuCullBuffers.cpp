@@ -1,26 +1,24 @@
-#include "model/MeshRenderer.h"
-#include "internal/MeshRendererInternal.h"
-
+#include "../graphics/internal/SrvDescriptorAllocation.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/GpuResourceHelpers.h"
 #include "graphics/GpuResourceLifetime.h"
 #include "graphics/SrvManager.h"
+#include "internal/MeshRendererInternal.h"
+#include "model/MeshRenderer.h"
 #include "model/Vertex.h"
-#include "../graphics/internal/SrvDescriptorAllocation.h"
 
 #include <limits>
 
 namespace {
 using GpuResourceHelpers::CreateCommittedResourceChecked;
 
-bool HasGpuCullResources(const MeshGpuCullBuffer &buffer) noexcept {
-    return buffer.outputResource || buffer.countResource ||
-           buffer.drawArgsResource;
+bool HasGpuCullResources(const MeshGpuCullBuffer& buffer) noexcept {
+    return buffer.outputResource || buffer.countResource || buffer.drawArgsResource;
 }
 
-bool HasGpuLodCullResources(const MeshGpuLodCullBuffer &buffer) noexcept {
+bool HasGpuLodCullResources(const MeshGpuLodCullBuffer& buffer) noexcept {
     for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
         if (buffer.outputResources[lod] || buffer.countResources[lod] ||
             buffer.drawArgsResources[lod]) {
@@ -30,8 +28,7 @@ bool HasGpuLodCullResources(const MeshGpuLodCullBuffer &buffer) noexcept {
     return false;
 }
 
-bool CanReleaseGpuCullResources(DirectXCommon *dxCommon,
-                                bool hasResources,
+bool CanReleaseGpuCullResources(DirectXCommon* dxCommon, bool hasResources,
                                 bool allowFrameAbort) noexcept {
     return CanReleaseGpuResources(dxCommon, hasResources, allowFrameAbort);
 }
@@ -45,8 +42,8 @@ struct GpuCullResourceDescs {
 };
 
 struct GpuCullEnsureInputs {
-    ID3D12Device *device = nullptr;
-    ID3D12Resource *sourceResource = nullptr;
+    ID3D12Device* device = nullptr;
+    ID3D12Resource* sourceResource = nullptr;
     uint32_t instanceCount = 0u;
 };
 
@@ -56,19 +53,14 @@ enum class GpuCullEnsureStatus {
     NeedsRebuild,
 };
 
-bool CanRecreateGpuCullResources(const DirectXCommon *dxCommon,
-                                 bool hasExistingResources);
+bool CanRecreateGpuCullResources(const DirectXCommon* dxCommon, bool hasExistingResources);
 
 template <typename Buffer>
-bool PrepareGpuCullEnsureInputs(DirectXCommon *dxCommon,
-                                const SrvManager *srvManager,
-                                const MeshInstanceBuffer &sourceInstances,
-                                const Buffer &buffer,
-                                GpuCullEnsureInputs &inputs,
-                                bool &alreadyValid) {
-    if (dxCommon == nullptr || dxCommon->GetDevice() == nullptr ||
-        srvManager == nullptr || !sourceInstances.IsValid() ||
-        !sourceInstances.resource) {
+bool PrepareGpuCullEnsureInputs(DirectXCommon* dxCommon, const SrvManager* srvManager,
+                                const MeshInstanceBuffer& sourceInstances, const Buffer& buffer,
+                                GpuCullEnsureInputs& inputs, bool& alreadyValid) {
+    if (dxCommon == nullptr || dxCommon->GetDevice() == nullptr || srvManager == nullptr ||
+        !sourceInstances.IsValid() || !sourceInstances.resource) {
         return false;
     }
 
@@ -80,28 +72,24 @@ bool PrepareGpuCullEnsureInputs(DirectXCommon *dxCommon,
 }
 
 template <typename Buffer>
-GpuCullEnsureStatus BeginGpuCullEnsure(DirectXCommon *dxCommon,
-                                       const SrvManager *srvManager,
-                                       const MeshInstanceBuffer &sourceInstances,
-                                       const Buffer &buffer,
-                                       GpuCullEnsureInputs &inputs) {
+GpuCullEnsureStatus BeginGpuCullEnsure(DirectXCommon* dxCommon, const SrvManager* srvManager,
+                                       const MeshInstanceBuffer& sourceInstances,
+                                       const Buffer& buffer, GpuCullEnsureInputs& inputs) {
     bool alreadyValid = false;
-    if (!PrepareGpuCullEnsureInputs(dxCommon, srvManager, sourceInstances,
-                                    buffer, inputs, alreadyValid)) {
+    if (!PrepareGpuCullEnsureInputs(dxCommon, srvManager, sourceInstances, buffer, inputs,
+                                    alreadyValid)) {
         return GpuCullEnsureStatus::Invalid;
     }
-    return alreadyValid ? GpuCullEnsureStatus::AlreadyValid
-                        : GpuCullEnsureStatus::NeedsRebuild;
+    return alreadyValid ? GpuCullEnsureStatus::AlreadyValid : GpuCullEnsureStatus::NeedsRebuild;
 }
 
 template <typename Buffer, typename HasResources, typename ReleaseBuffer>
-GpuCullEnsureStatus BeginGpuCullRebuild(
-    DirectXCommon *dxCommon, const SrvManager *srvManager,
-    const MeshInstanceBuffer &sourceInstances, Buffer &buffer,
-    GpuCullEnsureInputs &inputs, HasResources hasResources,
-    ReleaseBuffer releaseBuffer) {
-    const GpuCullEnsureStatus status = BeginGpuCullEnsure(
-        dxCommon, srvManager, sourceInstances, buffer, inputs);
+GpuCullEnsureStatus BeginGpuCullRebuild(DirectXCommon* dxCommon, const SrvManager* srvManager,
+                                        const MeshInstanceBuffer& sourceInstances, Buffer& buffer,
+                                        GpuCullEnsureInputs& inputs, HasResources hasResources,
+                                        ReleaseBuffer releaseBuffer) {
+    const GpuCullEnsureStatus status =
+        BeginGpuCullEnsure(dxCommon, srvManager, sourceInstances, buffer, inputs);
     if (status != GpuCullEnsureStatus::NeedsRebuild) {
         return status;
     }
@@ -114,55 +102,42 @@ GpuCullEnsureStatus BeginGpuCullRebuild(
     return GpuCullEnsureStatus::NeedsRebuild;
 }
 
-bool CanRecreateGpuCullResources(const DirectXCommon *dxCommon,
-                                 bool hasExistingResources) {
-    return !hasExistingResources ||
-           (dxCommon != nullptr && !dxCommon->IsCommandListRecording());
+bool CanRecreateGpuCullResources(const DirectXCommon* dxCommon, bool hasExistingResources) {
+    return !hasExistingResources || (dxCommon != nullptr && !dxCommon->IsCommandListRecording());
 }
 
-bool MakeGpuCullResourceDescs(const SrvManager *srvManager, uint32_t instanceCount,
-                              UINT descriptorCount,
-                              GpuCullResourceDescs &descs) {
+bool MakeGpuCullResourceDescs(const SrvManager* srvManager, uint32_t instanceCount,
+                              UINT descriptorCount, GpuCullResourceDescs& descs) {
     if (instanceCount == 0u ||
-        instanceCount >
-            (std::numeric_limits<UINT>::max)() / sizeof(InstanceData) ||
-        srvManager == nullptr ||
-        !srvManager->CanAllocateDescriptors(descriptorCount)) {
+        instanceCount > (std::numeric_limits<UINT>::max)() / sizeof(InstanceData) ||
+        srvManager == nullptr || !srvManager->CanAllocateDescriptors(descriptorCount)) {
         return false;
     }
 
-    descs.instanceBufferSize =
-        static_cast<UINT>(sizeof(InstanceData) * instanceCount);
+    descs.instanceBufferSize = static_cast<UINT>(sizeof(InstanceData) * instanceCount);
     descs.defaultHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-    descs.outputDesc = CD3DX12_RESOURCE_DESC::Buffer(
-        descs.instanceBufferSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-    descs.countDesc = CD3DX12_RESOURCE_DESC::Buffer(
-        16u, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-    descs.drawArgsDesc = CD3DX12_RESOURCE_DESC::Buffer(
-        sizeof(D3D12_DRAW_INDEXED_ARGUMENTS),
-        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    descs.outputDesc = CD3DX12_RESOURCE_DESC::Buffer(descs.instanceBufferSize,
+                                                     D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    descs.countDesc =
+        CD3DX12_RESOURCE_DESC::Buffer(16u, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    descs.drawArgsDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(D3D12_DRAW_INDEXED_ARGUMENTS),
+                                                       D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
     return true;
 }
 
-bool CreateGpuCullResourceSet(ID3D12Device *device,
-                              const GpuCullResourceDescs &descs,
-                              ID3D12Resource **outputResource,
-                              ID3D12Resource **countResource,
-                              ID3D12Resource **drawArgsResource,
-                              const wchar_t *outputName,
-                              const wchar_t *countName,
-                              const wchar_t *drawArgsName) {
-    if (!CreateCommittedResourceChecked(
-            device, &descs.defaultHeap, D3D12_HEAP_FLAG_NONE,
-            &descs.outputDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-            outputResource) ||
-        !CreateCommittedResourceChecked(
-            device, &descs.defaultHeap, D3D12_HEAP_FLAG_NONE, &descs.countDesc,
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS, countResource) ||
-        !CreateCommittedResourceChecked(
-            device, &descs.defaultHeap, D3D12_HEAP_FLAG_NONE,
-            &descs.drawArgsDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-            drawArgsResource)) {
+bool CreateGpuCullResourceSet(ID3D12Device* device, const GpuCullResourceDescs& descs,
+                              ID3D12Resource** outputResource, ID3D12Resource** countResource,
+                              ID3D12Resource** drawArgsResource, const wchar_t* outputName,
+                              const wchar_t* countName, const wchar_t* drawArgsName) {
+    if (!CreateCommittedResourceChecked(device, &descs.defaultHeap, D3D12_HEAP_FLAG_NONE,
+                                        &descs.outputDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                                        outputResource) ||
+        !CreateCommittedResourceChecked(device, &descs.defaultHeap, D3D12_HEAP_FLAG_NONE,
+                                        &descs.countDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                                        countResource) ||
+        !CreateCommittedResourceChecked(device, &descs.defaultHeap, D3D12_HEAP_FLAG_NONE,
+                                        &descs.drawArgsDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                                        drawArgsResource)) {
         return false;
     }
 
@@ -172,8 +147,7 @@ bool CreateGpuCullResourceSet(ID3D12Device *device,
     return true;
 }
 
-void CreateInstanceSourceSrv(ID3D12Device *device, ID3D12Resource *resource,
-                             uint32_t instanceCount,
+void CreateInstanceSourceSrv(ID3D12Device* device, ID3D12Resource* resource, uint32_t instanceCount,
                              D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle) {
     D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
     desc.Format = DXGI_FORMAT_UNKNOWN;
@@ -186,8 +160,7 @@ void CreateInstanceSourceSrv(ID3D12Device *device, ID3D12Resource *resource,
     device->CreateShaderResourceView(resource, &desc, cpuHandle);
 }
 
-void CreateInstanceOutputUav(ID3D12Device *device, ID3D12Resource *resource,
-                             uint32_t instanceCount,
+void CreateInstanceOutputUav(ID3D12Device* device, ID3D12Resource* resource, uint32_t instanceCount,
                              D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle) {
     D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
     desc.Format = DXGI_FORMAT_UNKNOWN;
@@ -209,8 +182,8 @@ D3D12_UNORDERED_ACCESS_VIEW_DESC MakeRawBufferUavDesc(uint32_t elements) {
     return desc;
 }
 
-void ResetGpuCullDescriptorsAndResources(SrvManager *srvManager,
-                                         MeshGpuCullBuffer &buffer) noexcept {
+void ResetGpuCullDescriptorsAndResources(SrvManager* srvManager,
+                                         MeshGpuCullBuffer& buffer) noexcept {
     if (srvManager != nullptr) {
         srvManager->FreeIfAllocated(buffer.sourceSrvIndex);
         srvManager->FreeIfAllocated(buffer.outputUavIndex);
@@ -232,8 +205,8 @@ void ResetGpuCullDescriptorsAndResources(SrvManager *srvManager,
     buffer.ResetResourcesOnly();
 }
 
-void ResetGpuLodCullDescriptorsAndResources(
-    SrvManager *srvManager, MeshGpuLodCullBuffer &buffer) noexcept {
+void ResetGpuLodCullDescriptorsAndResources(SrvManager* srvManager,
+                                            MeshGpuLodCullBuffer& buffer) noexcept {
     if (srvManager != nullptr) {
         srvManager->FreeIfAllocated(buffer.sourceSrvIndex);
         for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
@@ -243,12 +216,9 @@ void ResetGpuLodCullDescriptorsAndResources(
         }
     }
     buffer.sourceSrvIndex = kInvalidResourceId;
-    buffer.outputUavIndices = {kInvalidResourceId, kInvalidResourceId,
-                               kInvalidResourceId};
-    buffer.countUavIndices = {kInvalidResourceId, kInvalidResourceId,
-                              kInvalidResourceId};
-    buffer.drawArgsUavIndices = {kInvalidResourceId, kInvalidResourceId,
-                                 kInvalidResourceId};
+    buffer.outputUavIndices = {kInvalidResourceId, kInvalidResourceId, kInvalidResourceId};
+    buffer.countUavIndices = {kInvalidResourceId, kInvalidResourceId, kInvalidResourceId};
+    buffer.drawArgsUavIndices = {kInvalidResourceId, kInvalidResourceId, kInvalidResourceId};
     buffer.sourceSrvCpuHandle = {};
     buffer.sourceSrvGpuHandle = {};
     buffer.outputUavCpuHandles = {};
@@ -260,11 +230,9 @@ void ResetGpuLodCullDescriptorsAndResources(
     buffer.ResetResourcesOnly();
 }
 
-
 } // namespace
 
-bool MeshRenderer::ReleaseGpuCullBuffer(MeshGpuCullBuffer &buffer,
-                                        bool allowFrameAbort) noexcept {
+bool MeshRenderer::ReleaseGpuCullBuffer(MeshGpuCullBuffer& buffer, bool allowFrameAbort) noexcept {
     if (!CanReleaseGpuCullResources(state_->dxCommon, HasGpuCullResources(buffer),
                                     allowFrameAbort)) {
         return false;
@@ -276,8 +244,8 @@ bool MeshRenderer::ReleaseGpuCullBuffer(MeshGpuCullBuffer &buffer,
     return true;
 }
 
-bool MeshRenderer::ReleaseGpuLodCullBuffer(
-    MeshGpuLodCullBuffer &buffer, bool allowFrameAbort) noexcept {
+bool MeshRenderer::ReleaseGpuLodCullBuffer(MeshGpuLodCullBuffer& buffer,
+                                           bool allowFrameAbort) noexcept {
     if (!CanReleaseGpuCullResources(state_->dxCommon, HasGpuLodCullResources(buffer),
                                     allowFrameAbort)) {
         return false;
@@ -289,76 +257,62 @@ bool MeshRenderer::ReleaseGpuLodCullBuffer(
     return true;
 }
 
-bool MeshRenderer::EnsureGpuCullBuffer(const MeshInstanceBuffer &sourceInstances,
-                                       MeshGpuCullBuffer &buffer) {
+bool MeshRenderer::EnsureGpuCullBuffer(const MeshInstanceBuffer& sourceInstances,
+                                       MeshGpuCullBuffer& buffer) {
     GpuCullEnsureInputs inputs{};
     const GpuCullEnsureStatus status = BeginGpuCullRebuild(
-        state_->dxCommon, state_->srvManager, sourceInstances, buffer, inputs,
-        HasGpuCullResources,
-        [this](MeshGpuCullBuffer &target) {
-            return ReleaseGpuCullBuffer(target);
-        });
+        state_->dxCommon, state_->srvManager, sourceInstances, buffer, inputs, HasGpuCullResources,
+        [this](MeshGpuCullBuffer& target) { return ReleaseGpuCullBuffer(target); });
     if (status == GpuCullEnsureStatus::Invalid) {
         return false;
     }
     if (status == GpuCullEnsureStatus::AlreadyValid) {
         return true;
     }
-    ID3D12Device *device = inputs.device;
-    ID3D12Resource *sourceResource = inputs.sourceResource;
+    ID3D12Device* device = inputs.device;
+    ID3D12Resource* sourceResource = inputs.sourceResource;
     const uint32_t instanceCount = inputs.instanceCount;
 
     GpuCullResourceDescs descs{};
-    if (!MakeGpuCullResourceDescs(state_->srvManager, instanceCount, 4,
-                                  descs)) {
+    if (!MakeGpuCullResourceDescs(state_->srvManager, instanceCount, 4, descs)) {
         return false;
     }
 
     if (!CreateGpuCullResourceSet(
             device, descs, buffer.outputResource.GetAddressOf(),
-            buffer.countResource.GetAddressOf(),
-            buffer.drawArgsResource.GetAddressOf(),
-            L"MeshRenderer.GpuCullOutputInstances",
-            L"MeshRenderer.GpuCullVisibleCount",
+            buffer.countResource.GetAddressOf(), buffer.drawArgsResource.GetAddressOf(),
+            L"MeshRenderer.GpuCullOutputInstances", L"MeshRenderer.GpuCullVisibleCount",
             L"MeshRenderer.GpuCullDrawArgs")) {
         ResetGpuCullDescriptorsAndResources(state_->srvManager, buffer);
         return false;
     }
 
-    if (!SrvDescriptorAllocation::Allocate(
-            state_->srvManager, buffer.sourceSrvIndex,
-            buffer.sourceSrvCpuHandle, buffer.sourceSrvGpuHandle) ||
-        !SrvDescriptorAllocation::Allocate(
-            state_->srvManager, buffer.outputUavIndex,
-            buffer.outputUavCpuHandle, buffer.outputUavGpuHandle) ||
-        !SrvDescriptorAllocation::Allocate(
-            state_->srvManager, buffer.countUavIndex, buffer.countUavCpuHandle,
-            buffer.countUavGpuHandle) ||
-        !SrvDescriptorAllocation::Allocate(
-            state_->srvManager, buffer.drawArgsUavIndex,
-            buffer.drawArgsUavCpuHandle, buffer.drawArgsUavGpuHandle)) {
+    if (!SrvDescriptorAllocation::Allocate(state_->srvManager, buffer.sourceSrvIndex,
+                                           buffer.sourceSrvCpuHandle, buffer.sourceSrvGpuHandle) ||
+        !SrvDescriptorAllocation::Allocate(state_->srvManager, buffer.outputUavIndex,
+                                           buffer.outputUavCpuHandle, buffer.outputUavGpuHandle) ||
+        !SrvDescriptorAllocation::Allocate(state_->srvManager, buffer.countUavIndex,
+                                           buffer.countUavCpuHandle, buffer.countUavGpuHandle) ||
+        !SrvDescriptorAllocation::Allocate(state_->srvManager, buffer.drawArgsUavIndex,
+                                           buffer.drawArgsUavCpuHandle,
+                                           buffer.drawArgsUavGpuHandle)) {
         ResetGpuCullDescriptorsAndResources(state_->srvManager, buffer);
         return false;
     }
 
-    CreateInstanceSourceSrv(device, sourceResource, instanceCount,
-                            buffer.sourceSrvCpuHandle);
+    CreateInstanceSourceSrv(device, sourceResource, instanceCount, buffer.sourceSrvCpuHandle);
     CreateInstanceOutputUav(device, buffer.outputResource.Get(), instanceCount,
                             buffer.outputUavCpuHandle);
 
     D3D12_UNORDERED_ACCESS_VIEW_DESC rawUavDesc = MakeRawBufferUavDesc(4u);
-    device->CreateUnorderedAccessView(buffer.countResource.Get(), nullptr,
-                                      &rawUavDesc,
+    device->CreateUnorderedAccessView(buffer.countResource.Get(), nullptr, &rawUavDesc,
                                       buffer.countUavCpuHandle);
 
-    rawUavDesc.Buffer.NumElements =
-        sizeof(D3D12_DRAW_INDEXED_ARGUMENTS) / sizeof(uint32_t);
-    device->CreateUnorderedAccessView(buffer.drawArgsResource.Get(), nullptr,
-                                      &rawUavDesc,
+    rawUavDesc.Buffer.NumElements = sizeof(D3D12_DRAW_INDEXED_ARGUMENTS) / sizeof(uint32_t);
+    device->CreateUnorderedAccessView(buffer.drawArgsResource.Get(), nullptr, &rawUavDesc,
                                       buffer.drawArgsUavCpuHandle);
 
-    buffer.outputView.BufferLocation =
-        buffer.outputResource->GetGPUVirtualAddress();
+    buffer.outputView.BufferLocation = buffer.outputResource->GetGPUVirtualAddress();
     buffer.outputView.SizeInBytes = descs.instanceBufferSize;
     buffer.outputView.StrideInBytes = sizeof(InstanceData);
     buffer.maxInstanceCount = instanceCount;
@@ -369,84 +323,75 @@ bool MeshRenderer::EnsureGpuCullBuffer(const MeshInstanceBuffer &sourceInstances
     return true;
 }
 
-bool MeshRenderer::EnsureGpuLodCullBuffer(
-    const MeshInstanceBuffer &sourceInstances, MeshGpuLodCullBuffer &buffer) {
+bool MeshRenderer::EnsureGpuLodCullBuffer(const MeshInstanceBuffer& sourceInstances,
+                                          MeshGpuLodCullBuffer& buffer) {
     GpuCullEnsureInputs inputs{};
-    const GpuCullEnsureStatus status = BeginGpuCullRebuild(
-        state_->dxCommon, state_->srvManager, sourceInstances, buffer, inputs,
-        HasGpuLodCullResources,
-        [this](MeshGpuLodCullBuffer &target) {
-            return ReleaseGpuLodCullBuffer(target);
-        });
+    const GpuCullEnsureStatus status =
+        BeginGpuCullRebuild(state_->dxCommon, state_->srvManager, sourceInstances, buffer, inputs,
+                            HasGpuLodCullResources, [this](MeshGpuLodCullBuffer& target) {
+                                return ReleaseGpuLodCullBuffer(target);
+                            });
     if (status == GpuCullEnsureStatus::Invalid) {
         return false;
     }
     if (status == GpuCullEnsureStatus::AlreadyValid) {
         return true;
     }
-    ID3D12Device *device = inputs.device;
-    ID3D12Resource *sourceResource = inputs.sourceResource;
+    ID3D12Device* device = inputs.device;
+    ID3D12Resource* sourceResource = inputs.sourceResource;
     const uint32_t instanceCount = inputs.instanceCount;
 
     GpuCullResourceDescs descs{};
-    if (!MakeGpuCullResourceDescs(state_->srvManager, instanceCount,
-                                  1u + kMeshGpuCullLodCount * 3u, descs)) {
+    if (!MakeGpuCullResourceDescs(state_->srvManager, instanceCount, 1u + kMeshGpuCullLodCount * 3u,
+                                  descs)) {
         return false;
     }
 
     for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        if (!CreateGpuCullResourceSet(
-                device, descs, buffer.outputResources[lod].GetAddressOf(),
-                buffer.countResources[lod].GetAddressOf(),
-                buffer.drawArgsResources[lod].GetAddressOf(),
-                L"MeshRenderer.GpuLodCullOutputInstances",
-                L"MeshRenderer.GpuLodCullVisibleCount",
-                L"MeshRenderer.GpuLodCullDrawArgs")) {
+        if (!CreateGpuCullResourceSet(device, descs, buffer.outputResources[lod].GetAddressOf(),
+                                      buffer.countResources[lod].GetAddressOf(),
+                                      buffer.drawArgsResources[lod].GetAddressOf(),
+                                      L"MeshRenderer.GpuLodCullOutputInstances",
+                                      L"MeshRenderer.GpuLodCullVisibleCount",
+                                      L"MeshRenderer.GpuLodCullDrawArgs")) {
             ResetGpuLodCullDescriptorsAndResources(state_->srvManager, buffer);
             return false;
         }
     }
 
-    if (!SrvDescriptorAllocation::Allocate(
-            state_->srvManager, buffer.sourceSrvIndex,
-            buffer.sourceSrvCpuHandle, buffer.sourceSrvGpuHandle)) {
+    if (!SrvDescriptorAllocation::Allocate(state_->srvManager, buffer.sourceSrvIndex,
+                                           buffer.sourceSrvCpuHandle, buffer.sourceSrvGpuHandle)) {
         ResetGpuLodCullDescriptorsAndResources(state_->srvManager, buffer);
         return false;
     }
     for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        if (!SrvDescriptorAllocation::Allocate(
-                state_->srvManager, buffer.outputUavIndices[lod],
-                buffer.outputUavCpuHandles[lod],
-                buffer.outputUavGpuHandles[lod]) ||
-            !SrvDescriptorAllocation::Allocate(
-                state_->srvManager, buffer.countUavIndices[lod],
-                buffer.countUavCpuHandles[lod], buffer.countUavGpuHandles[lod]) ||
-            !SrvDescriptorAllocation::Allocate(
-                state_->srvManager, buffer.drawArgsUavIndices[lod],
-                buffer.drawArgsUavCpuHandles[lod],
-                buffer.drawArgsUavGpuHandles[lod])) {
+        if (!SrvDescriptorAllocation::Allocate(state_->srvManager, buffer.outputUavIndices[lod],
+                                               buffer.outputUavCpuHandles[lod],
+                                               buffer.outputUavGpuHandles[lod]) ||
+            !SrvDescriptorAllocation::Allocate(state_->srvManager, buffer.countUavIndices[lod],
+                                               buffer.countUavCpuHandles[lod],
+                                               buffer.countUavGpuHandles[lod]) ||
+            !SrvDescriptorAllocation::Allocate(state_->srvManager, buffer.drawArgsUavIndices[lod],
+                                               buffer.drawArgsUavCpuHandles[lod],
+                                               buffer.drawArgsUavGpuHandles[lod])) {
             ResetGpuLodCullDescriptorsAndResources(state_->srvManager, buffer);
             return false;
         }
     }
 
-    CreateInstanceSourceSrv(device, sourceResource, instanceCount,
-                            buffer.sourceSrvCpuHandle);
+    CreateInstanceSourceSrv(device, sourceResource, instanceCount, buffer.sourceSrvCpuHandle);
 
     for (uint32_t lod = 0; lod < kMeshGpuCullLodCount; ++lod) {
-        CreateInstanceOutputUav(device, buffer.outputResources[lod].Get(),
-                                instanceCount, buffer.outputUavCpuHandles[lod]);
+        CreateInstanceOutputUav(device, buffer.outputResources[lod].Get(), instanceCount,
+                                buffer.outputUavCpuHandles[lod]);
 
         D3D12_UNORDERED_ACCESS_VIEW_DESC rawUavDesc = MakeRawBufferUavDesc(4u);
-        device->CreateUnorderedAccessView(
-            buffer.countResources[lod].Get(), nullptr, &rawUavDesc,
-            buffer.countUavCpuHandles[lod]);
+        device->CreateUnorderedAccessView(buffer.countResources[lod].Get(), nullptr, &rawUavDesc,
+                                          buffer.countUavCpuHandles[lod]);
 
-        rawUavDesc.Buffer.NumElements =
-            sizeof(D3D12_DRAW_INDEXED_ARGUMENTS) / sizeof(uint32_t);
-        device->CreateUnorderedAccessView(
-            buffer.drawArgsResources[lod].Get(), nullptr, &rawUavDesc,
-            buffer.drawArgsUavCpuHandles[lod]);
+        rawUavDesc.Buffer.NumElements = sizeof(D3D12_DRAW_INDEXED_ARGUMENTS) / sizeof(uint32_t);
+        device->CreateUnorderedAccessView(buffer.drawArgsResources[lod].Get(), nullptr, &rawUavDesc,
+                                          buffer.drawArgsUavCpuHandles[lod]);
 
         buffer.outputViews[lod].BufferLocation =
             buffer.outputResources[lod]->GetGPUVirtualAddress();

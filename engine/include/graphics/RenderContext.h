@@ -1,6 +1,7 @@
 #pragma once
 #include "core/FrameTimer.h"
 #include "graphics/RenderPass.h"
+
 #include <cstdint>
 #include <d3d12.h>
 
@@ -9,9 +10,9 @@ class DirectXCommon;
 class SrvManager;
 
 struct RenderContext {
-    DirectXCommon *dxCommon = nullptr;
-    SrvManager *srv = nullptr;
-    const Camera *camera = nullptr;
+    DirectXCommon* dxCommon = nullptr;
+    SrvManager* srv = nullptr;
+    const Camera* camera = nullptr;
     RenderPass pass = RenderPass::None;
     FrameTime frameTime{};
     float deltaTime = 0.0f;

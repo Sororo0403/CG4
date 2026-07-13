@@ -1,17 +1,19 @@
 #include "particle/GPUParticleSystem.h"
 
-#include "internal/GPUParticleEmitterUtils.h"
-#include "internal/GPUParticleSystemInternal.h"
-#include "internal/GPUParticleSystemShared.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
+#include "internal/GPUParticleEmitterUtils.h"
+#include "internal/GPUParticleSystemInternal.h"
+#include "internal/GPUParticleSystemShared.h"
 #include "texture/TextureManager.h"
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <functional>
+#include <new>
 #include <numeric>
 #include <random>
 
@@ -33,6 +35,38 @@ using GpuParticleSystemInternal::ParticleUploadPassScope;
 
 constexpr float kParticleClearDeltaTime = 1.0e6f;
 
+template <typename ResourceState>
+bool HasRequiredParticleCoreResources(const ResourceState& resources) {
+    const bool required[] = {
+        static_cast<bool>(resources.particleResource),
+        static_cast<bool>(resources.freeListResource),
+        static_cast<bool>(resources.freeListIndexResource),
+        static_cast<bool>(resources.activeIndexResource),
+        static_cast<bool>(resources.activeCountResource),
+        static_cast<bool>(resources.drawArgsResource),
+    };
+    return std::all_of(std::begin(required), std::end(required), [](bool value) { return value; });
+}
+
+template <typename ResourceState>
+bool HasRequiredParticleGpuHandles(const ResourceState& resources) {
+    const D3D12_GPU_DESCRIPTOR_HANDLE handles[] = {
+        resources.particleSrvGpuHandle,    resources.particleUavGpuHandle,
+        resources.freeListUavGpuHandle,    resources.freeListIndexUavGpuHandle,
+        resources.activeIndexSrvGpuHandle, resources.activeIndexUavGpuHandle,
+        resources.activeCountUavGpuHandle, resources.drawArgsUavGpuHandle,
+    };
+    return std::all_of(std::begin(handles), std::end(handles),
+                       [](D3D12_GPU_DESCRIPTOR_HANDLE handle) { return handle.ptr != 0; });
+}
+
+template <typename Frames> bool HasRequiredExplicitSpawnFrames(const Frames& frames) {
+    return !frames.empty() && std::all_of(frames.begin(), frames.end(), [](const auto& frame) {
+        return frame.resource && frame.mappedSpawns != nullptr && frame.srvGpuHandle.ptr != 0 &&
+               frame.capacity != 0u;
+    });
+}
+
 } // namespace
 
 GPUParticleSystem::GPUParticleSystem() : resources_(std::make_unique<ResourceState>()) {}
@@ -52,8 +86,7 @@ public:
             pendingExplicitParticles.swap(system_.pendingExplicitParticles_);
             system_.ReleaseResources(true);
             system_.pendingEmitSettings_ = std::move(pendingEmitSettings);
-            system_.pendingExplicitParticles_ =
-                std::move(pendingExplicitParticles);
+            system_.pendingExplicitParticles_ = std::move(pendingExplicitParticles);
         }
     }
 
@@ -102,8 +135,7 @@ bool GPUParticleSystem::Initialize(DirectXCommon* dxCommon, SrvManager* srvManag
     InitializationGuard initializeGuard(*this);
 
     pendingExplicitParticles_ = std::move(pendingExplicitBeforeInitialize);
-    if (!ConfigureInitialState(textureId, maxParticles,
-                               std::move(pendingBeforeInitialize))) {
+    if (!ConfigureInitialState(textureId, maxParticles, std::move(pendingBeforeInitialize))) {
         return false;
     }
     const std::vector<ParticleForGPU> particles = CreateInitialParticleData();
@@ -144,11 +176,9 @@ bool GPUParticleSystem::ConfigureInitialState(
             (std::max)(activeTimeRemaining_, EstimateParticleActiveDuration(settings));
     }
     activeTimeRemaining_ = std::accumulate(
-        pendingExplicitParticles_.begin(), pendingExplicitParticles_.end(),
-        activeTimeRemaining_,
-        [](float activeDuration, const GPUParticleExplicitSpawn &particle) {
-            return (std::max)(activeDuration,
-                              (std::max)(0.01f, particle.positionLife.w));
+        pendingExplicitParticles_.begin(), pendingExplicitParticles_.end(), activeTimeRemaining_,
+        [](float activeDuration, const GPUParticleExplicitSpawn& particle) {
+            return (std::max)(activeDuration, (std::max)(0.01f, particle.positionLife.w));
         });
     return true;
 }
@@ -158,7 +188,12 @@ std::vector<GPUParticleSystem::ParticleForGPU> GPUParticleSystem::CreateInitialP
     std::mt19937 randomEngine{std::random_device{}()};
     std::uniform_real_distribution<float> dist01(0.0f, 1.0f);
 
-    std::vector<ParticleForGPU> particles(maxParticles_);
+    std::vector<ParticleForGPU> particles;
+    try {
+        particles.resize(maxParticles_);
+    } catch (const std::exception&) {
+        return {};
+    }
     for (ParticleForGPU& particle : particles) {
         particle.translate = emitterSettings_.position;
         particle.velocity = {};
@@ -206,29 +241,9 @@ bool GPUParticleSystem::CreateInitializationGpuResources(
 }
 
 bool GPUParticleSystem::HasRequiredGpuResources() const {
-    if (!(resources_->particleResource && resources_->freeListResource &&
-          resources_->freeListIndexResource && resources_->activeIndexResource &&
-          resources_->activeCountResource && resources_->drawArgsResource &&
-          HasConstantBuffers() && resources_->particleSrvGpuHandle.ptr != 0 &&
-          resources_->particleUavGpuHandle.ptr != 0 &&
-          resources_->freeListUavGpuHandle.ptr != 0 &&
-          resources_->freeListIndexUavGpuHandle.ptr != 0 &&
-          resources_->activeIndexSrvGpuHandle.ptr != 0 &&
-          resources_->activeIndexUavGpuHandle.ptr != 0 &&
-          resources_->activeCountUavGpuHandle.ptr != 0 &&
-          resources_->drawArgsUavGpuHandle.ptr != 0)) {
-        return false;
-    }
-    if (resources_->explicitSpawnFrames.empty()) {
-        return false;
-    }
-    return std::all_of(
-        resources_->explicitSpawnFrames.begin(),
-        resources_->explicitSpawnFrames.end(),
-        [](const ExplicitSpawnFrame &frame) {
-            return frame.resource && frame.mappedSpawns != nullptr &&
-                   frame.srvGpuHandle.ptr != 0 && frame.capacity != 0u;
-        });
+    return HasRequiredParticleCoreResources(*resources_) && HasConstantBuffers() &&
+           HasRequiredParticleGpuHandles(*resources_) &&
+           HasRequiredExplicitSpawnFrames(resources_->explicitSpawnFrames);
 }
 
 void GPUParticleSystem::QueueInitialUpdateIfNeeded() {
@@ -280,12 +295,16 @@ void GPUParticleSystem::EmitOnce(const ParticleEmitterSettings& settings) {
     ParticleEmitterSettings normalized = NormalizeParticleEmitterSettings(settings);
     emitterSettings_ = normalized;
     emitterFrequencyTime_ = 0.0f;
-    activeTimeRemaining_ =
-        (std::max)(activeTimeRemaining_, EstimateParticleActiveDuration(normalized));
-    if (pendingEmitSettings_.size() >= kMaxQueuedParticleEmitsPerFrame) {
+    try {
+        pendingEmitSettings_.push_back(normalized);
+    } catch (const std::exception&) {
+        return;
+    }
+    if (pendingEmitSettings_.size() > kMaxQueuedParticleEmitsPerFrame) {
         pendingEmitSettings_.pop_front();
     }
-    pendingEmitSettings_.push_back(normalized);
+    activeTimeRemaining_ =
+        (std::max)(activeTimeRemaining_, EstimateParticleActiveDuration(normalized));
     if (HasConstantBuffers() && !updatePending_) {
         resources_->updateConstants.time = {totalTime_, 0.0f, static_cast<float>(maxParticles_),
                                             0.0f};
@@ -293,51 +312,47 @@ void GPUParticleSystem::EmitOnce(const ParticleEmitterSettings& settings) {
     }
 }
 
-size_t GPUParticleSystem::EmitParticles(
-    const std::vector<GPUParticleExplicitSpawn> &particles) {
+size_t GPUParticleSystem::EmitParticles(const std::vector<GPUParticleExplicitSpawn>& particles) {
     if (particles.empty()) {
         return 0u;
     }
 
-    const size_t capacityLimit =
-        maxParticles_ != 0u ? static_cast<size_t>(maxParticles_)
-                            : static_cast<size_t>(kMaxGpuParticles);
-    const size_t appendCount =
-        (std::min)(particles.size(), capacityLimit);
+    const size_t capacityLimit = maxParticles_ != 0u ? static_cast<size_t>(maxParticles_)
+                                                     : static_cast<size_t>(kMaxGpuParticles);
+    const size_t appendCount = (std::min)(particles.size(), capacityLimit);
     if (appendCount == 0u) {
         return 0u;
     }
 
-    const size_t totalCount = pendingExplicitParticles_.size() + appendCount;
-    if (totalCount > capacityLimit) {
-        const size_t eraseCount =
-            (std::min)(pendingExplicitParticles_.size(),
-                       totalCount - capacityLimit);
-        if (eraseCount >= pendingExplicitParticles_.size()) {
-            pendingExplicitParticles_.clear();
-        } else if (eraseCount > 0u) {
-            pendingExplicitParticles_.erase(
-                pendingExplicitParticles_.begin(),
-                pendingExplicitParticles_.begin() +
-                    static_cast<std::ptrdiff_t>(eraseCount));
+    try {
+        std::vector<GPUParticleExplicitSpawn> updated = pendingExplicitParticles_;
+        const size_t totalCount = updated.size() + appendCount;
+        if (totalCount > capacityLimit) {
+            const size_t eraseCount = (std::min)(updated.size(), totalCount - capacityLimit);
+            if (eraseCount >= updated.size()) {
+                updated.clear();
+            } else if (eraseCount > 0u) {
+                updated.erase(updated.begin(),
+                              updated.begin() + static_cast<std::ptrdiff_t>(eraseCount));
+            }
         }
+        updated.insert(updated.end(), particles.begin(),
+                       particles.begin() + static_cast<std::ptrdiff_t>(appendCount));
+        pendingExplicitParticles_.swap(updated);
+    } catch (const std::exception&) {
+        return 0u;
     }
-    pendingExplicitParticles_.insert(pendingExplicitParticles_.end(),
-                                     particles.begin(),
-                                     particles.begin() +
-                                         static_cast<std::ptrdiff_t>(appendCount));
 
     const float maxLifeTime = std::accumulate(
-        particles.begin(), particles.begin() + static_cast<std::ptrdiff_t>(appendCount),
-        0.01f, [](float maxLife, const GPUParticleExplicitSpawn &particle) {
-            return (std::max)(maxLife,
-                              (std::max)(0.01f, particle.positionLife.w));
+        particles.begin(), particles.begin() + static_cast<std::ptrdiff_t>(appendCount), 0.01f,
+        [](float maxLife, const GPUParticleExplicitSpawn& particle) {
+            return (std::max)(maxLife, (std::max)(0.01f, particle.positionLife.w));
         });
     activeTimeRemaining_ = (std::max)(activeTimeRemaining_, maxLifeTime);
 
     if (HasConstantBuffers() && !updatePending_) {
-        resources_->updateConstants.time = {totalTime_, 0.0f,
-                                            static_cast<float>(maxParticles_), 0.0f};
+        resources_->updateConstants.time = {totalTime_, 0.0f, static_cast<float>(maxParticles_),
+                                            0.0f};
         updatePending_ = true;
     }
     return appendCount;
@@ -367,13 +382,11 @@ bool GPUParticleSystem::HasConstantBuffers() const {
     if (resources_->constantFrames.empty()) {
         return false;
     }
-    return std::all_of(
-        resources_->constantFrames.begin(), resources_->constantFrames.end(),
-        [](const ConstantFrame &frame) {
-            return frame.updateConstantBuffer && frame.drawConstantBuffer &&
-                   frame.mappedUpdateCB != nullptr &&
-                   frame.mappedDrawCB != nullptr;
-        });
+    return std::all_of(resources_->constantFrames.begin(), resources_->constantFrames.end(),
+                       [](const ConstantFrame& frame) {
+                           return frame.updateConstantBuffer && frame.drawConstantBuffer &&
+                                  frame.mappedUpdateCB != nullptr && frame.mappedDrawCB != nullptr;
+                       });
 }
 
 void GPUParticleSystem::Clear() {
@@ -429,7 +442,11 @@ void GPUParticleSystem::Update(float deltaTime) {
         while (emitterFrequencyTime_ >= interval &&
                pendingEmitSettings_.size() < kMaxQueuedParticleEmitsPerFrame) {
             emitterFrequencyTime_ -= interval;
-            pendingEmitSettings_.push_back(emitterSettings_);
+            try {
+                pendingEmitSettings_.push_back(emitterSettings_);
+            } catch (const std::exception&) {
+                break;
+            }
             activeTimeRemaining_ =
                 (std::max)(activeTimeRemaining_, EstimateParticleActiveDuration(emitterSettings_));
         }
@@ -438,8 +455,8 @@ void GPUParticleSystem::Update(float deltaTime) {
         }
     }
 
-    if (pendingEmitSettings_.empty() && pendingExplicitParticles_.empty() &&
-        !continuousEmitter && !wasActive) {
+    if (pendingEmitSettings_.empty() && pendingExplicitParticles_.empty() && !continuousEmitter &&
+        !wasActive) {
         return;
     }
 

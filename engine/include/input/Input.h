@@ -1,6 +1,7 @@
 #pragma once
 #define DIRECTINPUT_VERSION 0x0800
 #include "input/InputReplayTypes.h"
+
 #include <Windows.h>
 #include <Xinput.h>
 #include <cstddef>
@@ -12,7 +13,7 @@
 /// キーボードとマウスの入力状態を管理する
 /// </summary>
 class Input {
-  public:
+public:
     using ReplayMode = InputReplayMode;
     using ReplayStartupOptions = InputReplayStartupOptions;
 
@@ -35,12 +36,12 @@ class Input {
     /// <summary>
     /// 現在の入力をフレーム単位でJSONへ保存する録画を開始する
     /// </summary>
-    bool StartRecording(const std::wstring &path, float fixedDeltaTime);
+    bool StartRecording(const std::wstring& path, float fixedDeltaTime);
 
     /// <summary>
     /// JSONから読み込んだ入力フレームを実入力の代わりに再生する
     /// </summary>
-    bool StartReplay(const std::wstring &path);
+    bool StartReplay(const std::wstring& path);
 
     /// <summary>
     /// 録画を保存して通常入力へ戻る
@@ -55,14 +56,13 @@ class Input {
     /// <summary>
     /// 起動時の録画・再生設定をInputへ適用する
     /// </summary>
-    bool ApplyReplayStartupOptions(const ReplayStartupOptions &options,
-                                   float fixedDeltaTime);
+    bool ApplyReplayStartupOptions(const ReplayStartupOptions& options, float fixedDeltaTime);
 
     ReplayMode GetReplayMode() const;
     bool IsReplayFinished() const;
     size_t GetReplayFrameIndex() const;
     size_t GetReplayFrameCount() const;
-    const std::wstring &GetReplayPath() const;
+    const std::wstring& GetReplayPath() const;
 
     /// <summary>
     /// 指定キーが押下中かを判定する
@@ -184,7 +184,7 @@ class Input {
     /// </summary>
     float GetGamepadRightTrigger() const;
 
-  private:
+private:
     /// <summary>
     /// DirectInputからキーボードの現在状態を読み込む
     /// </summary>
@@ -208,15 +208,15 @@ class Input {
     /// CaptureFrameを実行する
     /// </summary>
     InputFrame CaptureFrame() const;
-    void ApplyReplayFrame(const InputFrame &frame);
+    void ApplyReplayFrame(const InputFrame& frame);
     /// <summary>
     /// MakeAutoReplayPathを実行する
     /// </summary>
     std::wstring MakeAutoReplayPath() const;
     bool SaveRecording() const;
-    bool LoadReplay(const std::wstring &path);
+    bool LoadReplay(const std::wstring& path);
 
-  private:
+private:
     static constexpr BYTE kPressMask = 0x80;
 
     std::unique_ptr<State> state_;

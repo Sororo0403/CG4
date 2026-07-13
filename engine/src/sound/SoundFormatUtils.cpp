@@ -3,24 +3,24 @@
 #include <Objbase.h>
 #include <algorithm>
 #include <cstring>
+#include <exception>
 #include <limits>
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
+#include <new>
 #include <sstream>
 #include <utility>
 
 namespace {
 
 constexpr DWORD kAllStreams = static_cast<DWORD>(MF_SOURCE_READER_ALL_STREAMS);
-constexpr DWORD kFirstAudioStream =
-    static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM);
+constexpr DWORD kFirstAudioStream = static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM);
 
 class MediaBufferLock {
 public:
-    explicit MediaBufferLock(IMFMediaBuffer *buffer) : buffer_(buffer) {
-        if (buffer_ != nullptr &&
-            FAILED(buffer_->Lock(&data_, &maxLength_, &currentLength_))) {
+    explicit MediaBufferLock(IMFMediaBuffer* buffer) : buffer_(buffer) {
+        if (buffer_ != nullptr && FAILED(buffer_->Lock(&data_, &maxLength_, &currentLength_))) {
             buffer_ = nullptr;
             data_ = nullptr;
             maxLength_ = 0;
@@ -34,13 +34,19 @@ public:
         }
     }
 
-    const BYTE *Data() const { return data_; }
-    DWORD Size() const { return currentLength_; }
-    bool IsValid() const { return buffer_ != nullptr && data_ != nullptr; }
+    const BYTE* Data() const {
+        return data_;
+    }
+    DWORD Size() const {
+        return currentLength_;
+    }
+    bool IsValid() const {
+        return buffer_ != nullptr && data_ != nullptr;
+    }
 
 private:
-    IMFMediaBuffer *buffer_ = nullptr;
-    BYTE *data_ = nullptr;
+    IMFMediaBuffer* buffer_ = nullptr;
+    BYTE* data_ = nullptr;
     DWORD maxLength_ = 0;
     DWORD currentLength_ = 0;
 };
@@ -49,15 +55,14 @@ private:
 
 namespace SoundFormatUtils {
 
-std::string MakeHResultMessage(HRESULT hr, const char *message) {
+std::string MakeHResultMessage(HRESULT hr, const char* message) {
     std::ostringstream oss;
-    oss << message << " HRESULT=0x" << std::hex
-        << static_cast<unsigned long>(hr);
+    oss << message << " HRESULT=0x" << std::hex << static_cast<unsigned long>(hr);
     return oss.str();
 }
 
-bool BuildPcmWaveFormat(uint32_t sampleRate, uint16_t channels,
-                        uint16_t bitsPerSample, WAVEFORMATEX &format) {
+bool BuildPcmWaveFormat(uint32_t sampleRate, uint16_t channels, uint16_t bitsPerSample,
+                        WAVEFORMATEX& format) {
     if (sampleRate == 0u || channels == 0u || bitsPerSample == 0u) {
         return false;
     }
@@ -70,12 +75,10 @@ bool BuildPcmWaveFormat(uint32_t sampleRate, uint16_t channels,
 
     const uint32_t blockAlign = frameBits / 8u;
     if (blockAlign == 0u ||
-        blockAlign >
-            static_cast<uint32_t>((std::numeric_limits<WORD>::max)())) {
+        blockAlign > static_cast<uint32_t>((std::numeric_limits<WORD>::max)())) {
         return false;
     }
-    if (sampleRate >
-        (std::numeric_limits<DWORD>::max)() / static_cast<DWORD>(blockAlign)) {
+    if (sampleRate > (std::numeric_limits<DWORD>::max)() / static_cast<DWORD>(blockAlign)) {
         return false;
     }
 
@@ -89,24 +92,20 @@ bool BuildPcmWaveFormat(uint32_t sampleRate, uint16_t channels,
     return true;
 }
 
-bool IsSupportedPcmReadFormat(const WAVEFORMATEX &format) {
-    if (format.nSamplesPerSec == 0 || format.nChannels == 0 ||
-        format.nBlockAlign == 0) {
+bool IsSupportedPcmReadFormat(const WAVEFORMATEX& format) {
+    if (format.nSamplesPerSec == 0 || format.nChannels == 0 || format.nBlockAlign == 0) {
         return false;
     }
     if (format.wBitsPerSample != 8 && format.wBitsPerSample != 16) {
         return false;
     }
 
-    const uint32_t bytesPerSample =
-        static_cast<uint32_t>(format.wBitsPerSample) / 8u;
-    const uint32_t minBlockAlign =
-        static_cast<uint32_t>(format.nChannels) * bytesPerSample;
+    const uint32_t bytesPerSample = static_cast<uint32_t>(format.wBitsPerSample) / 8u;
+    const uint32_t minBlockAlign = static_cast<uint32_t>(format.nChannels) * bytesPerSample;
     return minBlockAlign != 0u && minBlockAlign <= format.nBlockAlign;
 }
 
-bool CopyWaveFormatHeader(const std::vector<BYTE> &bytes,
-                          WAVEFORMATEX &outFormat) {
+bool CopyWaveFormatHeader(const std::vector<BYTE>& bytes, WAVEFORMATEX& outFormat) {
     if (bytes.size() < sizeof(WAVEFORMATEX)) {
         outFormat = {};
         return false;
@@ -116,8 +115,7 @@ bool CopyWaveFormatHeader(const std::vector<BYTE> &bytes,
     return true;
 }
 
-bool CopyAlignedWaveFormat(const std::vector<BYTE> &bytes,
-                           AlignedWaveFormat &outFormat) {
+bool CopyAlignedWaveFormat(const std::vector<BYTE>& bytes, AlignedWaveFormat& outFormat) {
     WAVEFORMATEX header{};
     if (!CopyWaveFormatHeader(bytes, header)) {
         outFormat = {};
@@ -125,14 +123,12 @@ bool CopyAlignedWaveFormat(const std::vector<BYTE> &bytes,
     }
 
     const size_t extraSize = static_cast<size_t>(header.cbSize);
-    if (extraSize >
-        (std::numeric_limits<size_t>::max)() - sizeof(WAVEFORMATEX)) {
+    if (extraSize > (std::numeric_limits<size_t>::max)() - sizeof(WAVEFORMATEX)) {
         outFormat = {};
         return false;
     }
     const size_t requiredSize = sizeof(WAVEFORMATEX) + extraSize;
-    if (requiredSize > bytes.size() ||
-        requiredSize > sizeof(WAVEFORMATEXTENSIBLE)) {
+    if (requiredSize > bytes.size() || requiredSize > sizeof(WAVEFORMATEXTENSIBLE)) {
         outFormat = {};
         return false;
     }
@@ -142,10 +138,9 @@ bool CopyAlignedWaveFormat(const std::vector<BYTE> &bytes,
     return true;
 }
 
-bool CreatePcmSourceReader(
-    const std::filesystem::path &path,
-    Microsoft::WRL::ComPtr<IMFSourceReader> &reader,
-    Microsoft::WRL::ComPtr<IMFMediaType> *currentType) {
+bool CreatePcmSourceReader(const std::filesystem::path& path,
+                           Microsoft::WRL::ComPtr<IMFSourceReader>& reader,
+                           Microsoft::WRL::ComPtr<IMFMediaType>* currentType) {
     reader.Reset();
     if (currentType != nullptr) {
         currentType->Reset();
@@ -166,10 +161,8 @@ bool CreatePcmSourceReader(
         FAILED(pcmType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio)) ||
         FAILED(pcmType->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM)) ||
         FAILED(pcmType->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16)) ||
-        FAILED(reader->SetCurrentMediaType(kFirstAudioStream, nullptr,
-                                           pcmType.Get())) ||
-        FAILED(reader->GetCurrentMediaType(kFirstAudioStream,
-                                           &resolvedType))) {
+        FAILED(reader->SetCurrentMediaType(kFirstAudioStream, nullptr, pcmType.Get())) ||
+        FAILED(reader->GetCurrentMediaType(kFirstAudioStream, &resolvedType))) {
         reader.Reset();
         return false;
     }
@@ -180,16 +173,15 @@ bool CreatePcmSourceReader(
     return true;
 }
 
-bool GetWaveFormatBytes(IMFMediaType *mediaType, std::vector<BYTE> &result) {
+bool GetWaveFormatBytes(IMFMediaType* mediaType, std::vector<BYTE>& result) {
     result.clear();
     if (mediaType == nullptr) {
         return false;
     }
 
-    WAVEFORMATEX *waveFormat = nullptr;
+    WAVEFORMATEX* waveFormat = nullptr;
     UINT32 waveFormatSize = 0;
-    if (FAILED(MFCreateWaveFormatExFromMFMediaType(
-            mediaType, &waveFormat, &waveFormatSize)) ||
+    if (FAILED(MFCreateWaveFormatExFromMFMediaType(mediaType, &waveFormat, &waveFormatSize)) ||
         waveFormat == nullptr || waveFormatSize == 0) {
         if (waveFormat != nullptr) {
             CoTaskMemFree(waveFormat);
@@ -197,14 +189,19 @@ bool GetWaveFormatBytes(IMFMediaType *mediaType, std::vector<BYTE> &result) {
         return false;
     }
 
-    result.resize(waveFormatSize);
-    std::copy_n(reinterpret_cast<const BYTE *>(waveFormat), waveFormatSize,
-                result.data());
+    try {
+        result.resize(waveFormatSize);
+        std::copy_n(reinterpret_cast<const BYTE*>(waveFormat), waveFormatSize, result.data());
+    } catch (const std::exception&) {
+        result.clear();
+        CoTaskMemFree(waveFormat);
+        return false;
+    }
     CoTaskMemFree(waveFormat);
     return true;
 }
 
-bool SeekSourceReaderToStart(IMFSourceReader *reader) {
+bool SeekSourceReaderToStart(IMFSourceReader* reader) {
     if (reader == nullptr) {
         return false;
     }
@@ -218,9 +215,8 @@ bool SeekSourceReaderToStart(IMFSourceReader *reader) {
     return SUCCEEDED(hr);
 }
 
-bool ReadNextPcmChunk(IMFSourceReader *reader, size_t targetBytes,
-                      size_t maxDecodedBytes, bool &sourceEnded,
-                      std::vector<BYTE> &decodedPcm) {
+bool ReadNextPcmChunk(IMFSourceReader* reader, size_t targetBytes, size_t maxDecodedBytes,
+                      bool& sourceEnded, std::vector<BYTE>& decodedPcm) {
     decodedPcm.clear();
     sourceEnded = false;
     if (reader == nullptr || targetBytes == 0 || maxDecodedBytes == 0) {
@@ -230,8 +226,7 @@ bool ReadNextPcmChunk(IMFSourceReader *reader, size_t targetBytes,
     while (decodedPcm.size() < targetBytes) {
         DWORD flags = 0;
         Microsoft::WRL::ComPtr<IMFSample> sample;
-        if (FAILED(reader->ReadSample(kFirstAudioStream, 0, nullptr, &flags,
-                                      nullptr, &sample))) {
+        if (FAILED(reader->ReadSample(kFirstAudioStream, 0, nullptr, &flags, nullptr, &sample))) {
             decodedPcm.clear();
             return false;
         }
@@ -265,36 +260,45 @@ bool ReadNextPcmChunk(IMFSourceReader *reader, size_t targetBytes,
             decodedPcm.clear();
             return false;
         }
-        decodedPcm.resize(oldSize + locked.Size());
+        try {
+            decodedPcm.resize(oldSize + locked.Size());
+        } catch (const std::exception&) {
+            decodedPcm.clear();
+            return false;
+        }
         std::copy_n(locked.Data(), locked.Size(), decodedPcm.data() + oldSize);
     }
 
     return true;
 }
 
-bool ReadAllPcmData(IMFSourceReader *reader, size_t maxDecodedBytes,
-                    std::vector<BYTE> &decodedPcm) {
+bool ReadAllPcmData(IMFSourceReader* reader, size_t maxBytes,
+                    std::vector<BYTE>& decodedPcm) {
     decodedPcm.clear();
-    if (reader == nullptr || maxDecodedBytes == 0) {
+    if (reader == nullptr || maxBytes == 0) {
         return false;
     }
 
     for (;;) {
         bool sourceEnded = false;
         std::vector<BYTE> chunk;
-        if (!ReadNextPcmChunk(reader, 1u, maxDecodedBytes - decodedPcm.size(),
-                              sourceEnded, chunk)) {
+        if (!ReadNextPcmChunk(reader, 1u, maxBytes - decodedPcm.size(), sourceEnded,
+                              chunk)) {
             decodedPcm.clear();
             return false;
         }
         if (!chunk.empty()) {
-            if (chunk.size() > (std::numeric_limits<size_t>::max)() -
-                                   decodedPcm.size() ||
-                decodedPcm.size() + chunk.size() > maxDecodedBytes) {
+            if (chunk.size() > (std::numeric_limits<size_t>::max)() - decodedPcm.size() ||
+                decodedPcm.size() + chunk.size() > maxBytes) {
                 decodedPcm.clear();
                 return false;
             }
-            decodedPcm.insert(decodedPcm.end(), chunk.begin(), chunk.end());
+            try {
+                decodedPcm.insert(decodedPcm.end(), chunk.begin(), chunk.end());
+            } catch (const std::exception&) {
+                decodedPcm.clear();
+                return false;
+            }
         }
         if (sourceEnded) {
             break;

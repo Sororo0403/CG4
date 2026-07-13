@@ -1,6 +1,6 @@
 #pragma once
-#include <Windows.h>
 #include <DirectXMath.h>
+#include <Windows.h>
 #include <cstddef>
 #include <cstdint>
 #include <d3d12.h>
@@ -16,31 +16,26 @@ class SrvManager;
 /// Direct3D 12 のデバイスと描画フレーム管理を担う
 /// </summary>
 class DirectXCommon {
-  public:
+public:
     enum class UploadPassResult {
         Failed,
         Submitted,
         Completed,
     };
 
-    static constexpr DXGI_FORMAT kBackBufferFormat =
-        DXGI_FORMAT_R8G8B8A8_UNORM;
-    static constexpr DXGI_FORMAT kSceneColorFormat =
-        DXGI_FORMAT_R16G16B16A16_FLOAT;
-    static constexpr DXGI_FORMAT kDepthStencilFormat =
-        DXGI_FORMAT_D24_UNORM_S8_UINT;
-    static constexpr DXGI_FORMAT kDepthResourceFormat =
-        DXGI_FORMAT_R24G8_TYPELESS;
-    static constexpr DXGI_FORMAT kDepthSrvFormat =
-        DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+    static constexpr DXGI_FORMAT kBackBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+    static constexpr DXGI_FORMAT kSceneColorFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    static constexpr DXGI_FORMAT kDepthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    static constexpr DXGI_FORMAT kDepthResourceFormat = DXGI_FORMAT_R24G8_TYPELESS;
+    static constexpr DXGI_FORMAT kDepthSrvFormat = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
 
     DirectXCommon();
     ~DirectXCommon();
 
-    DirectXCommon(const DirectXCommon &) = delete;
-    DirectXCommon &operator=(const DirectXCommon &) = delete;
-    DirectXCommon(DirectXCommon &&) = delete;
-    DirectXCommon &operator=(DirectXCommon &&) = delete;
+    DirectXCommon(const DirectXCommon&) = delete;
+    DirectXCommon& operator=(const DirectXCommon&) = delete;
+    DirectXCommon(DirectXCommon&&) = delete;
+    DirectXCommon& operator=(DirectXCommon&&) = delete;
 
     /// <summary>
     /// Direct3D 12のデバイス、スワップチェーン、描画先を初期化する
@@ -70,9 +65,8 @@ class DirectXCommon {
 
     bool ReserveFrameRollbacks(size_t additional);
     bool RegisterFrameRollback(std::function<void()> rollback);
-    bool RegisterFrameRollback(const void *owner,
-                               std::function<void()> rollback);
-    void UnregisterFrameRollbacks(const void *owner) noexcept;
+    bool RegisterFrameRollback(const void* owner, std::function<void()> rollback);
+    void UnregisterFrameRollbacks(const void* owner) noexcept;
 
     /// <summary>
     /// シーンカラー用レンダーターゲットへの描画状態に切り替える
@@ -119,12 +113,12 @@ class DirectXCommon {
     /// <summary>
     /// 深度バッファをシェーダーから読めるSRVとして登録する
     /// </summary>
-    void CreateDepthStencilSrv(SrvManager *srvManager);
+    bool CreateDepthStencilSrv(SrvManager* srvManager);
 
     /// <summary>
     /// シーンカラーをシェーダーから読めるSRVとして登録する
     /// </summary>
-    void RegisterSceneColorSRV(SrvManager *srvManager);
+    bool RegisterSceneColorSRV(SrvManager* srvManager);
 
     /// <summary>
     /// DirectXCommonがSrvManagerから確保したSRVを解放する
@@ -134,7 +128,7 @@ class DirectXCommon {
     /// <summary>
     /// フレーム開始時のクリア色を設定する
     /// </summary>
-    void SetClearColor(const DirectX::XMFLOAT4 &color);
+    void SetClearColor(const DirectX::XMFLOAT4& color);
 
     /// <summary>
     /// フレーム開始時のクリア色を設定する
@@ -191,19 +185,19 @@ class DirectXCommon {
     /// D3D12デバイスを取得する
     /// </summary>
     /// <returns>D3D12デバイス</returns>
-    ID3D12Device *GetDevice() const;
+    ID3D12Device* GetDevice() const;
 
     /// <summary>
     /// コマンドキューを取得する
     /// </summary>
     /// <returns>コマンドキュー</returns>
-    ID3D12CommandQueue *GetCommandQueue() const;
+    ID3D12CommandQueue* GetCommandQueue() const;
 
     /// <summary>
     /// 記録中のグラフィックスコマンドリストを取得する
     /// </summary>
     /// <returns>記録中でない場合はnullptr</returns>
-    ID3D12GraphicsCommandList *GetCommandList() const;
+    ID3D12GraphicsCommandList* GetCommandList() const;
 
     /// <summary>
     /// コマンドリストが記録中かを取得する
@@ -215,7 +209,9 @@ class DirectXCommon {
     /// スワップチェーンのバッファ数を取得する
     /// </summary>
     /// <returns>バックバッファ数</returns>
-    UINT GetSwapChainBufferCount() const { return kSwapChainBufferCount; }
+    UINT GetSwapChainBufferCount() const {
+        return kSwapChainBufferCount;
+    }
 
     /// <summary>
     /// 現在記録中のバックバッファインデックスを取得する
@@ -238,7 +234,7 @@ class DirectXCommon {
     /// <summary>
     /// シーンカラー用リソースを取得する
     /// </summary>
-    ID3D12Resource *GetSceneColorBuffer() const;
+    ID3D12Resource* GetSceneColorBuffer() const;
 
     /// <summary>
     /// シーンカラーSRVのインデックスを取得する
@@ -249,7 +245,7 @@ class DirectXCommon {
     /// シーンカラーSRVのGPUハンドルを取得する
     /// </summary>
     D3D12_GPU_DESCRIPTOR_HANDLE
-    GetSceneSrvGpuHandle(const SrvManager *srvManager) const;
+    GetSceneSrvGpuHandle(const SrvManager* srvManager) const;
 
     /// <summary>
     /// 現在のD3D12デバイスがすでに取り外し状態かを取得する
@@ -271,7 +267,7 @@ class DirectXCommon {
     /// </summary>
     std::wstring GetAdapterDescription() const;
 
-  private:
+private:
     /// <summary>
     /// DXGIファクトリを生成する
     /// </summary>
@@ -330,12 +326,12 @@ class DirectXCommon {
     /// <summary>
     /// 深度ステンシルSRVの参照先を更新する
     /// </summary>
-    void UpdateDepthStencilSrv();
+    bool UpdateDepthStencilSrv();
 
     /// <summary>
     /// シーンカラーSRVの参照先を更新する
     /// </summary>
-    void UpdateSceneColorSrv();
+    bool UpdateSceneColorSrv();
 
     /// <summary>
     /// シーン描画用のビューポートとシザー矩形を適用する
@@ -383,7 +379,7 @@ class DirectXCommon {
     /// </summary>
     void WaitForFrame(UINT frameIndex);
 
-    void TrackGpuPhase(const char *phase);
+    void TrackGpuPhase(const char* phase);
     bool HasFrameResources() const;
     void SnapshotFrameResourceStates();
     void RestoreFrameResourceStates() noexcept;
@@ -391,7 +387,7 @@ class DirectXCommon {
     void RestoreFrameRollbacks() noexcept;
     void ClearFrameRollbacks() noexcept;
 
-  private:
+private:
     static constexpr UINT kSwapChainBufferCount = 2;
     static constexpr UINT kSceneRtvIndex = kSwapChainBufferCount;
     static constexpr float kClearColor[4] = {0.030f, 0.026f, 0.055f, 1.0f};

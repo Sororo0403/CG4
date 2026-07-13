@@ -40,16 +40,16 @@ class ImguiManager;
 /// シーンの更新側から参照するエンジンサービス
 /// </summary>
 struct SceneSystemServices {
-    Input *input = nullptr;
-    WinApp *winApp = nullptr;
-    ISoundService *sound = nullptr;
-    TextureManager *texture = nullptr;
-    CameraManager *cameraManager = nullptr;
-    CpuProfiler *cpuProfiler = nullptr;
+    Input* input = nullptr;
+    WinApp* winApp = nullptr;
+    ISoundService* sound = nullptr;
+    TextureManager* texture = nullptr;
+    CameraManager* cameraManager = nullptr;
+    CpuProfiler* cpuProfiler = nullptr;
     std::function<void(const std::string&)> log;
 
 #ifdef _DEBUG
-    ImguiManager *imgui = nullptr;
+    ImguiManager* imgui = nullptr;
 #endif
 };
 
@@ -57,28 +57,28 @@ struct SceneSystemServices {
 /// シーン描画に必要なサービス
 /// </summary>
 struct SceneRenderServices {
-    ModelManager *model = nullptr;
-    MeshManager *mesh = nullptr;
-    SpriteManager *sprite = nullptr;
-    ModelRenderer *modelRenderer = nullptr;
-    MeshRenderer *meshRenderer = nullptr;
-    SpriteRenderer *spriteRenderer = nullptr;
-    FontManager *font = nullptr;
-    TextRenderer *text = nullptr;
-    TextureManager *texture = nullptr;
-    DirectXCommon *dxCommon = nullptr;
-    SrvManager *srv = nullptr;
-    PipelineManager *pipeline = nullptr;
-    RenderTexture *renderTexture = nullptr;
-    PostEffectManager *postEffectManager = nullptr;
-    SkyboxRenderer *skyboxRenderer = nullptr;
-    ShadowMapRenderer *shadowMapRenderer = nullptr;
-    ShadowMapRenderer *spotLightShadowMapRenderer = nullptr;
-    TransparentRenderQueue *transparentQueue = nullptr;
-    DepthPyramid *depthPyramid = nullptr;
-    RenderScene *renderScene = nullptr;
-    LightingScene *lightingScene = nullptr;
-    FrameHistory *frameHistory = nullptr;
-    GpuProfiler *gpuProfiler = nullptr;
-    VolumetricLightingSystem *volumetricLighting = nullptr;
+    ModelManager* model = nullptr;
+    MeshManager* mesh = nullptr;
+    SpriteManager* sprite = nullptr;
+    ModelRenderer* modelRenderer = nullptr;
+    MeshRenderer* meshRenderer = nullptr;
+    SpriteRenderer* spriteRenderer = nullptr;
+    FontManager* font = nullptr;
+    TextRenderer* text = nullptr;
+    TextureManager* texture = nullptr;
+    DirectXCommon* dxCommon = nullptr;
+    SrvManager* srv = nullptr;
+    PipelineManager* pipeline = nullptr;
+    RenderTexture* renderTexture = nullptr;
+    PostEffectManager* postEffectManager = nullptr;
+    SkyboxRenderer* skyboxRenderer = nullptr;
+    ShadowMapRenderer* shadowMapRenderer = nullptr;
+    ShadowMapRenderer* spotLightShadowMapRenderer = nullptr;
+    TransparentRenderQueue* transparentQueue = nullptr;
+    DepthPyramid* depthPyramid = nullptr;
+    RenderScene* renderScene = nullptr;
+    LightingScene* lightingScene = nullptr;
+    FrameHistory* frameHistory = nullptr;
+    GpuProfiler* gpuProfiler = nullptr;
+    VolumetricLightingSystem* volumetricLighting = nullptr;
 };

@@ -1,10 +1,7 @@
-#include "internal/TextureManagerDecoding.h"
-#include "internal/TextureManagerInternal.h"
 #include "core/PathUtils.h"
 #include "graphics/DirectXCommon.h"
-#include "graphics/DxHelpers.h"
-#include "graphics/SrvManager.h"
-#include "texture/Texture.h"
+#include "internal/TextureManagerDecoding.h"
+#include "internal/TextureManagerInternal.h"
 #include "texture/TextureLimits.h"
 #include "texture/TextureManager.h"
 
@@ -13,15 +10,11 @@
 #include <functional>
 #include <limits>
 #include <memory>
-#include <mutex>
-#include <numeric>
-#include <thread>
+#include <optional>
 #include <vector>
 
-using namespace DirectX;
-using Microsoft::WRL::ComPtr;
-
 static constexpr size_t kMaxCompletedAsyncRequestHistory = 256;
+static constexpr size_t kMaxTerminalAsyncRequestHistory = 1024;
 static constexpr size_t kMaxInFlightAsyncLoads = 4;
 static constexpr size_t kMaxPendingAsyncLoads = 64;
 
@@ -38,16 +31,96 @@ size_t CountActiveAsyncRequests(const std::vector<TextureManagerAsyncRequest>& r
 
 } // namespace
 
+void TextureManager::RecordAsyncTerminalState(uint32_t requestId, std::optional<uint32_t> textureId,
+                                              bool failed) {
+    if (requestId == 0) {
+        return;
+    }
+
+    auto& terminalStates = state_->asyncState->terminalStates;
+    const auto existing = std::find_if(terminalStates.begin(), terminalStates.end(),
+                                       [requestId](const TextureManagerAsyncTerminalState& state) {
+                                           return state.requestId == requestId;
+                                       });
+    if (existing != terminalStates.end()) {
+        existing->textureId = textureId;
+        existing->failed = failed;
+        return;
+    }
+
+    try {
+        terminalStates.push_back(TextureManagerAsyncTerminalState{requestId, textureId, failed});
+    } catch (...) {
+        return;
+    }
+
+    while (terminalStates.size() > kMaxTerminalAsyncRequestHistory) {
+        terminalStates.pop_front();
+    }
+}
+
+std::optional<TextureManagerAsyncTerminalState> TextureManager::FindAsyncTerminalState(
+    uint32_t requestId) const {
+    const auto& terminalStates = state_->asyncState->terminalStates;
+    const auto it = std::find_if(terminalStates.begin(), terminalStates.end(),
+                                 [requestId](const TextureManagerAsyncTerminalState& state) {
+                                     return state.requestId == requestId;
+                                 });
+    if (it == terminalStates.end()) {
+        return std::nullopt;
+    }
+    return *it;
+}
+
 uint32_t TextureManager::RequestAsyncLoad(const std::wstring& filePath) {
-    if (dxCommon_ == nullptr || dxCommon_->GetDevice() == nullptr || srvManager_ == nullptr ||
-        !IsValidTextureId(state_->whiteTextureId)) {
+    if (!CanRequestAsyncLoad()) {
         return 0;
     }
 
     PruneCompletedAsyncRequests();
 
-    const std::filesystem::path resolvedPath = PathUtils::ResolveAssetPath(filePath);
-    const std::wstring pathKey = PathUtils::NormalizePathKey(resolvedPath);
+    std::filesystem::path resolvedPath;
+    std::wstring pathKey;
+    if (!TryResolveAsyncLoadPath(filePath, resolvedPath, pathKey)) {
+        return 0;
+    }
+
+    if (std::optional<uint32_t> reusable = FindReusableAsyncRequestOrTexture(pathKey)) {
+        return *reusable;
+    }
+    if (CountActiveAsyncRequests(state_->asyncState->requests) >= kMaxPendingAsyncLoads) {
+        return 0;
+    }
+
+    TextureManagerAsyncRequest request{};
+    if (!InitializeAsyncLoadRequest(resolvedPath, pathKey, request)) {
+        return 0;
+    }
+
+    const uint32_t requestId = StoreAsyncLoadRequest(std::move(request));
+    StartQueuedAsyncLoads();
+    return requestId;
+}
+
+bool TextureManager::CanRequestAsyncLoad() const {
+    return dxCommon_ != nullptr && dxCommon_->GetDevice() != nullptr && srvManager_ != nullptr &&
+           IsValidTextureId(state_->whiteTextureId);
+}
+
+bool TextureManager::TryResolveAsyncLoadPath(const std::wstring& filePath,
+                                             std::filesystem::path& resolvedPath,
+                                             std::wstring& pathKey) {
+    try {
+        resolvedPath = PathUtils::ResolveAssetPath(filePath);
+        pathKey = PathUtils::NormalizePathKey(resolvedPath);
+    } catch (...) {
+        return false;
+    }
+    return true;
+}
+
+std::optional<uint32_t> TextureManager::FindReusableAsyncRequestOrTexture(
+    const std::wstring& pathKey) {
     const auto activeDuplicate =
         std::find_if(state_->asyncState->requests.begin(), state_->asyncState->requests.end(),
                      [&pathKey](const TextureManagerAsyncRequest& request) {
@@ -58,38 +131,58 @@ uint32_t TextureManager::RequestAsyncLoad(const std::wstring& filePath) {
     }
 
     auto cached = state_->filePathToTextureId.find(pathKey);
-    if (cached != state_->filePathToTextureId.end()) {
-        if (!IsValidTextureId(cached->second) || cached->second == state_->whiteTextureId) {
-            state_->filePathToTextureId.erase(cached);
-        } else {
-            return EnqueueCompletedAsyncRequest(cached->second);
-        }
+    if (cached == state_->filePathToTextureId.end()) {
+        return std::nullopt;
     }
-
-    if (CountActiveAsyncRequests(state_->asyncState->requests) >= kMaxPendingAsyncLoads) {
-        return 0;
+    if (!IsValidTextureId(cached->second) || cached->second == state_->whiteTextureId) {
+        state_->filePathToTextureId.erase(cached);
+        return std::nullopt;
     }
+    return EnqueueCompletedAsyncRequest(cached->second);
+}
 
-    TextureManagerAsyncRequest request{};
+bool TextureManager::InitializeAsyncLoadRequest(const std::filesystem::path& resolvedPath,
+                                                const std::wstring& pathKey,
+                                                TextureManagerAsyncRequest& request) {
     request.requestId = AllocateAsyncRequestId();
     if (request.requestId == 0) {
-        return 0;
+        return false;
     }
     request.pathKey = pathKey;
+
     std::error_code ec;
-    if (!std::filesystem::exists(resolvedPath, ec) ||
-        !TextureLimits::IsFileWithinInputBudget(resolvedPath)) {
-        request.failed = true;
-    } else {
-        request.filePath = resolvedPath.wstring();
+    bool fileAvailable = false;
+    try {
+        fileAvailable = std::filesystem::exists(resolvedPath, ec) && !ec &&
+                        TextureLimits::IsFileWithinInputBudget(resolvedPath);
+    } catch (...) {
+        fileAvailable = false;
     }
+    if (!fileAvailable) {
+        request.failed = true;
+        return true;
+    }
+
+    try {
+        request.filePath = resolvedPath.wstring();
+    } catch (...) {
+        request.failed = true;
+    }
+    return true;
+}
+
+uint32_t TextureManager::StoreAsyncLoadRequest(TextureManagerAsyncRequest&& request) {
     try {
         state_->asyncState->requests.push_back(std::move(request));
     } catch (...) {
         return 0;
     }
-    StartQueuedAsyncLoads();
-    return state_->asyncState->requests.back().requestId;
+
+    const uint32_t requestId = state_->asyncState->requests.back().requestId;
+    if (state_->asyncState->requests.back().failed) {
+        RecordAsyncTerminalState(requestId, std::nullopt, true);
+    }
+    return requestId;
 }
 
 std::vector<uint32_t> TextureManager::RequestAsyncLoadBatch(
@@ -124,6 +217,7 @@ uint32_t TextureManager::EnqueueCompletedAsyncRequest(uint32_t textureId) {
         return 0;
     }
     const uint32_t requestId = state_->asyncState->requests.back().requestId;
+    RecordAsyncTerminalState(requestId, textureId, false);
     PruneCompletedAsyncRequests();
     return requestId;
 }
@@ -177,16 +271,17 @@ bool TextureManager::TryCompleteAsyncTextureUpload(TextureManagerAsyncRequest& r
             *rollbackArmed = false;
             RestoreAsyncTextureCache(pathKey, hadPreviousCache, previousCachedTextureId);
 
-            const auto requestIt =
-                std::find_if(state_->asyncState->requests.begin(), state_->asyncState->requests.end(),
-                             [requestId](const TextureManagerAsyncRequest& request) {
-                                 return request.requestId == requestId;
-                             });
+            const auto requestIt = std::find_if(
+                state_->asyncState->requests.begin(), state_->asyncState->requests.end(),
+                [requestId](const TextureManagerAsyncRequest& request) {
+                    return request.requestId == requestId;
+                });
             if (requestIt != state_->asyncState->requests.end()) {
                 requestIt->textureId = kInvalidResourceId;
                 requestIt->completed = false;
                 requestIt->failed = true;
             }
+            RecordAsyncTerminalState(requestId, std::nullopt, true);
         };
         manualRollbackRequest = rollbackRequest;
 
@@ -196,9 +291,8 @@ bool TextureManager::TryCompleteAsyncTextureUpload(TextureManagerAsyncRequest& r
             return false;
         }
 
-        request.textureId =
-            CreateTexture(decoded.scratch.GetImages(), decoded.scratch.GetImageCount(),
-                          decoded.metadata);
+        request.textureId = CreateTexture(decoded.scratch.GetImages(),
+                                          decoded.scratch.GetImageCount(), decoded.metadata);
         if (!IsValidTextureId(request.textureId) || request.textureId == state_->whiteTextureId) {
             manualRollbackRequest();
             request.textureId = kInvalidResourceId;
@@ -210,8 +304,7 @@ bool TextureManager::TryCompleteAsyncTextureUpload(TextureManagerAsyncRequest& r
         if (manualRollbackRequest) {
             manualRollbackRequest();
         } else {
-            RestoreAsyncTextureCache(decoded.pathKey, hadPreviousCache,
-                                     previousCachedTextureId);
+            RestoreAsyncTextureCache(decoded.pathKey, hadPreviousCache, previousCachedTextureId);
         }
         request.textureId = kInvalidResourceId;
         return false;
@@ -238,6 +331,7 @@ void TextureManager::UpdateAsyncLoads() {
         request.job.reset();
         if (!decoded.succeeded) {
             request.failed = true;
+            RecordAsyncTerminalState(request.requestId, std::nullopt, true);
             request.filePath.clear();
             request.pathKey.clear();
             continue;
@@ -245,6 +339,7 @@ void TextureManager::UpdateAsyncLoads() {
 
         if (!TryCompleteAsyncTextureUpload(request, decoded)) {
             request.failed = true;
+            RecordAsyncTerminalState(request.requestId, std::nullopt, true);
             request.filePath.clear();
             request.pathKey.clear();
             continue;
@@ -252,6 +347,7 @@ void TextureManager::UpdateAsyncLoads() {
         request.filePath.clear();
         request.pathKey.clear();
         request.completed = true;
+        RecordAsyncTerminalState(request.requestId, request.textureId, false);
     }
 
     PruneCompletedAsyncRequests();
@@ -259,40 +355,53 @@ void TextureManager::UpdateAsyncLoads() {
 }
 
 bool TextureManager::IsAsyncLoadComplete(uint32_t requestId) const {
-    const auto it = std::find_if(
-        state_->asyncState->requests.begin(), state_->asyncState->requests.end(),
-        [requestId](const TextureManagerAsyncRequest &request) {
-            return request.requestId == requestId;
-        });
-    return it != state_->asyncState->requests.end() && it->completed;
+    const auto it =
+        std::find_if(state_->asyncState->requests.begin(), state_->asyncState->requests.end(),
+                     [requestId](const TextureManagerAsyncRequest& request) {
+                         return request.requestId == requestId;
+                     });
+    if (it != state_->asyncState->requests.end()) {
+        return it->completed;
+    }
+    const std::optional<TextureManagerAsyncTerminalState> terminal =
+        FindAsyncTerminalState(requestId);
+    return terminal.has_value() && terminal->textureId.has_value() && !terminal->failed;
 }
 
 std::optional<uint32_t> TextureManager::GetAsyncTextureId(uint32_t requestId) const {
-    const auto it = std::find_if(
-        state_->asyncState->requests.begin(), state_->asyncState->requests.end(),
-        [requestId](const TextureManagerAsyncRequest &request) {
-            return request.requestId == requestId && request.completed;
-        });
-    return it != state_->asyncState->requests.end()
-               ? std::optional<uint32_t>{it->textureId}
-               : std::nullopt;
+    const auto it =
+        std::find_if(state_->asyncState->requests.begin(), state_->asyncState->requests.end(),
+                     [requestId](const TextureManagerAsyncRequest& request) {
+                         return request.requestId == requestId && request.completed;
+                     });
+    if (it != state_->asyncState->requests.end()) {
+        return it->textureId;
+    }
+    const std::optional<TextureManagerAsyncTerminalState> terminal =
+        FindAsyncTerminalState(requestId);
+    return terminal ? terminal->textureId : std::nullopt;
 }
 
 bool TextureManager::HasAsyncLoadFailed(uint32_t requestId) const {
-    const auto it = std::find_if(
-        state_->asyncState->requests.begin(), state_->asyncState->requests.end(),
-        [requestId](const TextureManagerAsyncRequest &request) {
-            return request.requestId == requestId;
-        });
-    return it != state_->asyncState->requests.end() && it->failed;
+    const auto it =
+        std::find_if(state_->asyncState->requests.begin(), state_->asyncState->requests.end(),
+                     [requestId](const TextureManagerAsyncRequest& request) {
+                         return request.requestId == requestId;
+                     });
+    if (it != state_->asyncState->requests.end()) {
+        return it->failed;
+    }
+    const std::optional<TextureManagerAsyncTerminalState> terminal =
+        FindAsyncTerminalState(requestId);
+    return terminal.has_value() && terminal->failed;
 }
 
 void TextureManager::PruneCompletedAsyncRequests() {
-    const size_t completedCount = static_cast<size_t>(std::count_if(
-        state_->asyncState->requests.begin(), state_->asyncState->requests.end(),
-        [](const TextureManagerAsyncRequest &request) {
-            return request.completed || request.failed;
-        }));
+    const size_t completedCount = static_cast<size_t>(
+        std::count_if(state_->asyncState->requests.begin(), state_->asyncState->requests.end(),
+                      [](const TextureManagerAsyncRequest& request) {
+                          return request.completed || request.failed;
+                      }));
     if (completedCount <= kMaxCompletedAsyncRequestHistory) {
         return;
     }
@@ -316,7 +425,7 @@ void TextureManager::EnsureAsyncWorkers() {
     }
 
     if (!state_->asyncState->workerPool.Start(
-            kMaxInFlightAsyncLoads, [](TextureManagerAsyncWorkItem &item) {
+            kMaxInFlightAsyncLoads, [](TextureManagerAsyncWorkItem& item) {
                 try {
                     item.job->decoded =
                         TextureManagerDecoding::DecodeResolvedFileForAsync(item.filePath);
@@ -325,9 +434,10 @@ void TextureManager::EnsureAsyncWorkers() {
                 }
                 item.job->ready.store(true, std::memory_order_release);
             })) {
-        for (TextureManagerAsyncRequest &request : state_->asyncState->requests) {
+        for (TextureManagerAsyncRequest& request : state_->asyncState->requests) {
             if (IsActiveAsyncRequest(request) && !request.queued) {
                 request.failed = true;
+                RecordAsyncTerminalState(request.requestId, std::nullopt, true);
                 request.filePath.clear();
                 request.pathKey.clear();
             }
@@ -341,6 +451,7 @@ void TextureManager::StartQueuedAsyncLoads() {
         for (TextureManagerAsyncRequest& request : state_->asyncState->requests) {
             if (IsActiveAsyncRequest(request) && !request.queued) {
                 request.failed = true;
+                RecordAsyncTerminalState(request.requestId, std::nullopt, true);
                 request.filePath.clear();
                 request.pathKey.clear();
             }
@@ -358,13 +469,21 @@ void TextureManager::StartQueuedAsyncLoads() {
             job = std::make_shared<TextureManagerAsyncJob>();
         } catch (...) {
             request.failed = true;
+            RecordAsyncTerminalState(request.requestId, std::nullopt, true);
             request.filePath.clear();
             request.pathKey.clear();
             continue;
         }
         request.job = std::move(job);
-        state_->asyncState->workerPool.Enqueue(
-            TextureManagerAsyncWorkItem{request.requestId, request.filePath, request.job});
+        if (!state_->asyncState->workerPool.Enqueue(
+                TextureManagerAsyncWorkItem{request.requestId, request.filePath, request.job})) {
+            request.job.reset();
+            request.failed = true;
+            RecordAsyncTerminalState(request.requestId, std::nullopt, true);
+            request.filePath.clear();
+            request.pathKey.clear();
+            continue;
+        }
         request.queued = true;
     }
 }
@@ -376,6 +495,7 @@ void TextureManager::StopAsyncWorkers() {
 void TextureManager::StopAsyncLoads() {
     StopAsyncWorkers();
     state_->asyncState->requests.clear();
+    state_->asyncState->terminalStates.clear();
     state_->asyncState->workerPool.ClearPending();
 }
 

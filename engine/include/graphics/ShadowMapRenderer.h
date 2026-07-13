@@ -8,12 +8,12 @@ class DirectXCommon;
 class SrvManager;
 
 class ShadowMapRenderer {
-  public:
+public:
     ShadowMapRenderer();
     ~ShadowMapRenderer();
 
-    void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
-                    uint32_t width = 2048, uint32_t height = 2048);
+    void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager, uint32_t width = 2048,
+                    uint32_t height = 2048);
     /// <summary>
     /// Releaseを実行する
     /// </summary>
@@ -32,15 +32,15 @@ class ShadowMapRenderer {
     /// DsvHandleを取得する
     /// </summary>
     D3D12_CPU_DESCRIPTOR_HANDLE GetDsvHandle() const;
-    const DirectX::XMFLOAT4X4 &GetLightViewProjection() const;
+    const DirectX::XMFLOAT4X4& GetLightViewProjection() const;
 
-    void SetLightViewProjection(const DirectX::XMFLOAT4X4 &matrix);
+    void SetLightViewProjection(const DirectX::XMFLOAT4X4& matrix);
 
     uint32_t GetWidth() const;
     uint32_t GetHeight() const;
     bool IsReady() const;
 
-  private:
+private:
     /// <summary>
     /// DepthResourcesを解放する
     /// </summary>
@@ -51,7 +51,7 @@ class ShadowMapRenderer {
 
     struct State;
 
-    DirectXCommon *dxCommon_ = nullptr;
-    SrvManager *srvManager_ = nullptr;
+    DirectXCommon* dxCommon_ = nullptr;
+    SrvManager* srvManager_ = nullptr;
     std::unique_ptr<State> resources_;
 };

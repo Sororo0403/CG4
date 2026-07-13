@@ -3,6 +3,7 @@
 #include "model/MeshGpuCullBuffer.h"
 #include "model/MeshInstanceBuffer.h"
 #include "model/MeshManager.h"
+
 #include <DirectXMath.h>
 #include <array>
 #include <cstdint>
@@ -53,41 +54,45 @@ struct MeshGpuLodCullArgsConstants {
     uint32_t startInstanceLocation = 0;
 };
 
-void BuildFrustumPlanes(const DirectX::XMMATRIX &viewProjection,
-                        DirectX::XMFLOAT4 (&planes)[6]);
-DirectX::XMFLOAT4 BuildCameraAndMaxDistanceSq(
-    const DirectX::XMFLOAT3 &cameraPosition, float maxDistance);
+void BuildFrustumPlanes(const DirectX::XMMATRIX& viewProjection, DirectX::XMFLOAT4 (&planes)[6]);
+DirectX::XMFLOAT4 BuildCameraAndMaxDistanceSq(const DirectX::XMFLOAT3& cameraPosition,
+                                              float maxDistance);
 uint32_t IsDistanceCullEnabled(float maxDistance);
 uint32_t IsMinDistanceCullEnabled(float minDistance);
-DirectX::XMFLOAT4
-BuildLocalCenterAndRadius(const MeshGpuCullBounds &localBounds);
+DirectX::XMFLOAT4 BuildLocalCenterAndRadius(const MeshGpuCullBounds& localBounds);
 DirectX::XMFLOAT4 BuildLodDistanceBreaks(
-    const std::array<float, kMeshGpuCullLodCount - 1u> &distanceBreaks);
-MeshGpuCullArgsConstants BuildSingleCullArgs(const Mesh &mesh,
-                                             uint32_t instanceCount);
+    const std::array<float, kMeshGpuCullLodCount - 1u>& distanceBreaks);
+MeshGpuCullArgsConstants BuildSingleCullArgs(const Mesh& mesh, uint32_t instanceCount);
 MeshGpuLodCullArgsConstants BuildLodCullArgs(
-    const std::array<const Mesh *, kMeshGpuCullLodCount> &lodMeshes,
-    uint32_t instanceCount);
+    const std::array<const Mesh*, kMeshGpuCullLodCount>& lodMeshes, uint32_t instanceCount);
 
-void ExecuteSingleGpuCull(ID3D12GraphicsCommandList *cmd,
-                          ID3D12DescriptorHeap *heap,
-                          ID3D12RootSignature *rootSignature,
-                          ID3D12PipelineState *cullPSO,
-                          ID3D12PipelineState *argsPSO,
-                          D3D12_GPU_DESCRIPTOR_HANDLE occlusionHandle,
-                          const MeshInstanceBuffer &sourceInstances,
-                          MeshGpuCullBuffer &cullBuffer,
-                          D3D12_GPU_VIRTUAL_ADDRESS cullCb,
-                          D3D12_GPU_VIRTUAL_ADDRESS argsCb);
-void ExecuteLodGpuCull(ID3D12GraphicsCommandList *cmd,
-                       ID3D12DescriptorHeap *heap,
-                       ID3D12RootSignature *rootSignature,
-                       ID3D12PipelineState *cullPSO,
-                       ID3D12PipelineState *argsPSO,
-                       D3D12_GPU_DESCRIPTOR_HANDLE occlusionHandle,
-                       const MeshInstanceBuffer &sourceInstances,
-                       MeshGpuLodCullBuffer &cullBuffer,
-                       D3D12_GPU_VIRTUAL_ADDRESS cullCb,
-                       D3D12_GPU_VIRTUAL_ADDRESS argsCb);
+struct SingleGpuCullExecutionContext {
+    ID3D12GraphicsCommandList* cmd = nullptr;
+    ID3D12DescriptorHeap* heap = nullptr;
+    ID3D12RootSignature* rootSignature = nullptr;
+    ID3D12PipelineState* cullPSO = nullptr;
+    ID3D12PipelineState* argsPSO = nullptr;
+    D3D12_GPU_DESCRIPTOR_HANDLE occlusionHandle{};
+    const MeshInstanceBuffer* sourceInstances = nullptr;
+    MeshGpuCullBuffer* cullBuffer = nullptr;
+    D3D12_GPU_VIRTUAL_ADDRESS cullCb = 0;
+    D3D12_GPU_VIRTUAL_ADDRESS argsCb = 0;
+};
+
+struct LodGpuCullExecutionContext {
+    ID3D12GraphicsCommandList* cmd = nullptr;
+    ID3D12DescriptorHeap* heap = nullptr;
+    ID3D12RootSignature* rootSignature = nullptr;
+    ID3D12PipelineState* cullPSO = nullptr;
+    ID3D12PipelineState* argsPSO = nullptr;
+    D3D12_GPU_DESCRIPTOR_HANDLE occlusionHandle{};
+    const MeshInstanceBuffer* sourceInstances = nullptr;
+    MeshGpuLodCullBuffer* cullBuffer = nullptr;
+    D3D12_GPU_VIRTUAL_ADDRESS cullCb = 0;
+    D3D12_GPU_VIRTUAL_ADDRESS argsCb = 0;
+};
+
+void ExecuteSingleGpuCull(const SingleGpuCullExecutionContext& context);
+void ExecuteLodGpuCull(const LodGpuCullExecutionContext& context);
 
 } // namespace MeshRendererGpuCullInternal

@@ -1,5 +1,6 @@
 #pragma once
 #include "graphics/PostProcessSettings.h"
+
 #include <cstdint>
 #include <memory>
 
@@ -18,24 +19,23 @@ struct PostEffectLayerDesc {
 };
 
 class PostEffectManager {
-  public:
+public:
     PostEffectManager();
     ~PostEffectManager();
 
     /// <summary>
     /// 必要なリソースを初期化する
     /// </summary>
-    void Initialize(PostProcessSystem *system);
+    void Initialize(PostProcessSystem* system);
 
-    PostEffectLayerId CreateLayer(const PostEffectLayerDesc &desc = {});
+    PostEffectLayerId CreateLayer(const PostEffectLayerDesc& desc = {});
     /// <summary>
     /// DestroyLayerを実行する
     /// </summary>
     void DestroyLayer(PostEffectLayerId id);
 
-    void SetBaseProfile(const PostProcessProfile &profile);
-    void SetLayerProfile(PostEffectLayerId id,
-                         const PostProcessProfile &profile);
+    void SetBaseProfile(const PostProcessProfile& profile);
+    void SetLayerProfile(PostEffectLayerId id, const PostProcessProfile& profile);
     /// <summary>
     /// ClearLayerを実行する
     /// </summary>
@@ -43,16 +43,16 @@ class PostEffectManager {
     void ClearLayers();
     void SetLayerEnabled(PostEffectLayerId id, bool enabled);
 
-    const PostProcessProfile &GetBaseProfile() const;
-    const PostProcessProfile &GetComposedProfile() const;
+    const PostProcessProfile& GetBaseProfile() const;
+    const PostProcessProfile& GetComposedProfile() const;
     bool IsReady() const;
 
-  private:
+private:
     struct Layer;
     struct State;
 
-    Layer *FindLayer(PostEffectLayerId id);
-    const Layer *FindLayer(PostEffectLayerId id) const;
+    Layer* FindLayer(PostEffectLayerId id);
+    const Layer* FindLayer(PostEffectLayerId id) const;
     PostEffectLayerId AllocateLayerId();
     /// <summary>
     /// Rebuildを実行する

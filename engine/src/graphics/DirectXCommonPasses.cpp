@@ -1,8 +1,7 @@
-#include "graphics/DirectXCommon.h"
-#include "internal/DirectXCommonState.h"
-
 #include "core/Numeric.h"
+#include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
+#include "internal/DirectXCommonState.h"
 
 namespace {
 using Numeric::ClampFinite;
@@ -23,7 +22,7 @@ void DirectXCommon::RestoreSceneRenderState(bool clearDepth) {
 void DirectXCommon::BeginSceneColorOverlayPass() {
     TrackGpuPhase("BeginSceneColorOverlayPass");
     TransitionSceneColor(D3D12_RESOURCE_STATE_RENDER_TARGET);
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
+    ID3D12GraphicsCommandList* commandList = GetCommandList();
     if (!commandList) {
         return;
     }
@@ -37,13 +36,12 @@ void DirectXCommon::BeginSceneColorOverlayPass() {
 
 void DirectXCommon::ClearDepth() {
     TrackGpuPhase("ClearDepth");
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
+    ID3D12GraphicsCommandList* commandList = GetCommandList();
     if (!commandList || !state_->dsvHeap || !state_->depthBuffer) {
         return;
     }
     auto dsvHandle = state_->dsvHeap->GetCPUDescriptorHandleForHeapStart();
-    commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH,
-                                       1.0f, 0, 0, nullptr);
+    commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 }
 
 void DirectXCommon::EndScenePass() {
@@ -59,14 +57,13 @@ void DirectXCommon::BeginBackBufferPass(bool bindDepth) {
     if (!GetCommandList()) {
         return;
     }
-    TransitionBackBuffer(state_->backBufferIndex,
-                         D3D12_RESOURCE_STATE_RENDER_TARGET);
+    TransitionBackBuffer(state_->backBufferIndex, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
     SetBackBufferRenderTarget(true, bindDepth);
 }
 
 void DirectXCommon::SetBackBufferRenderTarget(bool clear, bool bindDepth) {
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
+    ID3D12GraphicsCommandList* commandList = GetCommandList();
     if (!commandList) {
         return;
     }
@@ -76,7 +73,7 @@ void DirectXCommon::SetBackBufferRenderTarget(bool clear, bool bindDepth) {
     }
 
     D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle{};
-    D3D12_CPU_DESCRIPTOR_HANDLE *dsvHandlePtr = nullptr;
+    D3D12_CPU_DESCRIPTOR_HANDLE* dsvHandlePtr = nullptr;
     if (bindDepth) {
         if (!state_->dsvHeap || !state_->depthBuffer) {
             return;
@@ -89,17 +86,16 @@ void DirectXCommon::SetBackBufferRenderTarget(bool clear, bool bindDepth) {
     commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, dsvHandlePtr);
 
     if (clear) {
-        commandList->ClearRenderTargetView(rtvHandle, state_->clearColor, 0,
-                                           nullptr);
+        commandList->ClearRenderTargetView(rtvHandle, state_->clearColor, 0, nullptr);
         if (bindDepth) {
-            commandList->ClearDepthStencilView(
-                dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+            commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0,
+                                               nullptr);
         }
     }
 }
 
 void DirectXCommon::ApplySceneViewportAndScissor() {
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
+    ID3D12GraphicsCommandList* commandList = GetCommandList();
     if (!commandList) {
         return;
     }
@@ -108,7 +104,7 @@ void DirectXCommon::ApplySceneViewportAndScissor() {
 }
 
 void DirectXCommon::BindSceneRenderTarget(bool clearColor, bool clearDepth) {
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
+    ID3D12GraphicsCommandList* commandList = GetCommandList();
     if (!commandList || !state_->dsvHeap || !state_->depthBuffer) {
         return;
     }
@@ -117,85 +113,75 @@ void DirectXCommon::BindSceneRenderTarget(bool clearColor, bool clearDepth) {
     if (sceneRtv.ptr == 0) {
         return;
     }
-    D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle =
-        state_->dsvHeap->GetCPUDescriptorHandleForHeapStart();
+    D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = state_->dsvHeap->GetCPUDescriptorHandleForHeapStart();
 
     ApplySceneViewportAndScissor();
     commandList->OMSetRenderTargets(1, &sceneRtv, FALSE, &dsvHandle);
     if (clearColor) {
-        commandList->ClearRenderTargetView(sceneRtv, state_->clearColor, 0,
-                                           nullptr);
+        commandList->ClearRenderTargetView(sceneRtv, state_->clearColor, 0, nullptr);
     }
     if (clearDepth) {
-        commandList->ClearDepthStencilView(
-            dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+        commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
     }
 }
 
 void DirectXCommon::TransitionSceneColor(D3D12_RESOURCE_STATES afterState) {
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
-    if (!commandList || !state_->sceneColorBuffer ||
-        state_->sceneColorState == afterState) {
+    ID3D12GraphicsCommandList* commandList = GetCommandList();
+    if (!commandList || !state_->sceneColorBuffer || state_->sceneColorState == afterState) {
         return;
     }
 
-    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        state_->sceneColorBuffer.Get(), state_->sceneColorState, afterState);
+    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(state_->sceneColorBuffer.Get(),
+                                                        state_->sceneColorState, afterState);
     TrackGpuPhase("TransitionSceneColor");
     commandList->ResourceBarrier(1, &barrier);
     state_->sceneColorState = afterState;
 }
 
-void DirectXCommon::TransitionBackBuffer(
-    UINT index, D3D12_RESOURCE_STATES afterState) {
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
-    if (!commandList || index >= kSwapChainBufferCount ||
-        !state_->backBuffers[index] ||
+void DirectXCommon::TransitionBackBuffer(UINT index, D3D12_RESOURCE_STATES afterState) {
+    ID3D12GraphicsCommandList* commandList = GetCommandList();
+    if (!commandList || index >= kSwapChainBufferCount || !state_->backBuffers[index] ||
         state_->backBufferStates[index] == afterState) {
         return;
     }
 
     auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        state_->backBuffers[index].Get(), state_->backBufferStates[index],
-        afterState);
+        state_->backBuffers[index].Get(), state_->backBufferStates[index], afterState);
     TrackGpuPhase("TransitionBackBuffer");
     commandList->ResourceBarrier(1, &barrier);
     state_->backBufferStates[index] = afterState;
 }
 
 void DirectXCommon::TransitionDepthToShaderResource() {
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
+    ID3D12GraphicsCommandList* commandList = GetCommandList();
     constexpr D3D12_RESOURCE_STATES shaderReadState =
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
-        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-    if (!commandList || !state_->depthBuffer ||
-        state_->depthState == shaderReadState) {
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    if (!commandList || !state_->depthBuffer || state_->depthState == shaderReadState) {
         return;
     }
 
-    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        state_->depthBuffer.Get(), state_->depthState, shaderReadState);
+    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(state_->depthBuffer.Get(),
+                                                        state_->depthState, shaderReadState);
     TrackGpuPhase("TransitionDepthToShaderResource");
     commandList->ResourceBarrier(1, &barrier);
     state_->depthState = shaderReadState;
 }
 
 void DirectXCommon::TransitionDepthToWrite() {
-    ID3D12GraphicsCommandList *commandList = GetCommandList();
+    ID3D12GraphicsCommandList* commandList = GetCommandList();
     if (!commandList || !state_->depthBuffer ||
         state_->depthState == D3D12_RESOURCE_STATE_DEPTH_WRITE) {
         return;
     }
 
     auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        state_->depthBuffer.Get(), state_->depthState,
-        D3D12_RESOURCE_STATE_DEPTH_WRITE);
+        state_->depthBuffer.Get(), state_->depthState, D3D12_RESOURCE_STATE_DEPTH_WRITE);
     TrackGpuPhase("TransitionDepthToWrite");
     commandList->ResourceBarrier(1, &barrier);
     state_->depthState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
 }
 
-void DirectXCommon::SetClearColor(const DirectX::XMFLOAT4 &color) {
+void DirectXCommon::SetClearColor(const DirectX::XMFLOAT4& color) {
     SetClearColor(color.x, color.y, color.z, color.w);
 }
 

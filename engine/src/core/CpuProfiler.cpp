@@ -1,12 +1,15 @@
 #include "core/CpuProfiler.h"
+
 #include "internal/CpuProfilerInternal.h"
+
+#include <exception>
+#include <new>
 
 CpuProfiler::CpuProfiler() : state_(std::make_unique<State>()) {}
 
 CpuProfiler::~CpuProfiler() = default;
 
-const std::array<CpuTimingSample, CpuProfiler::kMaxEvents> &
-CpuProfiler::GetLastSamples() const {
+const std::array<CpuTimingSample, CpuProfiler::kMaxEvents>& CpuProfiler::GetLastSamples() const {
     return state_->lastSamples;
 }
 
@@ -14,7 +17,7 @@ uint32_t CpuProfiler::GetLastSampleCount() const {
     return state_->lastSampleCount;
 }
 
-CpuProfiler::ScopedEvent::ScopedEvent(CpuProfiler &profiler, const char *name)
+CpuProfiler::ScopedEvent::ScopedEvent(CpuProfiler& profiler, const char* name)
     : profiler_(&profiler) {
     profiler_->BeginEvent(name);
 }
@@ -34,11 +37,15 @@ void CpuProfiler::BeginFrame() {
     state_->currentSampleCount = 0;
 }
 
-void CpuProfiler::BeginEvent(const char *name) {
+void CpuProfiler::BeginEvent(const char* name) {
     if (!state_->enabled || !name) {
         return;
     }
-    state_->stack.push_back(OpenEvent{name, std::chrono::steady_clock::now()});
+    try {
+        state_->stack.push_back(OpenEvent{name, std::chrono::steady_clock::now()});
+    } catch (const std::exception&) {
+        state_->stack.clear();
+    }
 }
 
 void CpuProfiler::EndEvent() {
@@ -56,8 +63,7 @@ void CpuProfiler::EndEvent() {
     }
 
     const auto elapsed = std::chrono::steady_clock::now() - event.start;
-    const double milliseconds =
-        std::chrono::duration<double, std::milli>(elapsed).count();
+    const double milliseconds = std::chrono::duration<double, std::milli>(elapsed).count();
     state_->currentSamples[state_->currentSampleCount++] =
         CpuTimingSample{event.name, milliseconds};
 }

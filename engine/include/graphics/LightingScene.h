@@ -11,15 +11,19 @@ struct LightingSceneStats {
 };
 
 class LightingScene {
-  public:
+public:
     void BeginFrame();
 
-    void SetSceneLighting(const SceneLighting &lighting);
-    const SceneLighting &GetSceneLighting() const { return lighting_; }
+    void SetSceneLighting(const SceneLighting& lighting);
+    const SceneLighting& GetSceneLighting() const {
+        return lighting_;
+    }
 
-    const LightingSceneStats &GetStats() const { return stats_; }
+    const LightingSceneStats& GetStats() const {
+        return stats_;
+    }
 
-  private:
+private:
     void RefreshStats();
 
     SceneLighting lighting_{};

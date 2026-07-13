@@ -32,40 +32,37 @@ struct FontMetrics {
 };
 
 class FontManager {
-  public:
+public:
     FontManager();
     ~FontManager();
 
-    FontManager(const FontManager &) = delete;
-    FontManager &operator=(const FontManager &) = delete;
+    FontManager(const FontManager&) = delete;
+    FontManager& operator=(const FontManager&) = delete;
 
-    void Initialize(TextureManager *textureManager);
+    void Initialize(TextureManager* textureManager);
     bool Finalize(bool allowFrameAbort = false);
     bool IsReady() const;
 
-    FontHandle LoadFont(const std::wstring &filePath);
+    FontHandle LoadFont(const std::wstring& filePath);
     FontHandle GetDefaultFont() const;
 
-    bool PrepareGlyphs(FontHandle font, float pixelSize,
-                       const std::vector<char32_t> &codepoints);
-    const FontGlyph *GetGlyph(FontHandle font, float pixelSize,
-                              char32_t codepoint);
+    bool PrepareGlyphs(FontHandle font, float pixelSize, const std::vector<char32_t>& codepoints);
+    const FontGlyph* GetGlyph(FontHandle font, float pixelSize, char32_t codepoint);
     FontMetrics GetMetrics(FontHandle font, float pixelSize);
 
     size_t GetFontCount() const;
     size_t GetAtlasPageCount() const;
 
-  private:
+private:
     struct State;
 
     FontHandle ResolveFont(FontHandle font) const;
     static uint32_t ResolvePixelKey(float pixelSize);
-    FontHandle RegisterLoadedFont(const std::wstring &key,
-                                  const std::filesystem::path &path,
-                                  IDWriteFontFace *fontFace);
+    FontHandle RegisterLoadedFont(const std::wstring& key, const std::filesystem::path& path,
+                                  IDWriteFontFace* fontFace);
     FontHandle LoadSystemFontFamily(std::wstring_view familyName);
     bool ReleaseAtlasTextures(bool allowFrameAbort);
-    bool EnsureGlyph(FontHandle font, uint32_t pixelKey, char32_t codepoint);
+    bool EnsureGlyph(FontHandle handle, uint32_t pixelKey, char32_t codepoint);
 
     std::unique_ptr<State> state_;
 };

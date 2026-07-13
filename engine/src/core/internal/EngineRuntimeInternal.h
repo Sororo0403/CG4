@@ -16,25 +16,29 @@
 namespace EngineRuntimeInternal {
 
 class FrameAbortScope {
-  public:
-    explicit FrameAbortScope(DirectXCommon &dxCommon) : dxCommon_(&dxCommon) {}
+public:
+    explicit FrameAbortScope(DirectXCommon& dxCommon) : dxCommon_(&dxCommon) {}
     ~FrameAbortScope() {
         if (!completed_ && dxCommon_ != nullptr) {
             dxCommon_->AbortFrame();
         }
     }
 
-    FrameAbortScope(const FrameAbortScope &) = delete;
-    FrameAbortScope &operator=(const FrameAbortScope &) = delete;
+    FrameAbortScope(const FrameAbortScope&) = delete;
+    FrameAbortScope& operator=(const FrameAbortScope&) = delete;
 
-    void Complete() noexcept { completed_ = true; }
+    void Complete() noexcept {
+        completed_ = true;
+    }
 
-  private:
-    DirectXCommon *dxCommon_ = nullptr;
+private:
+    DirectXCommon* dxCommon_ = nullptr;
     bool completed_ = false;
 };
 
-inline std::string BoolText(bool value) { return value ? "true" : "false"; }
+inline std::string BoolText(bool value) {
+    return value ? "true" : "false";
+}
 
 inline std::string MakeTimestamp() {
     const auto now = std::chrono::system_clock::now();
@@ -48,7 +52,7 @@ inline std::string MakeTimestamp() {
     return stream.str();
 }
 
-inline std::string WideToUtf8(const std::wstring &value) {
+inline std::string WideToUtf8(const std::wstring& value) {
     if (value.empty()) {
         return {};
     }
@@ -58,23 +62,22 @@ inline std::string WideToUtf8(const std::wstring &value) {
     }
 
     const int sourceLength = static_cast<int>(value.size());
-    const int byteCount = WideCharToMultiByte(CP_UTF8, 0, value.data(),
-                                              sourceLength, nullptr, 0,
-                                              nullptr, nullptr);
+    const int byteCount =
+        WideCharToMultiByte(CP_UTF8, 0, value.data(), sourceLength, nullptr, 0, nullptr, nullptr);
     if (byteCount <= 0) {
         return {};
     }
 
     std::string result(static_cast<size_t>(byteCount), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, value.data(), sourceLength, result.data(),
-                        byteCount, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, value.data(), sourceLength, result.data(), byteCount, nullptr,
+                        nullptr);
     return result;
 }
 
-inline const char *ReplayModeName(InputReplayMode mode) {
+inline const char* ReplayModeName(InputReplayMode mode) {
     struct ReplayModeNameEntry {
         InputReplayMode mode;
-        const char *name;
+        const char* name;
     };
     static constexpr std::array<ReplayModeNameEntry, 3> kNames{{
         {InputReplayMode::Live, "Live"},
@@ -82,9 +85,9 @@ inline const char *ReplayModeName(InputReplayMode mode) {
         {InputReplayMode::Replay, "Replay"},
     }};
 
-    const auto it = std::find_if(
-        kNames.begin(), kNames.end(),
-        [mode](const ReplayModeNameEntry &entry) { return entry.mode == mode; });
+    const auto it =
+        std::find_if(kNames.begin(), kNames.end(),
+                     [mode](const ReplayModeNameEntry& entry) { return entry.mode == mode; });
     return it != kNames.end() ? it->name : "Unknown";
 }
 

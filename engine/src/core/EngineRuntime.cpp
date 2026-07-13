@@ -2,47 +2,10 @@
 
 #include "internal/EngineRuntimeInternal.h"
 #include "internal/EngineRuntimeSystems.h"
-#include "core/CpuProfiler.h"
-#include "camera/CameraManager.h"
-#include "core/FrameTimer.h"
-#include "core/WinApp.h"
-#include "font/FontManager.h"
-#include "font/TextRenderer.h"
-#include "graphics/DirectXCommon.h"
-#include "graphics/DepthPyramid.h"
-#include "graphics/FrameHistory.h"
-#include "graphics/GpuProfiler.h"
-#include "graphics/LightingScene.h"
-#include "graphics/PipelineManager.h"
-#include "graphics/PostEffectManager.h"
-#include "graphics/PostProcessSystem.h"
-#include "graphics/RenderPassController.h"
-#include "graphics/RenderGraph.h"
-#include "graphics/RenderScene.h"
-#include "graphics/RenderTexture.h"
-#include "graphics/ShadowMapRenderer.h"
-#include "graphics/SrvManager.h"
-#include "graphics/TransparentRenderQueue.h"
-#include "graphics/VolumetricLightingSystem.h"
-#include "input/Input.h"
-#include "model/ModelManager.h"
-#include "model/MeshManager.h"
-#include "model/MeshRenderer.h"
-#include "model/SkyboxRenderer.h"
 #include "particle/GPUParticleSystem.h"
-#include "scene/AbstractSceneFactory.h"
-#include "scene/BaseScene.h"
-#include "scene/SceneContext.h"
-#include "scene/SceneManager.h"
-#include "sound/SoundManager.h"
-#include "sprite/SpriteManager.h"
-#include "texture/TextureManager.h"
-
-#ifdef _DEBUG
-#include "imgui/ImguiManager.h"
-#endif
 
 #include <algorithm>
+#include <exception>
 #include <filesystem>
 
 namespace {
@@ -87,47 +50,69 @@ EngineRuntime::~EngineRuntime() {
     systems_->dxCommon.ReleaseRegisteredSrvs();
 }
 
-bool EngineRuntime::InitializeLog(const std::wstring &path) {
+bool EngineRuntime::InitializeLog(const std::wstring& path) {
     if (path.empty() || !systems_) {
         return false;
     }
 
-    std::filesystem::path logPath(path);
-    if (logPath.has_parent_path()) {
-        std::error_code error;
-        std::filesystem::create_directories(logPath.parent_path(), error);
-        if (error) {
-            OutputDebugStringA("EngineRuntime: failed to create log directory\n");
-            return false;
+    std::filesystem::path logPath;
+    try {
+        logPath = std::filesystem::path(path);
+        if (logPath.has_parent_path()) {
+            std::error_code error;
+            std::filesystem::create_directories(logPath.parent_path(), error);
+            if (error) {
+                OutputDebugStringA("EngineRuntime: failed to create log directory\n");
+                return false;
+            }
         }
+    } catch (const std::exception&) {
+        OutputDebugStringA("EngineRuntime: invalid log path\n");
+        return false;
     }
 
-    systems_->logFile.open(logPath, std::ios::out | std::ios::trunc);
-    if (!systems_->logFile) {
+    try {
+        systems_->logFile.open(logPath, std::ios::out | std::ios::trunc);
+        if (!systems_->logFile) {
+            OutputDebugStringA("EngineRuntime: failed to open log file\n");
+            return false;
+        }
+    } catch (const std::exception&) {
         OutputDebugStringA("EngineRuntime: failed to open log file\n");
         return false;
     }
 
-    Log("Log started: " + WideToUtf8(path));
+    try {
+        Log("Log started: " + WideToUtf8(path));
+    } catch (const std::exception&) {
+        OutputDebugStringA("EngineRuntime: log start message failed\n");
+    }
     return true;
 }
 
-bool EngineRuntime::FailInitialize(const char *reason) {
-    Log(std::string("Initialize failed: ") + reason);
+bool EngineRuntime::FailInitialize(const char* reason) {
+    try {
+        Log(std::string("Initialize failed: ") + reason);
+    } catch (const std::exception&) {
+        OutputDebugStringA("EngineRuntime: initialize failed\n");
+    }
     return false;
 }
 
-void EngineRuntime::Log(const std::string &message) {
-    const std::string line = "[" + MakeTimestamp() + "] " + message + "\n";
-    OutputDebugStringA(line.c_str());
-    if (systems_ && systems_->logFile) {
-        systems_->logFile << line;
-        systems_->logFile.flush();
+void EngineRuntime::Log(const std::string& message) {
+    try {
+        const std::string line = "[" + MakeTimestamp() + "] " + message + "\n";
+        OutputDebugStringA(line.c_str());
+        if (systems_ && systems_->logFile) {
+            systems_->logFile << line;
+            systems_->logFile.flush();
+        }
+    } catch (const std::exception&) {
+        OutputDebugStringA("EngineRuntime: log write failed\n");
     }
 }
-int EngineRuntime::Run(HINSTANCE instance, int showCommand,
-                       std::unique_ptr<BaseScene> initialScene,
-                       const EngineRuntimeConfig &config) {
+int EngineRuntime::Run(HINSTANCE instance, int showCommand, std::unique_ptr<BaseScene> initialScene,
+                       const EngineRuntimeConfig& config) {
     if (!Initialize(instance, showCommand, config)) {
         return -1;
     }
@@ -135,10 +120,8 @@ int EngineRuntime::Run(HINSTANCE instance, int showCommand,
     return RunMainLoop();
 }
 
-int EngineRuntime::Run(HINSTANCE instance, int showCommand,
-                       const std::string &initialSceneName,
-                       AbstractSceneFactory *sceneFactory,
-                       const EngineRuntimeConfig &config) {
+int EngineRuntime::Run(HINSTANCE instance, int showCommand, const std::string& initialSceneName,
+                       AbstractSceneFactory* sceneFactory, const EngineRuntimeConfig& config) {
     if (!Initialize(instance, showCommand, config)) {
         return -1;
     }
@@ -168,13 +151,11 @@ int EngineRuntime::RunMainLoop() {
             systems_->input.Update(systems_->sceneContext.frame.deltaTime);
         }
         {
-            CpuProfiler::ScopedEvent event(systems_->cpuProfiler,
-                                           "SceneUpdate");
+            CpuProfiler::ScopedEvent event(systems_->cpuProfiler, "SceneUpdate");
             systems_->sceneManager.Update();
         }
         {
-            CpuProfiler::ScopedEvent event(systems_->cpuProfiler,
-                                           "AudioUpdate");
+            CpuProfiler::ScopedEvent event(systems_->cpuProfiler, "AudioUpdate");
             systems_->soundManager.Update();
         }
         if (!RenderFrame()) {
@@ -191,7 +172,7 @@ int EngineRuntime::RunMainLoop() {
     return runtimeFailed ? -1 : 0;
 }
 bool EngineRuntime::Initialize(HINSTANCE instance, int showCommand,
-                               const EngineRuntimeConfig &config) {
+                               const EngineRuntimeConfig& config) {
     InitializeLog(config.logPath);
     Log("Initialize started");
 
@@ -211,35 +192,35 @@ bool EngineRuntime::Initialize(HINSTANCE instance, int showCommand,
     return true;
 }
 
-bool EngineRuntime::InitializeWindowAndDevice(
-    HINSTANCE instance, int showCommand, const EngineRuntimeConfig &config) {
+bool EngineRuntime::InitializeWindowAndDevice(HINSTANCE instance, int showCommand,
+                                              const EngineRuntimeConfig& config) {
     Log("Window config: width=" + std::to_string(config.width) +
-        " height=" + std::to_string(config.height) +
-        " fullscreen=" + BoolText(config.fullscreen) +
+        " height=" + std::to_string(config.height) + " fullscreen=" + BoolText(config.fullscreen) +
         " cursorVisible=" + BoolText(config.cursorVisible));
 
-    systems_->winApp.Initialize(instance, showCommand, config.width, config.height,
-                                config.title, config.fullscreen);
+    systems_->winApp.Initialize(instance, showCommand, config.width, config.height, config.title,
+                                config.fullscreen);
     systems_->winApp.SetCursorVisible(config.cursorVisible);
     currentWidth_ = systems_->winApp.GetWidth();
     currentHeight_ = systems_->winApp.GetHeight();
 
-    if (!systems_->dxCommon.Initialize(systems_->winApp.GetHwnd(),
-                                       currentWidth_, currentHeight_)) {
+    if (!systems_->dxCommon.Initialize(systems_->winApp.GetHwnd(), currentWidth_, currentHeight_)) {
         return FailInitialize("DirectXCommon");
     }
     systems_->srvManager.Initialize(&systems_->dxCommon);
     if (systems_->srvManager.GetHeap() == nullptr) {
         return FailInitialize("SrvManager");
     }
-    systems_->dxCommon.CreateDepthStencilSrv(&systems_->srvManager);
-    systems_->dxCommon.RegisterSceneColorSRV(&systems_->srvManager);
-    systems_->depthPyramid.Initialize(&systems_->dxCommon,
-                                      &systems_->srvManager,
+    if (!systems_->dxCommon.CreateDepthStencilSrv(&systems_->srvManager)) {
+        return FailInitialize("DepthStencilSRV");
+    }
+    if (!systems_->dxCommon.RegisterSceneColorSRV(&systems_->srvManager)) {
+        return FailInitialize("SceneColorSRV");
+    }
+    systems_->depthPyramid.Initialize(&systems_->dxCommon, &systems_->srvManager,
                                       static_cast<uint32_t>(currentWidth_),
                                       static_cast<uint32_t>(currentHeight_));
-    systems_->frameHistory.Initialize(&systems_->dxCommon,
-                                      &systems_->srvManager,
+    systems_->frameHistory.Initialize(&systems_->dxCommon, &systems_->srvManager,
                                       static_cast<uint32_t>(currentWidth_),
                                       static_cast<uint32_t>(currentHeight_));
     systems_->cpuProfiler.SetEnabled(config.enableCpuProfiler);
@@ -250,16 +231,14 @@ bool EngineRuntime::InitializeWindowAndDevice(
 }
 
 bool EngineRuntime::InitializeRenderingSystems() {
-    systems_->textureManager.Initialize(&systems_->dxCommon,
-                                        &systems_->srvManager);
+    systems_->textureManager.Initialize(&systems_->dxCommon, &systems_->srvManager);
     if (!ValidateDefaultTextures()) {
         return FailInitialize("TextureManager default textures");
     }
 
     systems_->pipelineManager.Initialize(&systems_->dxCommon);
     systems_->meshManager.Initialize(&systems_->dxCommon);
-    systems_->meshRenderer.Initialize(&systems_->dxCommon,
-                                      &systems_->srvManager,
+    systems_->meshRenderer.Initialize(&systems_->dxCommon, &systems_->srvManager,
                                       &systems_->textureManager);
     if (!systems_->meshRenderer.IsReady()) {
         return FailInitialize("MeshRenderer");
@@ -271,16 +250,13 @@ bool EngineRuntime::InitializeRenderingSystems() {
     }
     systems_->modelManager.GetRenderer()->SetEnvironmentTexture(
         systems_->textureManager.GetWhiteCubeTextureId());
-    systems_->renderTexture.Initialize(&systems_->dxCommon,
-                                       &systems_->srvManager, currentWidth_,
+    systems_->renderTexture.Initialize(&systems_->dxCommon, &systems_->srvManager, currentWidth_,
                                        currentHeight_);
     if (!systems_->renderTexture.IsReady()) {
         return FailInitialize("RenderTexture");
     }
-    systems_->spriteManager.Initialize(&systems_->dxCommon,
-                                       &systems_->textureManager,
-                                       &systems_->srvManager, currentWidth_,
-                                       currentHeight_);
+    systems_->spriteManager.Initialize(&systems_->dxCommon, &systems_->textureManager,
+                                       &systems_->srvManager, currentWidth_, currentHeight_);
     if (!systems_->spriteManager.IsReady()) {
         return FailInitialize("SpriteManager");
     }
@@ -293,8 +269,7 @@ bool EngineRuntime::InitializeRenderingSystems() {
     if (!systems_->textRenderer.IsReady()) {
         return FailInitialize("TextRenderer");
     }
-    systems_->postProcessSystem.Initialize(&systems_->dxCommon,
-                                           &systems_->srvManager,
+    systems_->postProcessSystem.Initialize(&systems_->dxCommon, &systems_->srvManager,
                                            currentWidth_, currentHeight_);
     if (!systems_->postProcessSystem.IsReady()) {
         return FailInitialize("PostProcessSystem");
@@ -308,13 +283,11 @@ bool EngineRuntime::InitializeRenderingSystems() {
     if (!systems_->skyboxRenderer.IsReady()) {
         return FailInitialize("SkyboxRenderer");
     }
-    systems_->shadowMapRenderer.Initialize(&systems_->dxCommon,
-                                           &systems_->srvManager);
+    systems_->shadowMapRenderer.Initialize(&systems_->dxCommon, &systems_->srvManager);
     if (!systems_->shadowMapRenderer.IsReady()) {
         return FailInitialize("ShadowMapRenderer");
     }
-    systems_->renderPassController.Initialize(&systems_->dxCommon,
-                                              &systems_->srvManager);
+    systems_->renderPassController.Initialize(&systems_->dxCommon, &systems_->srvManager);
     if (!systems_->renderPassController.IsReady()) {
         return FailInitialize("RenderPassController");
     }
@@ -322,7 +295,7 @@ bool EngineRuntime::InitializeRenderingSystems() {
 }
 
 bool EngineRuntime::ValidateDefaultTextures() const {
-    const TextureManager &textures = systems_->textureManager;
+    const TextureManager& textures = systems_->textureManager;
     return textures.IsValidTextureId(textures.GetWhiteTextureId()) &&
            !textures.IsCubeTextureId(textures.GetWhiteTextureId()) &&
            textures.IsCubeTextureId(textures.GetWhiteCubeTextureId()) &&
@@ -331,16 +304,14 @@ bool EngineRuntime::ValidateDefaultTextures() const {
            !textures.IsCubeTextureId(textures.GetDefaultNormalTextureId());
 }
 
-bool EngineRuntime::InitializeSceneSystems(
-    HINSTANCE instance, const EngineRuntimeConfig &config) {
+bool EngineRuntime::InitializeSceneSystems(HINSTANCE instance, const EngineRuntimeConfig& config) {
     systems_->input.Initialize(instance, systems_->winApp.GetHwnd());
     if (!systems_->input.ApplyReplayStartupOptions(config.inputReplay,
                                                    config.replayFixedDeltaTime)) {
         return FailInitialize("Input replay startup options");
     }
     if (systems_->input.GetReplayMode() != InputReplayMode::Live) {
-        Log("Input replay mode: " +
-            std::string(ReplayModeName(systems_->input.GetReplayMode())) +
+        Log("Input replay mode: " + std::string(ReplayModeName(systems_->input.GetReplayMode())) +
             " path=" + WideToUtf8(systems_->input.GetReplayPath()));
     }
     systems_->soundManager.Initialize();
@@ -363,20 +334,17 @@ void EngineRuntime::BindSceneContext() {
     systems_->sceneContext.systems.texture = &systems_->textureManager;
     systems_->sceneContext.systems.cameraManager = &systems_->cameraManager;
     systems_->sceneContext.systems.cpuProfiler = &systems_->cpuProfiler;
-    systems_->sceneContext.systems.log =
-        [this](const std::string &message) { Log(message); };
+    systems_->sceneContext.systems.log = [this](const std::string& message) { Log(message); };
     systems_->sceneContext.systems.sound =
         systems_->soundManager.IsInitialized()
-            ? static_cast<ISoundService *>(&systems_->soundManager)
-            : static_cast<ISoundService *>(&systems_->nullSoundService);
+            ? static_cast<ISoundService*>(&systems_->soundManager)
+            : static_cast<ISoundService*>(&systems_->nullSoundService);
     systems_->sceneContext.rendering.mesh = &systems_->meshManager;
     systems_->sceneContext.rendering.meshRenderer = &systems_->meshRenderer;
     systems_->sceneContext.rendering.model = &systems_->modelManager;
-    systems_->sceneContext.rendering.modelRenderer =
-        systems_->modelManager.GetRenderer();
+    systems_->sceneContext.rendering.modelRenderer = systems_->modelManager.GetRenderer();
     systems_->sceneContext.rendering.sprite = &systems_->spriteManager;
-    systems_->sceneContext.rendering.spriteRenderer =
-        systems_->spriteManager.GetRenderer();
+    systems_->sceneContext.rendering.spriteRenderer = systems_->spriteManager.GetRenderer();
     systems_->sceneContext.rendering.font = &systems_->fontManager;
     systems_->sceneContext.rendering.text = &systems_->textRenderer;
     systems_->sceneContext.rendering.texture = &systems_->textureManager;
@@ -395,15 +363,14 @@ void EngineRuntime::BindSceneContext() {
     systems_->sceneContext.rendering.lightingScene = &systems_->lightingScene;
     systems_->sceneContext.rendering.frameHistory = &systems_->frameHistory;
     systems_->sceneContext.rendering.gpuProfiler = &systems_->gpuProfiler;
-    systems_->sceneContext.rendering.volumetricLighting =
-        &systems_->volumetricLightingSystem;
+    systems_->sceneContext.rendering.volumetricLighting = &systems_->volumetricLightingSystem;
     systems_->sceneContext.render = systems_->renderPassController.GetContextPtr();
 #ifdef _DEBUG
     systems_->sceneContext.systems.imgui = &systems_->imguiManager;
 #endif
 }
 void EngineRuntime::UpdateFrameContext() {
-    const FrameTime &frameTime = systems_->frameTimer.GetFrameTime();
+    const FrameTime& frameTime = systems_->frameTimer.GetFrameTime();
     systems_->sceneContext.frame.frameTime = frameTime;
     systems_->sceneContext.frame.deltaTime =
         static_cast<float>((std::min)(frameTime.deltaTime, 1.0 / 15.0));
@@ -426,25 +393,25 @@ EngineRuntime::ResizeResult EngineRuntime::ResizeIfNeeded() {
         return ResizeResult::Failed;
     }
 
-    currentWidth_ = width;
-    currentHeight_ = height;
-    systems_->renderTexture.Resize(width, height);
-    systems_->postProcessSystem.Resize(width, height);
+    const bool renderTextureReady =
+        systems_->renderTexture.Resize(width, height) && systems_->renderTexture.IsReady();
+    const bool postProcessReady =
+        systems_->postProcessSystem.Resize(width, height) && systems_->postProcessSystem.IsReady();
+    bool volumetricLightingReady = true;
     if (systems_->volumetricLightingSystem.IsReady()) {
-        systems_->volumetricLightingSystem.Resize(width, height);
+        volumetricLightingReady = systems_->volumetricLightingSystem.Resize(width, height) &&
+                                  systems_->volumetricLightingSystem.IsReady();
     }
-    systems_->frameHistory.Resize(static_cast<uint32_t>(width),
-                                  static_cast<uint32_t>(height));
-    const bool depthPyramidReady =
-        systems_->depthPyramid.Resize(static_cast<uint32_t>(width),
-                                      static_cast<uint32_t>(height)) &&
-        systems_->depthPyramid.IsReady();
+    systems_->frameHistory.Resize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+    const bool depthPyramidReady = systems_->depthPyramid.Resize(static_cast<uint32_t>(width),
+                                                                 static_cast<uint32_t>(height)) &&
+                                   systems_->depthPyramid.IsReady();
     systems_->spriteManager.Resize(width, height);
-    if (!systems_->renderTexture.IsReady() ||
-        !systems_->postProcessSystem.IsReady() ||
-        !depthPyramidReady ||
-        !systems_->spriteManager.IsReady()) {
+    if (!renderTextureReady || !postProcessReady || !volumetricLightingReady ||
+        !depthPyramidReady || !systems_->spriteManager.IsReady()) {
         return ResizeResult::Failed;
     }
+    currentWidth_ = width;
+    currentHeight_ = height;
     return ResizeResult::Ready;
 }

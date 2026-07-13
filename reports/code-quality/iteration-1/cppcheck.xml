@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<results version="2">
+    <cppcheck version="2.21.0"/>
+    <errors>
+        <error id="useStlAlgorithm" severity="style" msg="Consider using std::any_of algorithm instead of a raw loop." verbose="Consider using std::any_of algorithm instead of a raw loop." cwe="398" file0="app/src/scene/EvaluationScene.cpp">
+            <location file="app/src/scene/EvaluationScene.cpp" line="965" column="71"/>
+        </error>
+        <error id="incorrectLogicOperator" severity="warning" msg="Logical conjunction always evaluates to false: previousEffectTime &lt; 0.18f &amp;&amp; effectTime_ &gt;= 0.18f." verbose="Logical conjunction always evaluates to false: previousEffectTime &lt; 0.18f &amp;&amp; effectTime_ &gt;= 0.18f. Are these conditions necessary? Did you intend to use || instead? Are the numbers correct? Are you comparing the correct variables?" cwe="570" file0="app/src/scene/ParticleDemoScene.cpp">
+            <location file="app/src/scene/ParticleDemoScene.cpp" line="107" column="67"/>
+        </error>
+        <error id="constParameterReference" severity="style" msg="Parameter &apos;model&apos; can be declared as reference to const" verbose="Parameter &apos;model&apos; can be declared as reference to const" cwe="398" file0="engine/src/model/ModelRendererSkinClusters.cpp">
+            <location file="engine/src/model/ModelRendererSkinClusters.cpp" line="358" column="56" info="Parameter &apos;model&apos; can be declared as reference to const"/>
+            <symbol>model</symbol>
+        </error>
+        <error id="constParameterPointer" severity="style" msg="Parameter &apos;dxCommon&apos; can be declared as pointer to const" verbose="Parameter &apos;dxCommon&apos; can be declared as pointer to const" cwe="398" file0="engine/src/texture/TextureManagerDynamic.cpp">
+            <location file="engine/src/texture/TextureManagerDynamic.cpp" line="47" column="54" info="Parameter &apos;dxCommon&apos; can be declared as pointer to const"/>
+            <symbol>dxCommon</symbol>
+        </error>
+        <error id="checkersReport" severity="information" msg="Active checkers: 184/186 (use --checkers-report=&lt;filename&gt; to see details)" verbose="Active checkers: 184/186 (use --checkers-report=&lt;filename&gt; to see details)"/>
+    </errors>
+</results>

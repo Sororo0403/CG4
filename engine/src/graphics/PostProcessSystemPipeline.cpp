@@ -1,10 +1,9 @@
-#include "graphics/PostProcessSystem.h"
-#include "internal/PostProcessSystemInternal.h"
-
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
+#include "graphics/PostProcessSystem.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
+#include "internal/PostProcessSystemInternal.h"
 #include "internal/RootSignatureUtils.h"
 
 namespace {
@@ -26,9 +25,10 @@ D3D12_DEPTH_STENCIL_DESC MakeDisabledDepthStencilDesc() {
     return depth;
 }
 
-D3D12_GRAPHICS_PIPELINE_STATE_DESC MakeFullscreenPipelineDesc(
-    ID3D12RootSignature *rootSignature, D3D12_SHADER_BYTECODE vs,
-    D3D12_SHADER_BYTECODE ps, DXGI_FORMAT rtvFormat) {
+D3D12_GRAPHICS_PIPELINE_STATE_DESC MakeFullscreenPipelineDesc(ID3D12RootSignature* rootSignature,
+                                                              D3D12_SHADER_BYTECODE vs,
+                                                              D3D12_SHADER_BYTECODE ps,
+                                                              DXGI_FORMAT rtvFormat) {
     D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
     desc.pRootSignature = rootSignature;
     desc.VS = vs;
@@ -60,12 +60,9 @@ void PostProcessSystem::CreateRootSignature() {
     bloomRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
 
     CD3DX12_ROOT_PARAMETER params[4]{};
-    params[0].InitAsDescriptorTable(1, &textureRange,
-                                    D3D12_SHADER_VISIBILITY_PIXEL);
-    params[1].InitAsDescriptorTable(1, &depthRange,
-                                    D3D12_SHADER_VISIBILITY_PIXEL);
-    params[2].InitAsDescriptorTable(1, &bloomRange,
-                                    D3D12_SHADER_VISIBILITY_PIXEL);
+    params[0].InitAsDescriptorTable(1, &textureRange, D3D12_SHADER_VISIBILITY_PIXEL);
+    params[1].InitAsDescriptorTable(1, &depthRange, D3D12_SHADER_VISIBILITY_PIXEL);
+    params[2].InitAsDescriptorTable(1, &bloomRange, D3D12_SHADER_VISIBILITY_PIXEL);
     params[3].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
 
     const CD3DX12_STATIC_SAMPLER_DESC sampler = MakeLinearClampSampler();
@@ -74,8 +71,7 @@ void PostProcessSystem::CreateRootSignature() {
     desc.Init(_countof(params), params, 1, &sampler,
               D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
-    RootSignatureUtils::CreateRootSignature(dxCommon_->GetDevice(), desc,
-                                            state_->rootSignature);
+    RootSignatureUtils::CreateRootSignature(dxCommon_->GetDevice(), desc, state_->rootSignature);
 }
 
 void PostProcessSystem::CreateBloomRootSignature() {
@@ -87,12 +83,10 @@ void PostProcessSystem::CreateBloomRootSignature() {
     textureRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 
     CD3DX12_ROOT_PARAMETER params[2]{};
-    params[0].InitAsConstants(
-        sizeof(PostProcessSystemInternal::BloomPassConstants) /
-            sizeof(uint32_t),
-        0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
-    params[1].InitAsDescriptorTable(1, &textureRange,
-                                    D3D12_SHADER_VISIBILITY_PIXEL);
+    params[0].InitAsConstants(sizeof(PostProcessSystemInternal::BloomPassConstants) /
+                                  sizeof(uint32_t),
+                              0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
+    params[1].InitAsDescriptorTable(1, &textureRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
     const CD3DX12_STATIC_SAMPLER_DESC sampler = MakeLinearClampSampler();
 
@@ -105,15 +99,14 @@ void PostProcessSystem::CreateBloomRootSignature() {
 }
 
 void PostProcessSystem::CreatePipelineState() {
+    state_->pipelineState.Reset();
+    state_->copyPipelineState.Reset();
     if (!dxCommon_ || !dxCommon_->GetDevice() || !state_->rootSignature) {
         return;
     }
-    auto vs =
-        ShaderCompiler::Compile(ShaderPaths::PostProcessVS, "main", "vs_6_6");
-    auto ps =
-        ShaderCompiler::Compile(ShaderPaths::PostProcessPS, "main", "ps_6_6");
-    auto copyPs = ShaderCompiler::Compile(ShaderPaths::PostProcessCopyPS,
-                                          "main", "ps_6_6");
+    auto vs = ShaderCompiler::Compile(ShaderPaths::PostProcessVS, "main", "vs_6_6");
+    auto ps = ShaderCompiler::Compile(ShaderPaths::PostProcessPS, "main", "ps_6_6");
+    auto copyPs = ShaderCompiler::Compile(ShaderPaths::PostProcessCopyPS, "main", "ps_6_6");
     if (!vs || !ps || !copyPs) {
         return;
     }
@@ -133,24 +126,23 @@ void PostProcessSystem::CreatePipelineState() {
     desc.PS = {copyPs->GetBufferPointer(), copyPs->GetBufferSize()};
     if (FAILED(dxCommon_->GetDevice()->CreateGraphicsPipelineState(
             &desc, IID_PPV_ARGS(&state_->copyPipelineState)))) {
+        state_->pipelineState.Reset();
         state_->copyPipelineState.Reset();
     }
 }
 
 void PostProcessSystem::CreateBloomPipelineState() {
-    if (!dxCommon_ || !dxCommon_->GetDevice() ||
-        !state_->bloomRootSignature) {
+    state_->bloomExtractPipelineState.Reset();
+    state_->bloomDownsamplePipelineState.Reset();
+    state_->bloomUpsamplePipelineState.Reset();
+    if (!dxCommon_ || !dxCommon_->GetDevice() || !state_->bloomRootSignature) {
         return;
     }
 
-    auto vs =
-        ShaderCompiler::Compile(ShaderPaths::PostProcessVS, "main", "vs_6_6");
-    auto extractPs =
-        ShaderCompiler::Compile(ShaderPaths::BloomExtractPS, "main", "ps_6_6");
-    auto downsamplePs = ShaderCompiler::Compile(
-        ShaderPaths::BloomDownsamplePS, "main", "ps_6_6");
-    auto upsamplePs =
-        ShaderCompiler::Compile(ShaderPaths::BloomUpsamplePS, "main", "ps_6_6");
+    auto vs = ShaderCompiler::Compile(ShaderPaths::PostProcessVS, "main", "vs_6_6");
+    auto extractPs = ShaderCompiler::Compile(ShaderPaths::BloomExtractPS, "main", "ps_6_6");
+    auto downsamplePs = ShaderCompiler::Compile(ShaderPaths::BloomDownsamplePS, "main", "ps_6_6");
+    auto upsamplePs = ShaderCompiler::Compile(ShaderPaths::BloomUpsamplePS, "main", "ps_6_6");
     if (!vs || !extractPs || !downsamplePs || !upsamplePs) {
         return;
     }
@@ -158,8 +150,7 @@ void PostProcessSystem::CreateBloomPipelineState() {
     D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = MakeFullscreenPipelineDesc(
         state_->bloomRootSignature.Get(),
         D3D12_SHADER_BYTECODE{vs->GetBufferPointer(), vs->GetBufferSize()},
-        D3D12_SHADER_BYTECODE{extractPs->GetBufferPointer(),
-                              extractPs->GetBufferSize()},
+        D3D12_SHADER_BYTECODE{extractPs->GetBufferPointer(), extractPs->GetBufferSize()},
         DirectXCommon::kSceneColorFormat);
 
     if (FAILED(dxCommon_->GetDevice()->CreateGraphicsPipelineState(
@@ -171,6 +162,7 @@ void PostProcessSystem::CreateBloomPipelineState() {
     desc.PS = {downsamplePs->GetBufferPointer(), downsamplePs->GetBufferSize()};
     if (FAILED(dxCommon_->GetDevice()->CreateGraphicsPipelineState(
             &desc, IID_PPV_ARGS(&state_->bloomDownsamplePipelineState)))) {
+        state_->bloomExtractPipelineState.Reset();
         state_->bloomDownsamplePipelineState.Reset();
         return;
     }
@@ -183,12 +175,13 @@ void PostProcessSystem::CreateBloomPipelineState() {
     additiveBlend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
     additiveBlend.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
     additiveBlend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-    additiveBlend.RenderTarget[0].RenderTargetWriteMask =
-        D3D12_COLOR_WRITE_ENABLE_ALL;
+    additiveBlend.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
     desc.BlendState = additiveBlend;
     desc.PS = {upsamplePs->GetBufferPointer(), upsamplePs->GetBufferSize()};
     if (FAILED(dxCommon_->GetDevice()->CreateGraphicsPipelineState(
             &desc, IID_PPV_ARGS(&state_->bloomUpsamplePipelineState)))) {
+        state_->bloomExtractPipelineState.Reset();
+        state_->bloomDownsamplePipelineState.Reset();
         state_->bloomUpsamplePipelineState.Reset();
     }
 }

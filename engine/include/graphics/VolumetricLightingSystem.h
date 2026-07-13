@@ -30,26 +30,23 @@ struct VolumetricLightingSettings {
 };
 
 class VolumetricLightingSystem {
-  public:
+public:
     VolumetricLightingSystem();
     ~VolumetricLightingSystem();
 
-    void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager, int width,
-                    int height);
+    void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager, int width, int height);
     bool Finalize();
     bool Finalize(bool allowFrameAbort);
-    void Resize(int width, int height);
+    bool Resize(int width, int height);
 
-    void SetSettings(const VolumetricLightingSettings &settings);
-    const VolumetricLightingSettings &GetSettings() const;
+    void SetSettings(const VolumetricLightingSettings& settings);
+    const VolumetricLightingSettings& GetSettings() const;
     bool IsReady() const;
 
-    void Draw(D3D12_GPU_DESCRIPTOR_HANDLE depthHandle,
-              D3D12_GPU_DESCRIPTOR_HANDLE shadowHandle,
-              const Camera &camera,
-              const DirectX::XMFLOAT4X4 &lightViewProjection);
+    void Draw(D3D12_GPU_DESCRIPTOR_HANDLE depthHandle, D3D12_GPU_DESCRIPTOR_HANDLE shadowHandle,
+              const Camera& camera, const DirectX::XMFLOAT4X4& lightViewProjection);
 
-  private:
+private:
     struct ConstantFrame;
     struct State;
 
@@ -58,8 +55,8 @@ class VolumetricLightingSystem {
     void CreatePipelineState();
     void CreateConstantBuffers();
     bool HasConstantBuffers() const;
-    ConstantFrame *GetCurrentConstantFrame();
-    const ConstantFrame *GetCurrentConstantFrame() const;
+    ConstantFrame* GetCurrentConstantFrame();
+    const ConstantFrame* GetCurrentConstantFrame() const;
     bool EnsureRenderTextures();
     void DrawVolumeTexture(D3D12_GPU_DESCRIPTOR_HANDLE depthHandle,
                            D3D12_GPU_DESCRIPTOR_HANDLE shadowHandle,
@@ -67,7 +64,7 @@ class VolumetricLightingSystem {
     void CompositeToScene();
     void CopyCurrentToHistory();
 
-    DirectXCommon *dxCommon_ = nullptr;
-    SrvManager *srvManager_ = nullptr;
+    DirectXCommon* dxCommon_ = nullptr;
+    SrvManager* srvManager_ = nullptr;
     std::unique_ptr<State> state_;
 };

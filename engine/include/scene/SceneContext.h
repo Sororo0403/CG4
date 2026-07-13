@@ -18,6 +18,6 @@ struct SceneFrameState {
 struct SceneContext {
     SceneSystemServices systems{};
     SceneRenderServices rendering{};
-    const RenderContext *render = nullptr;
+    const RenderContext* render = nullptr;
     SceneFrameState frame{};
 };

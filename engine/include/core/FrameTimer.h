@@ -9,16 +9,18 @@ struct FrameTime {
 };
 
 class FrameTimer {
-  public:
+public:
     /// <summary>
     /// 状態をリセットする
     /// </summary>
     void Reset();
     void Tick();
 
-    const FrameTime &GetFrameTime() const { return frameTime_; }
+    const FrameTime& GetFrameTime() const {
+        return frameTime_;
+    }
 
-  private:
+private:
     using Clock = std::chrono::steady_clock;
 
     Clock::time_point lastTime_{Clock::now()};

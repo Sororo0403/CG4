@@ -5,7 +5,7 @@
 #include <vector>
 
 struct CpuProfiler::OpenEvent {
-    const char *name = nullptr;
+    const char* name = nullptr;
     std::chrono::steady_clock::time_point start{};
 };
 

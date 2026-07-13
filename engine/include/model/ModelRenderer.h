@@ -1,12 +1,13 @@
 #pragma once
-#include "core/ResourceHandle.h"
 #include "camera/Camera.h"
+#include "core/ResourceHandle.h"
 #include "graphics/Lighting.h"
 #include "model/InstanceData.h"
 #include "model/MaterialManager.h"
-#include "model/ModelDrawEffect.h"
 #include "model/Model.h"
+#include "model/ModelDrawEffect.h"
 #include "model/Transform.h"
+
 #include <DirectXMath.h>
 #include <cstddef>
 #include <d3d12.h>
@@ -22,7 +23,7 @@ class TextureManager;
 /// モデル描画パイプラインと定数バッファ更新を担当する
 /// </summary>
 class ModelRenderer {
-  public:
+public:
     ModelRenderer();
     ~ModelRenderer();
 
@@ -34,9 +35,8 @@ class ModelRenderer {
     /// <param name="meshManager">メッシュ管理</param>
     /// <param name="textureManager">テクスチャ管理</param>
     /// <param name="materialManager">マテリアル管理</param>
-    void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
-                    MeshManager *meshManager, TextureManager *textureManager,
-                    MaterialManager *materialManager);
+    void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager, MeshManager* meshManager,
+                    TextureManager* textureManager, MaterialManager* materialManager);
     bool Finalize();
     bool Finalize(bool allowFrameAbort);
 
@@ -53,23 +53,20 @@ class ModelRenderer {
     /// <param name="camera">描画に使用するカメラ</param>
     /// <param
     /// name="environmentTextureId">この描画で使用する環境マップテクスチャID。invalidの場合はSetEnvironmentTextureの設定を使用</param>
-    void Draw(const Model &model, const Transform &transform,
-              const Camera &camera,
+    void Draw(const Model& model, const Transform& transform, const Camera& camera,
               uint32_t environmentTextureId = kInvalidResourceId);
 
     /// <summary>
     /// 同一モデルを複数Transformでまとめて描画する
     /// </summary>
-    void DrawInstanced(const Model &model, const Transform *transforms,
-                       uint32_t instanceCount, const Camera &camera,
-                       uint32_t environmentTextureId = kInvalidResourceId);
+    void DrawInstanced(const Model& model, const Transform* transforms, uint32_t instanceCount,
+                       const Camera& camera, uint32_t environmentTextureId = kInvalidResourceId);
 
     /// <summary>
     /// 同一モデルを複数InstanceDataでまとめて描画する
     /// </summary>
-    void DrawInstanced(const Model &model, const InstanceData *instances,
-                       uint32_t instanceCount, const Camera &camera,
-                       uint32_t environmentTextureId = kInvalidResourceId);
+    void DrawInstanced(const Model& model, const InstanceData* instances, uint32_t instanceCount,
+                       const Camera& camera, uint32_t environmentTextureId = kInvalidResourceId);
 
     /// <summary>
     /// ShadowPass用の描画状態を設定する
@@ -79,39 +76,39 @@ class ModelRenderer {
     /// <summary>
     /// 指定モデルをShadowMapへ深度描画する
     /// </summary>
-    void DrawShadow(const Model &model, const Transform &transform,
-                    const DirectX::XMFLOAT4X4 &lightViewProjection);
+    void DrawShadow(const Model& model, const Transform& transform,
+                    const DirectX::XMFLOAT4X4& lightViewProjection);
 
     /// <summary>
     /// 同一モデルを複数TransformでShadowMapへまとめて深度描画する
     /// </summary>
-    void DrawInstancedShadow(const Model &model, const Transform *transforms,
+    void DrawInstancedShadow(const Model& model, const Transform* transforms,
                              uint32_t instanceCount,
-                             const DirectX::XMFLOAT4X4 &lightViewProjection);
+                             const DirectX::XMFLOAT4X4& lightViewProjection);
 
     /// <summary>
     /// 同一モデルを複数InstanceDataでShadowMapへまとめて深度描画する
     /// </summary>
-    void DrawInstancedShadow(const Model &model, const InstanceData *instances,
+    void DrawInstancedShadow(const Model& model, const InstanceData* instances,
                              uint32_t instanceCount,
-                             const DirectX::XMFLOAT4X4 &lightViewProjection);
+                             const DirectX::XMFLOAT4X4& lightViewProjection);
 
     /// <summary>
     /// 描画前に必要なGPUスキニングを実行する
     /// </summary>
-    void PrepareSkinning(const Model &model);
-    void PrepareSkinning(const std::vector<const Model *> &models);
+    void PrepareSkinning(const Model& model);
+    void PrepareSkinning(const std::vector<const Model*>& models);
 
     /// <summary>
     /// シーンライティングを設定する
     /// </summary>
     /// <param name="lighting">適用するライティング定数</param>
-    void SetSceneLighting(const SceneLighting &lighting);
+    void SetSceneLighting(const SceneLighting& lighting);
 
     /// <summary>
     /// 現在フレームの描画エフェクトを設定する
     /// </summary>
-    void SetDrawEffect(const ModelDrawEffect &effect);
+    void SetDrawEffect(const ModelDrawEffect& effect);
 
     /// <summary>
     /// 描画エフェクト設定を初期状態へ戻す
@@ -122,7 +119,7 @@ class ModelRenderer {
     /// シーンフォグを設定する
     /// </summary>
     /// <param name="fog">適用するフォグ定数</param>
-    void SetSceneFog(const SceneFog &fog);
+    void SetSceneFog(const SceneFog& fog);
 
     /// <summary>
     /// 環境マップに使うキューブマップテクスチャを設定する
@@ -139,23 +136,23 @@ class ModelRenderer {
     /// 標準シェーダーが参照するShadowMapを設定する
     /// </summary>
     void SetShadowMap(D3D12_GPU_DESCRIPTOR_HANDLE shadowMap,
-                      const DirectX::XMFLOAT4X4 &lightViewProjection,
-                      const SceneShadowSettings &settings);
+                      const DirectX::XMFLOAT4X4& lightViewProjection,
+                      const SceneShadowSettings& settings);
     void SetSpotLightShadowMap(D3D12_GPU_DESCRIPTOR_HANDLE shadowMap,
-                               const DirectX::XMFLOAT4X4 &lightViewProjection,
-                               const SceneShadowSettings &settings);
+                               const DirectX::XMFLOAT4X4& lightViewProjection,
+                               const SceneShadowSettings& settings);
 
     /// <summary>
     /// モデル用スキンクラスターGPUリソースを生成する
     /// </summary>
     /// <param name="model">対象モデル</param>
-    bool CreateSkinClusters(Model &model);
+    bool CreateSkinClusters(Model& model);
 
     /// <summary>
     /// スキンクラスターのパレット内容を更新する
     /// </summary>
     /// <param name="model">対象モデル</param>
-    void UpdateSkinClusters(Model &model);
+    void UpdateSkinClusters(Model& model);
 
     /// <summary>
     /// モデル描画用パイプラインを描画前に設定する
@@ -171,7 +168,7 @@ class ModelRenderer {
     size_t GetUploadTotalBytes() const;
     size_t GetUploadFrameOffset() const;
 
-  private:
+private:
     /// <summary>
     /// ルートシグネチャを生成する
     /// </summary>
@@ -203,59 +200,78 @@ class ModelRenderer {
     void CreateSkinningPipelineState();
 
     void CreateUploadBuffer();
+    static bool HasValidInitializeDependencies(const DirectXCommon* dxCommon,
+                                               const SrvManager* srvManager,
+                                               const MeshManager* meshManager,
+                                               const TextureManager* textureManager,
+                                               const MaterialManager* materialManager);
+    void BindManagers(DirectXCommon* dxCommon, SrvManager* srvManager, MeshManager* meshManager,
+                      TextureManager* textureManager, MaterialManager* materialManager);
+    bool CreateDissolveNoiseTexture();
+    void CreateCoreGpuResources();
+    bool HasRequiredGpuResources() const;
     bool CreateIdentityPalette();
     void ResetIdentityPalette() noexcept;
     bool HasIdentityPaletteResources() const noexcept;
     D3D12_GPU_VIRTUAL_ADDRESS GetIdentityPaletteAddress() const;
     void ResetResources();
-    D3D12_GPU_VIRTUAL_ADDRESS WriteObjectConstants(
-        const DirectX::XMMATRIX &wvp, const DirectX::XMMATRIX &world,
-        const DirectX::XMMATRIX &worldInverseTranspose);
+    D3D12_GPU_VIRTUAL_ADDRESS WriteObjectConstants(const DirectX::XMMATRIX& wvp,
+                                                   const DirectX::XMMATRIX& world,
+                                                   const DirectX::XMMATRIX& worldInverseTranspose);
     /// <summary>
     /// データを書き込む
     /// </summary>
-    D3D12_GPU_VIRTUAL_ADDRESS WriteSceneConstants(const Camera &camera);
+    D3D12_GPU_VIRTUAL_ADDRESS WriteSceneConstants(const Camera& camera);
     D3D12_GPU_VIRTUAL_ADDRESS WriteDrawEffectConstants();
-    D3D12_VERTEX_BUFFER_VIEW WriteInstances(const Model &model,
-                                            const Transform *transforms,
+    D3D12_VERTEX_BUFFER_VIEW WriteInstances(const Model& model, const Transform* transforms,
                                             uint32_t instanceCount);
-    D3D12_VERTEX_BUFFER_VIEW WriteInstances(const Model &model,
-                                            const InstanceData *instances,
+    D3D12_VERTEX_BUFFER_VIEW WriteInstances(const Model& model, const InstanceData* instances,
                                             uint32_t instanceCount);
-    void DrawInstancedWithPreparedBuffer(
-        const Model &model, const D3D12_VERTEX_BUFFER_VIEW &instanceView,
-        uint32_t instanceCount, const Camera &camera,
-        uint32_t environmentTextureId);
-    bool SubmitForwardSubMeshDraw(
-        const ModelSubMesh &subMesh, D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr,
-        D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr,
-        D3D12_GPU_VIRTUAL_ADDRESS effectCbAddr, uint32_t environmentTextureId,
-        D3D12_GPU_VIRTUAL_ADDRESS identityPaletteAddress,
-        const D3D12_VERTEX_BUFFER_VIEW *instanceView, uint32_t instanceCount,
-        bool instanced);
-    bool SubmitShadowSubMeshDraw(
-        const ModelSubMesh &subMesh, D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr,
-        ID3D12PipelineState *pipelineState,
-        const D3D12_VERTEX_BUFFER_VIEW *instanceView, uint32_t instanceCount);
+    void DrawInstancedWithPreparedBuffer(const Model& model,
+                                         const D3D12_VERTEX_BUFFER_VIEW& instanceView,
+                                         uint32_t instanceCount, const Camera& camera,
+                                         uint32_t environmentTextureId);
+    struct ForwardSubMeshDrawRequest {
+        const ModelSubMesh* subMesh = nullptr;
+        D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr = 0;
+        D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr = 0;
+        D3D12_GPU_VIRTUAL_ADDRESS effectCbAddr = 0;
+        uint32_t environmentTextureId = kInvalidResourceId;
+        D3D12_GPU_VIRTUAL_ADDRESS identityPaletteAddress = 0;
+        const D3D12_VERTEX_BUFFER_VIEW* instanceView = nullptr;
+        uint32_t instanceCount = 0;
+        bool instanced = false;
+    };
+    bool SubmitForwardSubMeshDraw(const ForwardSubMeshDrawRequest& request);
+    bool SubmitShadowSubMeshDraw(const ModelSubMesh& subMesh,
+                                 D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr,
+                                 ID3D12PipelineState* pipelineState,
+                                 const D3D12_VERTEX_BUFFER_VIEW* instanceView,
+                                 uint32_t instanceCount);
     /// <summary>
     /// PipelineForMaterialを設定する
     /// </summary>
-    bool SetPipelineForMaterial(const Material &material);
-    bool SetInstancedPipelineForMaterial(const Material &material);
+    bool SetPipelineForMaterial(const Material& material);
+    bool SetInstancedPipelineForMaterial(const Material& material);
 
     /// <summary>
     /// ComputeShaderで必要なスキニング済み頂点をまとめて書き込む
     /// </summary>
-    void DispatchSkinningBatch(const Model &model);
-    void DispatchSkinningBatch(const std::vector<const Model *> &models);
-    void DispatchSkinningJobs(const std::vector<const ModelSubMesh *> &jobs);
+    void DispatchSkinningBatch(const Model& model);
+    void DispatchSkinningBatch(const std::vector<const Model*>& models);
+    void DispatchSkinningJobs(const std::vector<const ModelSubMesh*>& jobs);
     /// <summary>
     /// DispatchSkinningを実行する
     /// </summary>
-    void DispatchSkinning(const ModelSubMesh &subMesh);
-    bool NeedsSkinningDispatch(const ModelSubMesh &subMesh) const;
+    struct SkinClusterBuildContext;
+    bool CreateSkinClusterForSubMesh(const Model& model, ModelSubMesh& subMesh,
+                                     SkinClusterBuildContext& context);
+    bool PrepareSkinClusterPalette(const Model& model, ModelSubMesh& subMesh,
+                                   SkinClusterBuildContext& context);
+    void DispatchSkinning(const ModelSubMesh& subMesh);
+    bool NeedsSkinningDispatch(const ModelSubMesh& subMesh) const;
 
-  private:
+private:
     static constexpr uint32_t kMaxDraws = 4096;
     static constexpr size_t kUploadBytesPerFrame = 4 * 1024 * 1024;
     static constexpr size_t kPipelineVariantCount = 18;

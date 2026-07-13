@@ -19,7 +19,7 @@
 #include <xaudio2.h>
 
 struct SoundManager::PlayingVoice {
-    IXAudio2SourceVoice *voice = nullptr;
+    IXAudio2SourceVoice* voice = nullptr;
     std::unique_ptr<SoundVoiceCallback> callback;
     uint32_t handle = kInvalidVoiceHandle;
     uint32_t soundId = 0;
@@ -47,7 +47,7 @@ struct SoundManager::SoundResource {
 
 struct SoundManager::State {
     Microsoft::WRL::ComPtr<IXAudio2> xAudio2;
-    IXAudio2MasteringVoice *masterVoice = nullptr;
+    IXAudio2MasteringVoice* masterVoice = nullptr;
     float masterVolume = 1.0f;
     bool comInitialized = false;
     bool mediaFoundationStarted = false;
@@ -68,26 +68,25 @@ inline constexpr uint32_t kStreamQueuedBuffers = 3u;
 
 class SourceVoiceGuard {
 public:
-    explicit SourceVoiceGuard(IXAudio2SourceVoice *voice = nullptr)
-        : voice_(voice) {}
-    SourceVoiceGuard(const SourceVoiceGuard &) = delete;
-    SourceVoiceGuard &operator=(const SourceVoiceGuard &) = delete;
+    explicit SourceVoiceGuard(IXAudio2SourceVoice* voice = nullptr) : voice_(voice) {}
+    SourceVoiceGuard(const SourceVoiceGuard&) = delete;
+    SourceVoiceGuard& operator=(const SourceVoiceGuard&) = delete;
 
     ~SourceVoiceGuard() {
         Reset();
     }
 
-    IXAudio2SourceVoice *Get() const {
+    IXAudio2SourceVoice* Get() const {
         return voice_;
     }
 
-    IXAudio2SourceVoice *Release() {
-        IXAudio2SourceVoice *voice = voice_;
+    IXAudio2SourceVoice* Release() {
+        IXAudio2SourceVoice* voice = voice_;
         voice_ = nullptr;
         return voice;
     }
 
-    void Reset(IXAudio2SourceVoice *voice = nullptr) {
+    void Reset(IXAudio2SourceVoice* voice = nullptr) {
         if (voice_) {
             voice_->DestroyVoice();
         }
@@ -95,14 +94,12 @@ public:
     }
 
 private:
-    IXAudio2SourceVoice *voice_ = nullptr;
+    IXAudio2SourceVoice* voice_ = nullptr;
 };
 
-inline DirectX::XMVECTOR
-LoadFloat3OrDefault(const DirectX::XMFLOAT3 &value,
-                    DirectX::FXMVECTOR fallback) {
-    if (!std::isfinite(value.x) || !std::isfinite(value.y) ||
-        !std::isfinite(value.z)) {
+inline DirectX::XMVECTOR LoadFloat3OrDefault(const DirectX::XMFLOAT3& value,
+                                             DirectX::FXMVECTOR fallback) {
+    if (!std::isfinite(value.x) || !std::isfinite(value.y) || !std::isfinite(value.z)) {
         return fallback;
     }
     DirectX::XMVECTOR v = DirectX::XMLoadFloat3(&value);
@@ -113,21 +110,17 @@ LoadFloat3OrDefault(const DirectX::XMFLOAT3 &value,
     return DirectX::XMVector3Normalize(v);
 }
 
-inline DirectX::XMVECTOR
-LoadPositionOrDefault(const DirectX::XMFLOAT3 &value,
-                      DirectX::FXMVECTOR fallback) {
-    if (!std::isfinite(value.x) || !std::isfinite(value.y) ||
-        !std::isfinite(value.z)) {
+inline DirectX::XMVECTOR LoadPositionOrDefault(const DirectX::XMFLOAT3& value,
+                                               DirectX::FXMVECTOR fallback) {
+    if (!std::isfinite(value.x) || !std::isfinite(value.y) || !std::isfinite(value.z)) {
         return fallback;
     }
     return DirectX::XMLoadFloat3(&value);
 }
 
-inline DirectX::XMVECTOR
-NormalizeVectorOrDefault(DirectX::FXMVECTOR value,
-                         DirectX::FXMVECTOR fallback) {
-    const float lengthSq =
-        DirectX::XMVectorGetX(DirectX::XMVector3LengthSq(value));
+inline DirectX::XMVECTOR NormalizeVectorOrDefault(DirectX::FXMVECTOR value,
+                                                  DirectX::FXMVECTOR fallback) {
+    const float lengthSq = DirectX::XMVectorGetX(DirectX::XMVector3LengthSq(value));
     if (!std::isfinite(lengthSq) || lengthSq <= 0.000001f) {
         return fallback;
     }

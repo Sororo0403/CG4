@@ -17,8 +17,7 @@ struct ModelDrawEffect {
     bool additiveBlend = false;
     bool disableCulling = false;
     bool forceOpaqueMaterial = false;
-    ModelDrawEffectBlendOverride blendOverride =
-        ModelDrawEffectBlendOverride::KeepMaterial;
+    ModelDrawEffectBlendOverride blendOverride = ModelDrawEffectBlendOverride::KeepMaterial;
     DirectX::XMFLOAT4 color = {1.0f, 0.2f, 0.7f, 0.65f};
     float intensity = 0.0f;
     float fresnelPower = 3.5f;

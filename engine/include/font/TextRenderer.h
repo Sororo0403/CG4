@@ -21,29 +21,23 @@ struct TextLayoutMetrics {
 };
 
 class TextRenderer {
-  public:
-    void Initialize(FontManager *fontManager, SpriteRenderer *spriteRenderer);
+public:
+    void Initialize(FontManager* fontManager, SpriteRenderer* spriteRenderer);
     void Finalize();
     bool IsReady() const;
 
-    void DrawText(std::string_view utf8Text,
-                  const DirectX::XMFLOAT2 &position,
-                  const TextStyle &style = {});
-    void DrawText(std::wstring_view text,
-                  const DirectX::XMFLOAT2 &position,
-                  const TextStyle &style = {});
-    void DrawText(std::u32string_view text,
-                  const DirectX::XMFLOAT2 &position,
-                  const TextStyle &style = {});
+    void DrawText(std::string_view utf8Text, const DirectX::XMFLOAT2& position,
+                  const TextStyle& style = {});
+    void DrawText(std::wstring_view text, const DirectX::XMFLOAT2& position,
+                  const TextStyle& style = {});
+    void DrawText(std::u32string_view text, const DirectX::XMFLOAT2& position,
+                  const TextStyle& style = {});
 
-    TextLayoutMetrics MeasureText(std::string_view utf8Text,
-                                  const TextStyle &style = {});
-    TextLayoutMetrics MeasureText(std::wstring_view text,
-                                  const TextStyle &style = {});
-    TextLayoutMetrics MeasureText(std::u32string_view text,
-                                  const TextStyle &style = {});
+    TextLayoutMetrics MeasureText(std::string_view utf8Text, const TextStyle& style = {});
+    TextLayoutMetrics MeasureText(std::wstring_view text, const TextStyle& style = {});
+    TextLayoutMetrics MeasureText(std::u32string_view text, const TextStyle& style = {});
 
-  private:
-    FontManager *fontManager_ = nullptr;
-    SpriteRenderer *spriteRenderer_ = nullptr;
+private:
+    FontManager* fontManager_ = nullptr;
+    SpriteRenderer* spriteRenderer_ = nullptr;
 };

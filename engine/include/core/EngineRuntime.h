@@ -23,24 +23,21 @@ struct EngineRuntimeConfig {
 };
 
 class EngineRuntime {
-  public:
+public:
     EngineRuntime();
     ~EngineRuntime();
 
-    EngineRuntime(const EngineRuntime &) = delete;
-    EngineRuntime &operator=(const EngineRuntime &) = delete;
-    EngineRuntime(EngineRuntime &&) = delete;
-    EngineRuntime &operator=(EngineRuntime &&) = delete;
+    EngineRuntime(const EngineRuntime&) = delete;
+    EngineRuntime& operator=(const EngineRuntime&) = delete;
+    EngineRuntime(EngineRuntime&&) = delete;
+    EngineRuntime& operator=(EngineRuntime&&) = delete;
 
-    int Run(HINSTANCE instance, int showCommand,
-            std::unique_ptr<BaseScene> initialScene,
-            const EngineRuntimeConfig &config = {});
-    int Run(HINSTANCE instance, int showCommand,
-            const std::string &initialSceneName,
-            AbstractSceneFactory *sceneFactory,
-            const EngineRuntimeConfig &config = {});
+    int Run(HINSTANCE instance, int showCommand, std::unique_ptr<BaseScene> initialScene,
+            const EngineRuntimeConfig& config = {});
+    int Run(HINSTANCE instance, int showCommand, const std::string& initialSceneName,
+            AbstractSceneFactory* sceneFactory, const EngineRuntimeConfig& config = {});
 
-  private:
+private:
     struct Systems;
     enum class ResizeResult {
         Ready,
@@ -48,18 +45,16 @@ class EngineRuntime {
         Failed,
     };
 
-    bool Initialize(HINSTANCE instance, int showCommand,
-                    const EngineRuntimeConfig &config);
+    bool Initialize(HINSTANCE instance, int showCommand, const EngineRuntimeConfig& config);
     bool InitializeWindowAndDevice(HINSTANCE instance, int showCommand,
-                                   const EngineRuntimeConfig &config);
+                                   const EngineRuntimeConfig& config);
     bool InitializeRenderingSystems();
-    bool InitializeSceneSystems(HINSTANCE instance,
-                                const EngineRuntimeConfig &config);
+    bool InitializeSceneSystems(HINSTANCE instance, const EngineRuntimeConfig& config);
     bool ValidateDefaultTextures() const;
     void BindSceneContext();
-    bool InitializeLog(const std::wstring &path);
-    bool FailInitialize(const char *reason);
-    void Log(const std::string &message);
+    bool InitializeLog(const std::wstring& path);
+    bool FailInitialize(const char* reason);
+    void Log(const std::string& message);
     int RunMainLoop();
     /// <summary>
     /// 状態を更新する
@@ -71,7 +66,7 @@ class EngineRuntime {
     bool EnsureSpotLightShadowRenderer();
     bool EnsureVolumetricLightingSystem();
     bool BeginCommandFrame();
-    void BuildRenderGraph();
+    bool BuildRenderGraph();
     bool FinishCommandFrame();
 
     std::unique_ptr<Systems> systems_;

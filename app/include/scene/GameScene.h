@@ -11,9 +11,9 @@
 #include <string>
 #include <vector>
 
-class EvaluationScene final : public BaseScene {
+class GameScene final : public BaseScene {
   public:
-    ~EvaluationScene() override;
+    ~GameScene() override;
 
     void Initialize(const SceneContext &ctx) override;
     void Update() override;
@@ -39,6 +39,8 @@ class EvaluationScene final : public BaseScene {
     void DrawBindPoseRig();
     void DrawSceneProps();
     void DrawBoneDebugOverlay();
+    void DrawBindPoseBoneOverlay(const Model& model);
+    void DrawAnimatedBoneOverlay(const Model& model);
     void DrawDebugPanel();
     void DrawBoneLabels();
 

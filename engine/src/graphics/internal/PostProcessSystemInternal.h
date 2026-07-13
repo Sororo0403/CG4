@@ -21,8 +21,7 @@ struct BloomPassConstants {
 
 struct BloomLevel {
     Microsoft::WRL::ComPtr<ID3D12Resource> resource;
-    D3D12_RESOURCE_STATES state =
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     uint32_t width = 1u;
     uint32_t height = 1u;
 };
@@ -31,7 +30,7 @@ struct BloomLevel {
 
 struct PostProcessSystem::ConstantFrame {
     Microsoft::WRL::ComPtr<ID3D12Resource> resource;
-    PostProcessConstants *mapped = nullptr;
+    PostProcessConstants* mapped = nullptr;
 
     void Reset() {
         if (resource && mapped != nullptr) {
@@ -52,8 +51,7 @@ struct PostProcessSystem::State {
     Microsoft::WRL::ComPtr<ID3D12PipelineState> bloomUpsamplePipelineState;
     std::vector<ConstantFrame> constantFrames;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> bloomRtvHeap;
-    std::array<PostProcessSystemInternal::BloomLevel,
-               PostProcessSystemInternal::kMaxBloomLevels>
+    std::array<PostProcessSystemInternal::BloomLevel, PostProcessSystemInternal::kMaxBloomLevels>
         bloomLevels;
     UINT bloomRtvDescriptorSize = 0;
     UINT bloomSrvStart = UINT_MAX;

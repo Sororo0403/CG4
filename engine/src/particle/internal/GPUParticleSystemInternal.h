@@ -1,25 +1,23 @@
 #pragma once
 
+#include "../../graphics/internal/ConstantBufferUtils.h"
+#include "../../graphics/internal/GpuResourceScopes.h"
 #include "core/ResourceHandle.h"
+#include "graphics/DirectXCommon.h"
+#include "particle/GPUParticleSystem.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <d3d12.h>
 #include <limits>
 #include <vector>
-
-#include <d3d12.h>
 #include <wrl.h>
-
-#include "particle/GPUParticleSystem.h"
-#include "graphics/DirectXCommon.h"
-#include "../../graphics/internal/ConstantBufferUtils.h"
-#include "../../graphics/internal/GpuResourceScopes.h"
 
 struct GPUParticleSystem::ConstantFrame {
     Microsoft::WRL::ComPtr<ID3D12Resource> updateConstantBuffer;
     Microsoft::WRL::ComPtr<ID3D12Resource> drawConstantBuffer;
-    UpdateConstantBufferData *mappedUpdateCB = nullptr;
-    DrawConstantBufferData *mappedDrawCB = nullptr;
+    UpdateConstantBufferData* mappedUpdateCB = nullptr;
+    DrawConstantBufferData* mappedDrawCB = nullptr;
 
     void Reset() {
         if (updateConstantBuffer && mappedUpdateCB != nullptr) {
@@ -37,7 +35,7 @@ struct GPUParticleSystem::ConstantFrame {
 
 struct GPUParticleSystem::ExplicitSpawnFrame {
     Microsoft::WRL::ComPtr<ID3D12Resource> resource;
-    GPUParticleExplicitSpawn *mappedSpawns = nullptr;
+    GPUParticleExplicitSpawn* mappedSpawns = nullptr;
     D3D12_GPU_DESCRIPTOR_HANDLE srvGpuHandle{};
     D3D12_CPU_DESCRIPTOR_HANDLE srvCpuHandle{};
     uint32_t srvIndex = kInvalidResourceId;
@@ -90,8 +88,7 @@ struct GPUParticleSystem::ResourceState {
     D3D12_GPU_DESCRIPTOR_HANDLE activeIndexUavGpuHandle{};
     D3D12_CPU_DESCRIPTOR_HANDLE activeIndexUavCpuHandle{};
     uint32_t activeIndexUavIndex = kInvalidResourceId;
-    D3D12_RESOURCE_STATES activeIndexState =
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    D3D12_RESOURCE_STATES activeIndexState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> activeCountResource;
     D3D12_GPU_DESCRIPTOR_HANDLE activeCountUavGpuHandle{};
@@ -102,8 +99,7 @@ struct GPUParticleSystem::ResourceState {
     D3D12_GPU_DESCRIPTOR_HANDLE drawArgsUavGpuHandle{};
     D3D12_CPU_DESCRIPTOR_HANDLE drawArgsUavCpuHandle{};
     uint32_t drawArgsUavIndex = kInvalidResourceId;
-    D3D12_RESOURCE_STATES drawArgsState =
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    D3D12_RESOURCE_STATES drawArgsState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 
     std::vector<ConstantFrame> constantFrames;
     std::vector<ExplicitSpawnFrame> explicitSpawnFrames;
@@ -117,11 +113,9 @@ inline constexpr size_t kMaxQueuedParticleEmitsPerFrame = 128u;
 inline constexpr uint32_t kMaxGpuParticles = 1'048'576u;
 inline constexpr UINT kRequiredSrvDescriptors = 8u;
 
-inline UINT CheckedByteSize(size_t elementSize, size_t count,
-                            const char *message) {
+inline UINT CheckedByteSize(size_t elementSize, size_t count, const char* message) {
     (void)message;
-    if (count == 0 ||
-        elementSize > (std::numeric_limits<size_t>::max)() / count) {
+    if (count == 0 || elementSize > (std::numeric_limits<size_t>::max)() / count) {
         return 0;
     }
     const size_t bytes = elementSize * count;

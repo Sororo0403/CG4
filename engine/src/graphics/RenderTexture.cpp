@@ -1,11 +1,13 @@
 #include "graphics/RenderTexture.h"
-#include "internal/RenderTextureInternal.h"
+
 #include "core/Numeric.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/GpuResourceHelpers.h"
 #include "graphics/GpuResourceLifetime.h"
 #include "graphics/SrvManager.h"
+#include "internal/RenderTextureInternal.h"
+
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -15,24 +17,23 @@ using GpuResourceHelpers::CreateCommittedResourceChecked;
 using Numeric::ClampFinite;
 
 class RenderTextureInitializationGuard {
-  public:
-    explicit RenderTextureInitializationGuard(RenderTexture &target)
-        : target_(target) {}
+public:
+    explicit RenderTextureInitializationGuard(RenderTexture& target) : target_(target) {}
     ~RenderTextureInitializationGuard() {
         if (active_) {
             target_.Release();
         }
     }
 
-    RenderTextureInitializationGuard(const RenderTextureInitializationGuard &) =
-        delete;
-    RenderTextureInitializationGuard &
-    operator=(const RenderTextureInitializationGuard &) = delete;
+    RenderTextureInitializationGuard(const RenderTextureInitializationGuard&) = delete;
+    RenderTextureInitializationGuard& operator=(const RenderTextureInitializationGuard&) = delete;
 
-    void Commit() { active_ = false; }
+    void Commit() {
+        active_ = false;
+    }
 
-  private:
-    RenderTexture &target_;
+private:
+    RenderTexture& target_;
     bool active_ = true;
 };
 } // namespace
@@ -43,18 +44,21 @@ RenderTexture::~RenderTexture() {
     Release(true);
 }
 
-int RenderTexture::GetWidth() const { return resources_->width; }
-
-int RenderTexture::GetHeight() const { return resources_->height; }
-
-bool RenderTexture::IsReady() const {
-    return dxCommon_ != nullptr && srvManager_ != nullptr &&
-           resources_->resource && resources_->rtvHeap &&
-           resources_->srvIndex != UINT_MAX && GetGpuHandle().ptr != 0;
+int RenderTexture::GetWidth() const {
+    return resources_->width;
 }
 
-void RenderTexture::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
-                               int width, int height) {
+int RenderTexture::GetHeight() const {
+    return resources_->height;
+}
+
+bool RenderTexture::IsReady() const {
+    return dxCommon_ != nullptr && srvManager_ != nullptr && resources_->resource &&
+           resources_->rtvHeap && resources_->srvIndex != UINT_MAX && GetGpuHandle().ptr != 0;
+}
+
+void RenderTexture::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager, int width,
+                               int height) {
     if (!dxCommon || !dxCommon->GetDevice() || !srvManager) {
         Release();
         return;
@@ -88,16 +92,17 @@ void RenderTexture::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
     initializeGuard.Commit();
 }
 
-void RenderTexture::Resize(int width, int height) {
+bool RenderTexture::Resize(int width, int height) {
     if (width <= 0 || height <= 0 ||
-        (width == resources_->width && height == resources_->height && resources_->resource && resources_->rtvHeap)) {
-        return;
+        (width == resources_->width && height == resources_->height && resources_->resource &&
+         resources_->rtvHeap)) {
+        return width > 0 && height > 0 && IsReady();
     }
     if (!dxCommon_ || !srvManager_ || resources_->srvIndex == UINT_MAX) {
-        return;
+        return false;
     }
     if (dxCommon_->IsCommandListRecording()) {
-        return;
+        return false;
     }
 
     const int previousWidth = resources_->width;
@@ -108,10 +113,14 @@ void RenderTexture::Resize(int width, int height) {
     if (!CreateResources()) {
         resources_->width = previousWidth;
         resources_->height = previousHeight;
+        return false;
     }
+    return IsReady();
 }
 
-bool RenderTexture::Release() { return Release(false); }
+bool RenderTexture::Release() {
+    return Release(false);
+}
 
 bool RenderTexture::Release(bool allowFrameAbort) {
     if (!ReleaseTextureResources(allowFrameAbort)) {
@@ -133,27 +142,26 @@ bool RenderTexture::Release(bool allowFrameAbort) {
     return true;
 }
 
-void RenderTexture::BeginRender(const DirectX::XMFLOAT4 &clearColor) {
+void RenderTexture::BeginRender(const DirectX::XMFLOAT4& clearColor) {
     BeginRenderInternal(clearColor, true, true);
 }
 
-void RenderTexture::BeginRenderNoDepth(
-    const DirectX::XMFLOAT4 &clearColor) {
+void RenderTexture::BeginRenderNoDepth(const DirectX::XMFLOAT4& clearColor) {
     BeginRenderInternal(clearColor, false, false);
 }
 
-void RenderTexture::BeginRenderInternal(
-    const DirectX::XMFLOAT4 &clearColor, bool bindDepth, bool clearDepth) {
+void RenderTexture::BeginRenderInternal(const DirectX::XMFLOAT4& clearColor, bool bindDepth,
+                                        bool clearDepth) {
     if (!dxCommon_ || !resources_->resource || !resources_->rtvHeap) {
         return;
     }
 
-    auto commandList = dxCommon_->GetCommandList();
+    auto* commandList = dxCommon_->GetCommandList();
     if (commandList == nullptr) {
         return;
     }
     D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle{};
-    D3D12_CPU_DESCRIPTOR_HANDLE *dsvHandlePtr = nullptr;
+    D3D12_CPU_DESCRIPTOR_HANDLE* dsvHandlePtr = nullptr;
     if (bindDepth) {
         dsvHandle = dxCommon_->GetDepthStencilView();
         if (dsvHandle.ptr == 0) {
@@ -165,13 +173,12 @@ void RenderTexture::BeginRenderInternal(
     if (resources_->resourceState != D3D12_RESOURCE_STATE_RENDER_TARGET) {
         const D3D12_RESOURCE_STATES previousState = resources_->resourceState;
         if (!dxCommon_->RegisterFrameRollback(
-                this,
-                [this, previousState]() { resources_->resourceState = previousState; })) {
+                this, [this, previousState]() { resources_->resourceState = previousState; })) {
             return;
         }
-        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-            resources_->resource.Get(), resources_->resourceState,
-            D3D12_RESOURCE_STATE_RENDER_TARGET);
+        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(resources_->resource.Get(),
+                                                            resources_->resourceState,
+                                                            D3D12_RESOURCE_STATE_RENDER_TARGET);
         commandList->ResourceBarrier(1, &barrier);
         resources_->resourceState = D3D12_RESOURCE_STATE_RENDER_TARGET;
     }
@@ -204,8 +211,7 @@ void RenderTexture::BeginRenderInternal(
     };
     commandList->ClearRenderTargetView(rtvHandle, clear, 0, nullptr);
     if (clearDepth && dsvHandle.ptr != 0) {
-        commandList->ClearDepthStencilView(
-            dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+        commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
     }
 }
 
@@ -215,14 +221,13 @@ void RenderTexture::EndRender() {
     }
 
     if (resources_->resourceState != D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) {
-        auto commandList = dxCommon_->GetCommandList();
+        auto* commandList = dxCommon_->GetCommandList();
         if (commandList == nullptr) {
             return;
         }
         const D3D12_RESOURCE_STATES previousState = resources_->resourceState;
         if (!dxCommon_->RegisterFrameRollback(
-                this,
-                [this, previousState]() { resources_->resourceState = previousState; })) {
+                this, [this, previousState]() { resources_->resourceState = previousState; })) {
             return;
         }
         auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
@@ -246,8 +251,9 @@ bool RenderTexture::ReleaseTextureResources() {
 }
 
 bool RenderTexture::ReleaseTextureResources(bool allowFrameAbort) {
-    if (!CanReleaseGpuResources(dxCommon_, resources_->resource != nullptr || resources_->rtvHeap ||
-                                               resources_->srvIndex != UINT_MAX,
+    if (!CanReleaseGpuResources(dxCommon_,
+                                resources_->resource != nullptr || resources_->rtvHeap ||
+                                    resources_->srvIndex != UINT_MAX,
                                 allowFrameAbort)) {
         return false;
     }
@@ -260,7 +266,7 @@ bool RenderTexture::ReleaseTextureResources(bool allowFrameAbort) {
 }
 
 bool RenderTexture::CreateResources() {
-    auto device = dxCommon_->GetDevice();
+    auto* device = dxCommon_->GetDevice();
     if (device == nullptr || srvManager_ == nullptr || resources_->srvIndex == UINT_MAX) {
         return false;
     }
@@ -269,19 +275,17 @@ bool RenderTexture::CreateResources() {
     D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc{};
     rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
     rtvHeapDesc.NumDescriptors = 1;
-    if (FAILED(device->CreateDescriptorHeap(&rtvHeapDesc,
-                                            IID_PPV_ARGS(&newRtvHeap))) ||
+    if (FAILED(device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&newRtvHeap))) ||
         !newRtvHeap) {
         return false;
     }
 
-    const UINT newRtvDescriptorSize = device->GetDescriptorHandleIncrementSize(
-        D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    const UINT newRtvDescriptorSize =
+        device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
     auto resourceDesc = CD3DX12_RESOURCE_DESC::Tex2D(
         DirectXCommon::kSceneColorFormat, static_cast<UINT64>(resources_->width),
-        static_cast<UINT>(resources_->height), 1, 1, 1, 0,
-        D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+        static_cast<UINT>(resources_->height), 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
 
     D3D12_CLEAR_VALUE clearValue{};
     clearValue.Format = DirectXCommon::kSceneColorFormat;
@@ -292,27 +296,24 @@ bool RenderTexture::CreateResources() {
 
     CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
     Microsoft::WRL::ComPtr<ID3D12Resource> newResource;
-    if (!CreateCommittedResourceChecked(
-            device, &heapProps, D3D12_HEAP_FLAG_NONE, &resourceDesc,
-            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &clearValue,
-            newResource.GetAddressOf())) {
+    if (!CreateCommittedResourceChecked(device, &heapProps, D3D12_HEAP_FLAG_NONE, &resourceDesc,
+                                        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &clearValue,
+                                        newResource.GetAddressOf())) {
         return false;
     }
 
     D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
     rtvDesc.Format = DirectXCommon::kSceneColorFormat;
     rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-    device->CreateRenderTargetView(
-        newResource.Get(), &rtvDesc,
-        newRtvHeap->GetCPUDescriptorHandleForHeapStart());
+    device->CreateRenderTargetView(newResource.Get(), &rtvDesc,
+                                   newRtvHeap->GetCPUDescriptorHandleForHeapStart());
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.Format = DirectXCommon::kSceneColorFormat;
     srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Texture2D.MipLevels = 1;
-    const D3D12_CPU_DESCRIPTOR_HANDLE srvHandle =
-        srvManager_->GetCpuHandle(resources_->srvIndex);
+    const D3D12_CPU_DESCRIPTOR_HANDLE srvHandle = srvManager_->GetCpuHandle(resources_->srvIndex);
     if (srvHandle.ptr == 0) {
         return false;
     }

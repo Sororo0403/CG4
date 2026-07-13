@@ -1,5 +1,6 @@
 #pragma once
 #include "core/ResourceHandle.h"
+
 #include <d3d12.h>
 #include <memory>
 
@@ -9,7 +10,7 @@ class DirectXCommon;
 /// SRVディスクリプタヒープの確保と参照を管理する
 /// </summary>
 class SrvManager {
-  public:
+public:
     SrvManager();
     ~SrvManager();
 
@@ -18,7 +19,7 @@ class SrvManager {
     /// </summary>
     /// <param name="dxCommon">DirectXCommonインスタンス</param>
     /// <param name="maxSrvCount">確保するSRV最大数</param>
-    void Initialize(const DirectXCommon *dxCommon, UINT maxSrvCount = 4096);
+    void Initialize(const DirectXCommon* dxCommon, UINT maxSrvCount = 4096);
 
     /// <summary>
     /// SRVを1つ割り当てる
@@ -38,7 +39,9 @@ class SrvManager {
     /// <summary>
     /// SRVを1つ割り当て、型付きハンドルで返す
     /// </summary>
-    DescriptorHandle AllocateHandle() { return DescriptorHandle(Allocate()); }
+    DescriptorHandle AllocateHandle() {
+        return DescriptorHandle(Allocate());
+    }
 
     /// <summary>
     /// 指定インデックスを解放して再利用可能にする
@@ -50,7 +53,9 @@ class SrvManager {
     /// <summary>
     /// 指定ハンドルを解放して再利用可能にする
     /// </summary>
-    void Free(DescriptorHandle handle) { Free(handle.Get()); }
+    void Free(DescriptorHandle handle) {
+        Free(handle.Get());
+    }
     bool FreeIfAllocated(DescriptorHandle handle) {
         return FreeIfAllocated(handle.Get());
     }
@@ -87,7 +92,7 @@ class SrvManager {
     /// SRVヒープを取得する
     /// </summary>
     /// <returns>ディスクリプタヒープ</returns>
-    ID3D12DescriptorHeap *GetHeap() const;
+    ID3D12DescriptorHeap* GetHeap() const;
 
     /// <summary>
     /// ディスクリプタサイズを取得する
@@ -95,11 +100,11 @@ class SrvManager {
     /// <returns>1ディスクリプタあたりのサイズ</returns>
     UINT GetDescriptorSize() const;
 
-  private:
+private:
     struct State;
 
     UINT FindAvailableRange(UINT count) const;
-    static void ValidateAllocatedIndex(UINT index, const char *operation);
+    static void ValidateAllocatedIndex(UINT index, const char* operation);
 
     std::unique_ptr<State> state_;
 };

@@ -10,15 +10,13 @@
 
 DynamicBuffer::~DynamicBuffer() {
     if (HasResource()) {
-        assert(false &&
-               "DynamicBuffer::Reset must be called after GPU idle before "
-               "destruction");
+        assert(false && "DynamicBuffer::Reset must be called after GPU idle before "
+                        "destruction");
     }
     Reset();
 }
 
-void DynamicBuffer::Initialize(ID3D12Device *device, size_t capacity,
-                               size_t defaultAlignment) {
+void DynamicBuffer::Initialize(ID3D12Device* device, size_t capacity, size_t defaultAlignment) {
     if (!device || capacity == 0) {
         Reset();
         return;
@@ -41,7 +39,9 @@ void DynamicBuffer::Reset() {
     defaultAlignment_ = 256;
 }
 
-void DynamicBuffer::BeginWrite() { offset_ = 0; }
+void DynamicBuffer::BeginWrite() {
+    offset_ = 0;
+}
 
 void DynamicBuffer::Reserve(size_t capacity) {
     if (!device_) {
@@ -61,8 +61,7 @@ UploadAllocation DynamicBuffer::Allocate(size_t size, size_t alignment) {
         return {};
     }
 
-    const size_t effectiveAlignment =
-        alignment == 0 ? defaultAlignment_ : alignment;
+    const size_t effectiveAlignment = alignment == 0 ? defaultAlignment_ : alignment;
     const size_t alignedOffset = AlignUp(offset_, effectiveAlignment);
     if (size > (std::numeric_limits<size_t>::max)() - alignedOffset) {
         return {};
@@ -95,21 +94,19 @@ size_t DynamicBuffer::AlignUp(size_t value, size_t alignment) {
 
 bool DynamicBuffer::CreateResource(size_t capacity) {
     const size_t alignedCapacity = AlignUp(capacity, defaultAlignment_);
-    if (alignedCapacity == 0 ||
-        alignedCapacity == (std::numeric_limits<size_t>::max)()) {
+    if (alignedCapacity == 0 || alignedCapacity == (std::numeric_limits<size_t>::max)()) {
         return false;
     }
     CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
     auto desc = CD3DX12_RESOURCE_DESC::Buffer(alignedCapacity);
     Microsoft::WRL::ComPtr<ID3D12Resource> newResource;
-    uint8_t *newMapped = nullptr;
+    uint8_t* newMapped = nullptr;
     if (!GpuResourceHelpers::CreateCommittedResourceChecked(
-            device_, &heap, D3D12_HEAP_FLAG_NONE, &desc,
-            D3D12_RESOURCE_STATE_GENERIC_READ, newResource.GetAddressOf())) {
+            device_, &heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ,
+            newResource.GetAddressOf())) {
         return false;
     }
-    if (!GpuResourceHelpers::MapResourceChecked(newResource.Get(),
-                                                &newMapped)) {
+    if (!GpuResourceHelpers::MapResourceChecked(newResource.Get(), &newMapped)) {
         return false;
     }
     UnmapResource();

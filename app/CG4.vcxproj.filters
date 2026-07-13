@@ -4,17 +4,11 @@
     <Filter Include="include">
       <UniqueIdentifier>{0feb36d4-ded9-b530-8a82-8ce6435f7e81}</UniqueIdentifier>
     </Filter>
-    <Filter Include="include\effects">
-      <UniqueIdentifier>{a2ca2b62-a086-943c-a049-0c7ccaa304d2}</UniqueIdentifier>
-    </Filter>
     <Filter Include="include\scene">
       <UniqueIdentifier>{8122cdb0-e911-eb3b-b656-1a359e6c02ce}</UniqueIdentifier>
     </Filter>
     <Filter Include="resources">
       <UniqueIdentifier>{c758b555-82ef-6e3e-80e5-993b9e55d93b}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="resources\ui">
-      <UniqueIdentifier>{003b3e55-154c-ff36-a53b-279728c2471c}</UniqueIdentifier>
     </Filter>
     <Filter Include="resources\models">
       <UniqueIdentifier>{30a8e72b-39ff-4ad4-8842-cb08f90bf7a3}</UniqueIdentifier>
@@ -33,21 +27,12 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\main.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\EvaluationScene.cpp">
-      <Filter>src\scene</Filter>
-    </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\ParticleDemoScene.cpp">
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\GameScene.cpp">
       <Filter>src\scene</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="$(MSBuildThisFileDirectory)include\effects\FireworkHitEffectPresets.h">
-      <Filter>include\effects</Filter>
-    </ClInclude>
-    <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\EvaluationScene.h">
-      <Filter>include\scene</Filter>
-    </ClInclude>
-    <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\ParticleDemoScene.h">
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\GameScene.h">
       <Filter>include\scene</Filter>
     </ClInclude>
   </ItemGroup>
@@ -60,9 +45,6 @@
     </None>
     <None Include="$(MSBuildThisFileDirectory)resources\models\human\white.png">
       <Filter>resources\models\human</Filter>
-    </None>
-    <None Include="$(MSBuildThisFileDirectory)resources\ui\space_particle_prompt.png">
-      <Filter>resources\ui</Filter>
     </None>
   </ItemGroup>
 </Project>

@@ -11,37 +11,37 @@ struct CpuTimingSample {
 };
 
 class CpuProfiler {
-  public:
+public:
     static constexpr uint32_t kMaxEvents = 128u;
 
     CpuProfiler();
     ~CpuProfiler();
 
     class ScopedEvent {
-      public:
-        ScopedEvent(CpuProfiler &profiler, const char *name);
+    public:
+        ScopedEvent(CpuProfiler& profiler, const char* name);
         ~ScopedEvent();
 
-        ScopedEvent(const ScopedEvent &) = delete;
-        ScopedEvent &operator=(const ScopedEvent &) = delete;
-        ScopedEvent(ScopedEvent &&) = delete;
-        ScopedEvent &operator=(ScopedEvent &&) = delete;
+        ScopedEvent(const ScopedEvent&) = delete;
+        ScopedEvent& operator=(const ScopedEvent&) = delete;
+        ScopedEvent(ScopedEvent&&) = delete;
+        ScopedEvent& operator=(ScopedEvent&&) = delete;
 
-      private:
-        CpuProfiler *profiler_ = nullptr;
+    private:
+        CpuProfiler* profiler_ = nullptr;
     };
 
     void BeginFrame();
-    void BeginEvent(const char *name);
+    void BeginEvent(const char* name);
     void EndEvent();
     void EndFrame();
     void SetEnabled(bool enabled);
     bool IsEnabled() const;
 
-    const std::array<CpuTimingSample, kMaxEvents> &GetLastSamples() const;
+    const std::array<CpuTimingSample, kMaxEvents>& GetLastSamples() const;
     uint32_t GetLastSampleCount() const;
 
-  private:
+private:
     struct OpenEvent;
     struct State;
 

@@ -5,8 +5,7 @@
 
 #include <array>
 
-RenderPassController::PassScope::PassScope(RenderPassController &controller,
-                                           RenderPass pass)
+RenderPassController::PassScope::PassScope(RenderPassController& controller, RenderPass pass)
     : controller_(&controller), previousPass_(controller.GetCurrentPass()),
       context_(controller.BeginPass(pass)) {}
 
@@ -16,8 +15,7 @@ RenderPassController::PassScope::~PassScope() {
     }
 }
 
-void RenderPassController::Initialize(DirectXCommon *dxCommon,
-                                      SrvManager *srvManager) {
+void RenderPassController::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager) {
     if (dxCommon == nullptr || srvManager == nullptr) {
         dxCommon_ = nullptr;
         srvManager_ = nullptr;
@@ -31,10 +29,9 @@ void RenderPassController::Initialize(DirectXCommon *dxCommon,
     context_.srv = srvManager_;
 }
 
-void RenderPassController::BeginFrame(const FrameTime &frameTime,
-                                      float deltaTime, uint32_t width,
+void RenderPassController::BeginFrame(const FrameTime& frameTime, float deltaTime, uint32_t width,
                                       uint32_t height) {
-    const Camera *camera = context_.camera;
+    const Camera* camera = context_.camera;
     context_ = {};
     context_.dxCommon = dxCommon_;
     context_.srv = srvManager_;
@@ -51,19 +48,20 @@ void RenderPassController::BeginFrame(const FrameTime &frameTime,
     }
 }
 
-const RenderContext &RenderPassController::BeginPass(RenderPass pass) {
+const RenderContext& RenderPassController::BeginPass(RenderPass pass) {
     context_.pass = pass;
     return context_;
 }
 
-RenderPassController::PassScope RenderPassController::ScopedPass(
-    RenderPass pass) {
+RenderPassController::PassScope RenderPassController::ScopedPass(RenderPass pass) {
     return PassScope(*this, pass);
 }
 
-void RenderPassController::EndPass() { context_.pass = RenderPass::None; }
+void RenderPassController::EndPass() {
+    context_.pass = RenderPass::None;
+}
 
-void RenderPassController::SetCamera(const Camera *camera) {
+void RenderPassController::SetCamera(const Camera* camera) {
     context_.camera = camera;
 }
 
@@ -83,8 +81,8 @@ std::string_view RenderPassController::GetPassName(RenderPass pass) {
         {RenderPass::UI, "UI"},
         {RenderPass::BackBuffer, "BackBuffer"},
     }};
-    const auto found = std::find_if(
-        kNames.begin(), kNames.end(),
-        [pass](const RenderPassNameEntry &entry) { return entry.pass == pass; });
+    const auto found =
+        std::find_if(kNames.begin(), kNames.end(),
+                     [pass](const RenderPassNameEntry& entry) { return entry.pass == pass; });
     return found != kNames.end() ? found->name : std::string_view{"None"};
 }

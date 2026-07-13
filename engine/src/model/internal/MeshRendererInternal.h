@@ -9,29 +9,24 @@
 #include <wrl.h>
 
 struct MeshRenderer::InstancedPipelineSet {
-    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
-               MeshRenderer::kPipelineVariantCount>
+    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>, MeshRenderer::kPipelineVariantCount>
         pipelineStates;
-    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
-               MeshRenderer::kPipelineVariantCount>
+    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>, MeshRenderer::kPipelineVariantCount>
         shadowPipelineStates;
-    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
-               MeshRenderer::kPipelineVariantCount>
+    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>, MeshRenderer::kPipelineVariantCount>
         opaqueShadowPipelineStates;
 };
 
 struct MeshRenderer::State : RendererShadowState {
-    DirectXCommon *dxCommon = nullptr;
-    SrvManager *srvManager = nullptr;
-    TextureManager *textureManager = nullptr;
+    DirectXCommon* dxCommon = nullptr;
+    SrvManager* srvManager = nullptr;
+    TextureManager* textureManager = nullptr;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> shadowRootSignature;
-    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
-               MeshRenderer::kPipelineVariantCount>
+    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>, MeshRenderer::kPipelineVariantCount>
         pipelineStates;
-    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
-               MeshRenderer::kPipelineVariantCount>
+    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>, MeshRenderer::kPipelineVariantCount>
         instancedPipelineStates;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> shadowPSO;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> instancedShadowPSO;
@@ -65,9 +60,8 @@ struct MeshRenderer::State : RendererShadowState {
     bool materialReflectionsEnabled = true;
     DirectX::XMFLOAT4 customSceneParams0{1.0f, 0.0f, 0.0f, 0.0f};
     DirectX::XMFLOAT4 customSceneParams1{0.0f, 1.0f, 0.24f, 0.0f};
-    DirectX::XMFLOAT4X4 occlusionViewProjection = {
-        1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+    DirectX::XMFLOAT4X4 occlusionViewProjection = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                                                   0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
     DirectX::XMFLOAT4 occlusionParams{0.0f, 0.0f, 0.0f, 0.006f};
     D3D12_GPU_DESCRIPTOR_HANDLE occlusionPyramidGpuHandle{};
     bool occlusionPyramidEnabled = false;

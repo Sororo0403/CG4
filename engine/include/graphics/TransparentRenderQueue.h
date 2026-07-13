@@ -11,7 +11,7 @@ class Camera;
 /// 半透明描画を奥から手前へ並べて実行するためのキュー。
 /// </summary>
 class TransparentRenderQueue {
-  public:
+public:
     using DrawCallback = std::function<void()>;
 
     /// <summary>
@@ -27,18 +27,21 @@ class TransparentRenderQueue {
     /// <summary>
     /// ワールド座標とカメラ位置から距離キーを計算して描画を登録する。
     /// </summary>
-    void Submit(const DirectX::XMFLOAT3 &worldPosition, const Camera &camera,
-                DrawCallback draw);
+    void Submit(const DirectX::XMFLOAT3& worldPosition, const Camera& camera, DrawCallback draw);
 
     /// <summary>
     /// 登録された半透明描画を奥から手前の順で実行する。
     /// </summary>
     void Flush();
 
-    bool Empty() const { return items_.empty(); }
-    size_t Size() const { return items_.size(); }
+    bool Empty() const {
+        return items_.empty();
+    }
+    size_t Size() const {
+        return items_.size();
+    }
 
-  private:
+private:
     struct Item {
         float distanceSquared = 0.0f;
         uint64_t sequence = 0;

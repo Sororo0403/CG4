@@ -6,8 +6,7 @@
 #include <thread>
 #include <utility>
 
-template <class Result>
-class ThreadedTask {
+template <class Result> class ThreadedTask {
 public:
     ThreadedTask() = default;
     ThreadedTask(std::future<Result> future, std::thread worker)
@@ -18,10 +17,9 @@ public:
     ThreadedTask(ThreadedTask&&) noexcept = default;
     ThreadedTask& operator=(ThreadedTask&&) noexcept = default;
 
-    template <class Callable>
-    static ThreadedTask Start(Callable&& callable) {
-        auto packagedTask = std::make_shared<std::packaged_task<Result()>>(
-            std::forward<Callable>(callable));
+    template <class Callable> static ThreadedTask Start(Callable&& callable) {
+        auto packagedTask =
+            std::make_shared<std::packaged_task<Result()>>(std::forward<Callable>(callable));
         std::future<Result> future = packagedTask->get_future();
         std::thread worker([packagedTask]() { (*packagedTask)(); });
         return ThreadedTask(std::move(future), std::move(worker));

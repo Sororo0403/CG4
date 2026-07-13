@@ -11,15 +11,13 @@ struct PerObjectConstBufferData {
 };
 
 inline PerObjectConstBufferData MakePerObjectConstants(
-    const DirectX::XMMATRIX &wvp, const DirectX::XMMATRIX &world,
-    const DirectX::XMMATRIX &worldInverseTranspose) {
+    const DirectX::XMMATRIX& wvp, const DirectX::XMMATRIX& world,
+    const DirectX::XMMATRIX& worldInverseTranspose) {
     PerObjectConstBufferData data{};
     DirectX::XMStoreFloat4x4(&data.matWVP, DirectX::XMMatrixTranspose(wvp));
-    DirectX::XMStoreFloat4x4(&data.matWorld,
-                             DirectX::XMMatrixTranspose(world));
-    DirectX::XMStoreFloat4x4(
-        &data.matWorldInverseTranspose,
-        DirectX::XMMatrixTranspose(worldInverseTranspose));
+    DirectX::XMStoreFloat4x4(&data.matWorld, DirectX::XMMatrixTranspose(world));
+    DirectX::XMStoreFloat4x4(&data.matWorldInverseTranspose,
+                             DirectX::XMMatrixTranspose(worldInverseTranspose));
     return data;
 }
 

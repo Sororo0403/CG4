@@ -5,23 +5,28 @@
 namespace DirectXCommonInternal {
 
 class ScopedWin32Handle {
-  public:
+public:
     ScopedWin32Handle() = default;
     explicit ScopedWin32Handle(HANDLE handle) noexcept : handle_(handle) {}
-    ScopedWin32Handle(const ScopedWin32Handle &) = delete;
-    ScopedWin32Handle &operator=(const ScopedWin32Handle &) = delete;
-    ScopedWin32Handle(ScopedWin32Handle &&other) noexcept
-        : handle_(other.Release()) {}
-    ScopedWin32Handle &operator=(ScopedWin32Handle &&other) noexcept {
+    ScopedWin32Handle(const ScopedWin32Handle&) = delete;
+    ScopedWin32Handle& operator=(const ScopedWin32Handle&) = delete;
+    ScopedWin32Handle(ScopedWin32Handle&& other) noexcept : handle_(other.Release()) {}
+    ScopedWin32Handle& operator=(ScopedWin32Handle&& other) noexcept {
         if (this != &other) {
             Reset(other.Release());
         }
         return *this;
     }
-    ~ScopedWin32Handle() { Reset(); }
+    ~ScopedWin32Handle() {
+        Reset();
+    }
 
-    HANDLE Get() const noexcept { return handle_; }
-    explicit operator bool() const noexcept { return handle_ != nullptr; }
+    HANDLE Get() const noexcept {
+        return handle_;
+    }
+    explicit operator bool() const noexcept {
+        return handle_ != nullptr;
+    }
 
     void Reset(HANDLE handle = nullptr) noexcept {
         if (handle_ != nullptr) {
@@ -36,11 +41,11 @@ class ScopedWin32Handle {
         return handle;
     }
 
-  private:
+private:
     HANDLE handle_ = nullptr;
 };
 
-inline bool LogIfFailed(HRESULT hr, const char *message) {
+inline bool LogIfFailed(HRESULT hr, const char* message) {
     if (SUCCEEDED(hr)) {
         return false;
     }

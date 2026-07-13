@@ -1,20 +1,13 @@
-#include "internal/SoundManagerInternal.h"
 #include "core/MathUtils.h"
 #include "core/Numeric.h"
+#include "internal/SoundManagerInternal.h"
 #include "sound/SoundManager.h"
 
-#include <Objbase.h>
 #include <algorithm>
 #include <cmath>
-#include <cstring>
-#include <cwctype>
-#include <filesystem>
+#include <exception>
 #include <limits>
-#include <mfapi.h>
-#include <mfidl.h>
-#include <mfreadwrite.h>
-#include <sstream>
-#include <utility>
+#include <vector>
 
 using namespace DirectX;
 
@@ -35,11 +28,9 @@ uint32_t SoundManager::Play3D(uint32_t soundId, const DirectX::XMFLOAT3& sourceP
         return handle;
     }
 
-    auto it = std::find_if(state_->playingVoices.begin(),
-                           state_->playingVoices.end(),
-                           [handle](const PlayingVoice &playingVoice) {
-                               return playingVoice.handle == handle;
-                           });
+    auto it = std::find_if(
+        state_->playingVoices.begin(), state_->playingVoices.end(),
+        [handle](const PlayingVoice& playingVoice) { return playingVoice.handle == handle; });
     if (it != state_->playingVoices.end()) {
         it->is3D = true;
         it->position = sourcePosition;
@@ -64,9 +55,8 @@ void SoundManager::SetListener(const DirectX::XMFLOAT3& position, const DirectX:
 }
 
 void SoundManager::SetVoicePosition(uint32_t voiceHandle, const DirectX::XMFLOAT3& sourcePosition) {
-    auto it = std::find_if(state_->playingVoices.begin(),
-                           state_->playingVoices.end(),
-                           [voiceHandle](const PlayingVoice &playingVoice) {
+    auto it = std::find_if(state_->playingVoices.begin(), state_->playingVoices.end(),
+                           [voiceHandle](const PlayingVoice& playingVoice) {
                                return playingVoice.handle == voiceHandle;
                            });
     if (it != state_->playingVoices.end()) {
@@ -77,19 +67,15 @@ void SoundManager::SetVoicePosition(uint32_t voiceHandle, const DirectX::XMFLOAT
 }
 
 void SoundManager::SetVoice3DRange(uint32_t voiceHandle, float minDistance, float maxDistance) {
-    auto it = std::find_if(state_->playingVoices.begin(),
-                           state_->playingVoices.end(),
-                           [voiceHandle](const PlayingVoice &playingVoice) {
+    auto it = std::find_if(state_->playingVoices.begin(), state_->playingVoices.end(),
+                           [voiceHandle](const PlayingVoice& playingVoice) {
                                return playingVoice.handle == voiceHandle;
                            });
     if (it != state_->playingVoices.end()) {
-        it->minDistance =
-            std::isfinite(minDistance) ? (std::max)(minDistance, 0.001f)
-                                       : 0.001f;
-        it->maxDistance =
-            std::isfinite(maxDistance)
-                ? (std::max)(maxDistance, it->minDistance + 0.001f)
-                : it->minDistance + 0.001f;
+        it->minDistance = std::isfinite(minDistance) ? (std::max)(minDistance, 0.001f) : 0.001f;
+        it->maxDistance = std::isfinite(maxDistance)
+                              ? (std::max)(maxDistance, it->minDistance + 0.001f)
+                              : it->minDistance + 0.001f;
         Apply3D(*it);
     }
 }
@@ -101,17 +87,14 @@ bool SoundManager::ApplyVoiceLowPass(PlayingVoice& playingVoice, float cutoffHz)
 
     XAUDIO2_VOICE_DETAILS sourceDetails{};
     playingVoice.voice->GetVoiceDetails(&sourceDetails);
-    const float sampleRate =
-        sourceDetails.InputSampleRate > 0u
-            ? static_cast<float>(sourceDetails.InputSampleRate)
-            : 48000.0f;
+    const float sampleRate = sourceDetails.InputSampleRate > 0u
+                                 ? static_cast<float>(sourceDetails.InputSampleRate)
+                                 : 48000.0f;
     const float maxStableCutoff = sampleRate * 0.49f;
     const float safeCutoff =
-        std::clamp(std::isfinite(cutoffHz) ? cutoffHz : maxStableCutoff,
-                   80.0f, maxStableCutoff);
-    const float normalizedFrequency =
-        std::clamp(2.0f * std::sin(kPi * safeCutoff / sampleRate), 0.001f,
-                   XAUDIO2_MAX_FILTER_FREQUENCY);
+        std::clamp(std::isfinite(cutoffHz) ? cutoffHz : maxStableCutoff, 80.0f, maxStableCutoff);
+    const float normalizedFrequency = std::clamp(2.0f * std::sin(kPi * safeCutoff / sampleRate),
+                                                 0.001f, XAUDIO2_MAX_FILTER_FREQUENCY);
 
     XAUDIO2_FILTER_PARAMETERS filter{};
     filter.Type = LowPassFilter;
@@ -125,23 +108,20 @@ bool SoundManager::ApplyVoiceLowPass(PlayingVoice& playingVoice, float cutoffHz)
 }
 
 void SoundManager::SetVoiceLowPassCutoff(uint32_t voiceHandle, float cutoffHz) {
-    auto it = std::find_if(state_->playingVoices.begin(),
-                           state_->playingVoices.end(),
-                           [voiceHandle](const PlayingVoice &playingVoice) {
+    auto it = std::find_if(state_->playingVoices.begin(), state_->playingVoices.end(),
+                           [voiceHandle](const PlayingVoice& playingVoice) {
                                return playingVoice.handle == voiceHandle;
                            });
-    if (it != state_->playingVoices.end() &&
-        ApplyVoiceLowPass(*it, cutoffHz)) {
+    if (it != state_->playingVoices.end() && ApplyVoiceLowPass(*it, cutoffHz)) {
         it->manualLowPassCutoff = true;
     }
 }
 
 float SoundManager::GetVoiceLowPassCutoff(uint32_t voiceHandle) const {
-    const auto it = std::find_if(
-        state_->playingVoices.begin(), state_->playingVoices.end(),
-        [voiceHandle](const PlayingVoice &playingVoice) {
-            return playingVoice.handle == voiceHandle;
-        });
+    const auto it = std::find_if(state_->playingVoices.begin(), state_->playingVoices.end(),
+                                 [voiceHandle](const PlayingVoice& playingVoice) {
+                                     return playingVoice.handle == voiceHandle;
+                                 });
     return it != state_->playingVoices.end() ? it->lowPassCutoffHz : 0.0f;
 }
 
@@ -167,11 +147,9 @@ void SoundManager::Apply3D(PlayingVoice& playingVoice) {
     float volume = 1.0f;
     if (distance > minDistance) {
         const float excessDistance = distance - minDistance;
-        const float distanceRolloff =
-            minDistance / (minDistance + excessDistance * 0.18f);
+        const float distanceRolloff = minDistance / (minDistance + excessDistance * 0.18f);
         const float rangeFade =
-            1.0f - MathUtils::SmoothStep(maxDistance * 0.72f, maxDistance,
-                                          distance);
+            1.0f - MathUtils::SmoothStep(maxDistance * 0.72f, maxDistance, distance);
         volume = distanceRolloff * rangeFade;
     }
     volume = Numeric::ClampFinite(volume, 0.0f, 1.0f, 0.0f);
@@ -179,8 +157,7 @@ void SoundManager::Apply3D(PlayingVoice& playingVoice) {
     if (!playingVoice.manualLowPassCutoff) {
         const float lowPassAmount =
             MathUtils::SmoothStep(maxDistance * 0.35f, maxDistance, distance);
-        const float lowPassCutoffHz =
-            MathUtils::LerpClamped(24000.0f, 1350.0f, lowPassAmount);
+        const float lowPassCutoffHz = MathUtils::LerpClamped(24000.0f, 1350.0f, lowPassAmount);
         ApplyVoiceLowPass(playingVoice, lowPassCutoffHz);
     }
 
@@ -198,7 +175,12 @@ void SoundManager::Apply3D(PlayingVoice& playingVoice) {
         static_cast<size_t>(sourceChannels) * static_cast<size_t>(destinationChannels);
     std::vector<float>& matrix = playingVoice.outputMatrix;
     if (matrix.size() != matrixSize) {
-        matrix.resize(matrixSize);
+        try {
+            matrix.resize(matrixSize);
+        } catch (const std::exception&) {
+            matrix.clear();
+            return;
+        }
     }
     std::fill(matrix.begin(), matrix.end(), volume);
 

@@ -11,14 +11,16 @@
 struct MaterialManager::MaterialResource {
     struct FrameResource {
         FrameResource() = default;
-        ~FrameResource() { Reset(); }
-        FrameResource(const FrameResource &) = delete;
-        FrameResource &operator=(const FrameResource &) = delete;
-        FrameResource(FrameResource &&other) noexcept
+        ~FrameResource() {
+            Reset();
+        }
+        FrameResource(const FrameResource&) = delete;
+        FrameResource& operator=(const FrameResource&) = delete;
+        FrameResource(FrameResource&& other) noexcept
             : resource(std::move(other.resource)), mappedData(other.mappedData) {
             other.mappedData = nullptr;
         }
-        FrameResource &operator=(FrameResource &&other) noexcept {
+        FrameResource& operator=(FrameResource&& other) noexcept {
             if (this != &other) {
                 Reset();
                 resource = std::move(other.resource);
@@ -37,18 +39,19 @@ struct MaterialManager::MaterialResource {
         }
 
         Microsoft::WRL::ComPtr<ID3D12Resource> resource;
-        uint8_t *mappedData = nullptr;
+        uint8_t* mappedData = nullptr;
     };
 
     MaterialResource() = default;
-    ~MaterialResource() { Reset(); }
-    MaterialResource(const MaterialResource &) = delete;
-    MaterialResource &operator=(const MaterialResource &) = delete;
-    MaterialResource(MaterialResource &&other) noexcept
-        : material(other.material),
-          frameResources(std::move(other.frameResources)),
+    ~MaterialResource() {
+        Reset();
+    }
+    MaterialResource(const MaterialResource&) = delete;
+    MaterialResource& operator=(const MaterialResource&) = delete;
+    MaterialResource(MaterialResource&& other) noexcept
+        : material(other.material), frameResources(std::move(other.frameResources)),
           dirtyFrames(std::move(other.dirtyFrames)) {}
-    MaterialResource &operator=(MaterialResource &&other) noexcept {
+    MaterialResource& operator=(MaterialResource&& other) noexcept {
         if (this != &other) {
             Reset();
             material = other.material;
@@ -59,7 +62,7 @@ struct MaterialManager::MaterialResource {
     }
 
     void Reset() {
-        for (FrameResource &frame : frameResources) {
+        for (FrameResource& frame : frameResources) {
             frame.Reset();
         }
         frameResources.clear();

@@ -1,24 +1,27 @@
 #include "sprite/SpriteManager.h"
+
 #include "core/Numeric.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "sprite/Sprite.h"
 #include "texture/TextureManager.h"
+
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <limits>
+#include <new>
 #include <numeric>
 
 namespace {
 using Numeric::FiniteOr;
 
-Sprite &FallbackSprite() {
+Sprite& FallbackSprite() {
     static Sprite fallback{};
     return fallback;
 }
 
-bool SpriteSortCacheMatches(const std::vector<Sprite> &sprites,
-                            const std::vector<float> &zOrders) {
+bool SpriteSortCacheMatches(const std::vector<Sprite>& sprites, const std::vector<float>& zOrders) {
     if (sprites.size() != zOrders.size()) {
         return false;
     }
@@ -31,17 +34,15 @@ bool SpriteSortCacheMatches(const std::vector<Sprite> &sprites,
 }
 } // namespace
 
-void SpriteManager::Initialize(DirectXCommon *dxCommon,
-                               TextureManager *textureManager,
-                               SrvManager *srvManager, int width, int height) {
+void SpriteManager::Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
+                               SrvManager* srvManager, int width, int height) {
     if (!dxCommon || !textureManager || !srvManager) {
         Finalize();
         return;
     }
 
     Finalize();
-    spriteRenderer_.Initialize(dxCommon, textureManager, srvManager, width,
-                               height);
+    spriteRenderer_.Initialize(dxCommon, textureManager, srvManager, width, height);
     dxCommon_ = dxCommon;
     textureManager_ = textureManager;
     sprites_.clear();
@@ -68,25 +69,33 @@ void SpriteManager::Draw(uint32_t id) {
 }
 
 void SpriteManager::DrawAllSorted(bool backToFront) {
-    const bool needsSort =
-        !sortedCacheValid_ || sortedBackToFront_ != backToFront ||
-        !SpriteSortCacheMatches(sprites_, sortedZOrders_);
+    const bool needsSort = !sortedCacheValid_ || sortedBackToFront_ != backToFront ||
+                           !SpriteSortCacheMatches(sprites_, sortedZOrders_);
     if (needsSort) {
-        sortedIndices_.resize(sprites_.size());
-        sortedZOrders_.resize(sprites_.size());
+        try {
+            sortedIndices_.resize(sprites_.size());
+            sortedZOrders_.resize(sprites_.size());
+        } catch (const std::exception&) {
+            sortedIndices_.clear();
+            sortedZOrders_.clear();
+            sortedCacheValid_ = false;
+            for (const Sprite& sprite : sprites_) {
+                spriteRenderer_.Draw(sprite);
+            }
+            return;
+        }
         std::iota(sortedIndices_.begin(), sortedIndices_.end(), size_t{0});
         for (size_t index = 0; index < sprites_.size(); ++index) {
             sortedZOrders_[index] = FiniteOr(sprites_[index].zOrder, 0.0f);
         }
-        std::sort(sortedIndices_.begin(), sortedIndices_.end(),
-                  [&](size_t lhs, size_t rhs) {
-                      const float lhsZ = sortedZOrders_[lhs];
-                      const float rhsZ = sortedZOrders_[rhs];
-                      if (lhsZ == rhsZ) {
-                          return lhs < rhs;
-                      }
-                      return backToFront ? lhsZ > rhsZ : lhsZ < rhsZ;
-                  });
+        std::sort(sortedIndices_.begin(), sortedIndices_.end(), [&](size_t lhs, size_t rhs) {
+            const float lhsZ = sortedZOrders_[lhs];
+            const float rhsZ = sortedZOrders_[rhs];
+            if (lhsZ == rhsZ) {
+                return lhs < rhs;
+            }
+            return backToFront ? lhsZ > rhsZ : lhsZ < rhsZ;
+        });
         sortedBackToFront_ = backToFront;
         sortedCacheValid_ = true;
     }
@@ -96,16 +105,15 @@ void SpriteManager::DrawAllSorted(bool backToFront) {
     }
 }
 
-void SpriteManager::DrawSprite(const Sprite &sprite) {
+void SpriteManager::DrawSprite(const Sprite& sprite) {
     spriteRenderer_.Draw(sprite);
 }
 
-uint32_t SpriteManager::Create(const std::wstring &filePath) {
+uint32_t SpriteManager::Create(const std::wstring& filePath) {
     if (textureManager_ == nullptr) {
         return kInvalidResourceId;
     }
-    if (sprites_.size() >=
-        static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
+    if (sprites_.size() >= static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
         return kInvalidResourceId;
     }
 
@@ -123,24 +131,31 @@ uint32_t SpriteManager::Create(const std::wstring &filePath) {
     Sprite sprite{};
     sprite.textureId = texId;
     sprite.position = {0.0f, 0.0f};
-    sprite.size = {static_cast<float>(textureWidth),
-                   static_cast<float>(textureHeight)};
+    sprite.size = {static_cast<float>(textureWidth), static_cast<float>(textureHeight)};
     sprite.uvLeftTop = {0.0f, 0.0f};
     sprite.uvSize = {1.0f, 1.0f};
     sprite.color = {1.0f, 1.0f, 1.0f, 1.0f};
 
-    sprites_.push_back(sprite);
+    try {
+        sprites_.push_back(sprite);
+    } catch (const std::exception&) {
+        return kInvalidResourceId;
+    }
     sortedCacheValid_ = false;
     return static_cast<uint32_t>(sprites_.size() - 1);
 }
 
-void SpriteManager::BeginFrame() { spriteRenderer_.BeginFrame(); }
+void SpriteManager::BeginFrame() {
+    spriteRenderer_.BeginFrame();
+}
 
 void SpriteManager::PreDraw(bool backBufferTarget) {
     spriteRenderer_.PreDraw(backBufferTarget);
 }
 
-void SpriteManager::PostDraw() { spriteRenderer_.PostDraw(); }
+void SpriteManager::PostDraw() {
+    spriteRenderer_.PostDraw();
+}
 
 void SpriteManager::Resize(int width, int height) {
     spriteRenderer_.UpdateProjection(width, height);
@@ -150,14 +165,14 @@ bool SpriteManager::IsValidSpriteId(uint32_t id) const {
     return id < sprites_.size();
 }
 
-Sprite &SpriteManager::GetSprite(uint32_t id) {
+Sprite& SpriteManager::GetSprite(uint32_t id) {
     if (!IsValidSpriteId(id)) {
         return FallbackSprite();
     }
     return sprites_[id];
 }
 
-const Sprite &SpriteManager::GetSprite(uint32_t id) const {
+const Sprite& SpriteManager::GetSprite(uint32_t id) const {
     if (!IsValidSpriteId(id)) {
         return FallbackSprite();
     }

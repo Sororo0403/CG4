@@ -19,8 +19,7 @@ inline constexpr std::size_t kMaxBonesPerMesh = 1024u;
 inline constexpr std::size_t kMaxTotalVertices = 4194304u;
 inline constexpr std::size_t kMaxTotalFaces = 8388608u;
 inline constexpr std::size_t kMaxTotalBones = 4096u;
-inline constexpr std::size_t kMaxEmbeddedTextureBytes =
-    512ull * 1024ull * 1024ull;
+inline constexpr std::size_t kMaxEmbeddedTextureBytes = 512ull * 1024ull * 1024ull;
 inline constexpr std::size_t kMaxEmbeddedTexturePixels = 268435456u;
 
 } // namespace ModelLimits

@@ -1,11 +1,12 @@
 #pragma once
 #include <DirectXMath.h>
+#include <cstdint>
 
 /// <summary>
 /// ビュー行列と射影行列を管理する基本カメラ
 /// </summary>
 class Camera {
-  public:
+public:
     Camera();
 
     /// <summary>
@@ -18,11 +19,11 @@ class Camera {
     /// </summary>
     void UpdateMatrices();
 
-    void SetPosition(const DirectX::XMFLOAT3 &position);
+    void SetPosition(const DirectX::XMFLOAT3& position);
     /// <summary>
     /// Rotationを設定する
     /// </summary>
-    void SetRotation(const DirectX::XMFLOAT3 &rotation);
+    void SetRotation(const DirectX::XMFLOAT3& rotation);
     void SetAspect(float aspect);
     void SetPerspectiveFovDeg(float fovDeg);
     /// <summary>
@@ -32,22 +33,40 @@ class Camera {
     void SetOrthographicHeight(float height);
     void SetClipRange(float nearZ, float farZ);
 
-    const DirectX::XMMATRIX &GetView() const { return view_; }
-    const DirectX::XMMATRIX &GetProj() const { return proj_; }
-    const DirectX::XMMATRIX &GetViewProjection() const {
+    [[nodiscard]] const DirectX::XMMATRIX& GetView() const {
+        return view_;
+    }
+    [[nodiscard]] const DirectX::XMMATRIX& GetProj() const {
+        return proj_;
+    }
+    [[nodiscard]] const DirectX::XMMATRIX& GetViewProjection() const {
         return viewProjection_;
     }
 
-    const DirectX::XMFLOAT3 &GetPosition() const { return position_; }
-    const DirectX::XMFLOAT3 &GetRotation() const { return rotation_; }
-    float GetAspect() const { return aspect_; }
-    float GetFovY() const { return fovY_; }
-    float GetOrthographicHeight() const { return orthographicHeight_; }
-    float GetNearZ() const { return nearZ_; }
-    float GetFarZ() const { return farZ_; }
+    [[nodiscard]] const DirectX::XMFLOAT3& GetPosition() const {
+        return position_;
+    }
+    [[nodiscard]] const DirectX::XMFLOAT3& GetRotation() const {
+        return rotation_;
+    }
+    [[nodiscard]] float GetAspect() const {
+        return aspect_;
+    }
+    [[nodiscard]] float GetFovY() const {
+        return fovY_;
+    }
+    [[nodiscard]] float GetOrthographicHeight() const {
+        return orthographicHeight_;
+    }
+    [[nodiscard]] float GetNearZ() const {
+        return nearZ_;
+    }
+    [[nodiscard]] float GetFarZ() const {
+        return farZ_;
+    }
 
-  private:
-    enum class ProjectionMode {
+private:
+    enum class ProjectionMode : uint8_t {
         Perspective,
         Orthographic,
     };

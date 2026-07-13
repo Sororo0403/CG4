@@ -12,6 +12,5 @@ struct RenderTexture::State {
     UINT srvIndex = UINT_MAX;
     int width = 0;
     int height = 0;
-    D3D12_RESOURCE_STATES resourceState =
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    D3D12_RESOURCE_STATES resourceState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 };

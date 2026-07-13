@@ -7,15 +7,101 @@
 #include <array>
 
 #ifdef _DEBUG
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd,
-                                                             UINT msg,
-                                                             WPARAM wParam,
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam,
                                                              LPARAM lParam);
 #endif
 
 bool WinApp::cursorVisible_ = true;
 bool WinApp::requestedCursorVisible_ = true;
 HWND WinApp::cursorWindow_ = nullptr;
+
+LRESULT WinApp::HandleSetCursorMessage(HWND hwnd, WPARAM, LPARAM lParam, bool& handled) {
+    handled = true;
+    if (!requestedCursorVisible_ && LOWORD(lParam) == HTCLIENT && ShouldHideCursor(hwnd)) {
+        SetCursor(nullptr);
+        return TRUE;
+    }
+    SetCursor(LoadCursor(nullptr, IDC_ARROW));
+    return TRUE;
+}
+
+LRESULT WinApp::HandleActivateAppMessage(HWND, WPARAM wParam, LPARAM, bool& handled) {
+    if (wParam == FALSE) {
+        ApplyVisibleCursorState();
+    } else {
+        RestoreCursorForAppInteraction();
+    }
+    handled = false;
+    return 0;
+}
+
+LRESULT WinApp::HandleFocusMessage(HWND, WPARAM, LPARAM, bool& handled) {
+    RestoreCursorForAppInteraction();
+    handled = false;
+    return 0;
+}
+
+LRESULT WinApp::HandleKillFocusMessage(HWND, WPARAM, LPARAM, bool& handled) {
+    ApplyVisibleCursorState();
+    handled = false;
+    return 0;
+}
+
+LRESULT WinApp::HandleKeyDownMessage(HWND, WPARAM wParam, LPARAM, bool& handled) {
+    if ((wParam == VK_LWIN || wParam == VK_RWIN || wParam == VK_MENU || wParam == VK_APPS) &&
+        requestedCursorVisible_) {
+        ApplyVisibleCursorState();
+    }
+    handled = false;
+    return 0;
+}
+
+LRESULT WinApp::HandleSysCommandMessage(HWND, WPARAM wParam, LPARAM, bool& handled) {
+    if ((wParam & 0xFFF0) == SC_MINIMIZE || (wParam & 0xFFF0) == SC_TASKLIST) {
+        ApplyVisibleCursorState();
+    }
+    handled = false;
+    return 0;
+}
+
+LRESULT WinApp::HandleDestroyMessage(HWND hwnd, WPARAM, LPARAM, bool& handled) {
+    handled = true;
+    if (cursorWindow_ == hwnd) {
+        requestedCursorVisible_ = true;
+        ApplyVisibleCursorState();
+        cursorWindow_ = nullptr;
+    }
+    PostQuitMessage(0);
+    return 0;
+}
+
+bool WinApp::TryHandleWindowMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+                                    LRESULT& result) {
+    struct WindowMessageHandler {
+        UINT message = 0u;
+        LRESULT (*handler)(HWND hwnd, WPARAM wParam, LPARAM lParam, bool& handled) = nullptr;
+    };
+    static constexpr std::array<WindowMessageHandler, 8> kHandlers{{
+        {WM_SETCURSOR, HandleSetCursorMessage},
+        {WM_ACTIVATEAPP, HandleActivateAppMessage},
+        {WM_SETFOCUS, HandleFocusMessage},
+        {WM_KILLFOCUS, HandleKillFocusMessage},
+        {WM_KEYDOWN, HandleKeyDownMessage},
+        {WM_SYSKEYDOWN, HandleKeyDownMessage},
+        {WM_SYSCOMMAND, HandleSysCommandMessage},
+        {WM_DESTROY, HandleDestroyMessage},
+    }};
+
+    const auto it = std::ranges::find_if(
+        kHandlers, [msg](const WindowMessageHandler& entry) { return entry.message == msg; });
+    if (it == kHandlers.end()) {
+        return false;
+    }
+
+    bool handled = false;
+    result = it->handler(hwnd, wParam, lParam, handled);
+    return handled;
+}
 
 WinApp::~WinApp() {
     if (cursorWindow_ == hwnd_) {
@@ -37,111 +123,23 @@ WinApp::~WinApp() {
     fullscreen_ = false;
 }
 
-LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
-                                    LPARAM lParam) {
+LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 #ifdef _DEBUG
     if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam)) {
         return true;
     }
 #endif
 
-    struct WindowMessageHandler {
-        UINT message = 0u;
-        LRESULT (*handler)(HWND hwnd, WPARAM wParam, LPARAM lParam, bool &handled) = nullptr;
-    };
-    static constexpr std::array<WindowMessageHandler, 8> kHandlers{{
-        {WM_SETCURSOR,
-         [](HWND hwnd, WPARAM, LPARAM lParam, bool &handled) -> LRESULT {
-             handled = true;
-             if (!requestedCursorVisible_ && LOWORD(lParam) == HTCLIENT &&
-                 ShouldHideCursor(hwnd)) {
-                 SetCursor(nullptr);
-                 return TRUE;
-             }
-             SetCursor(LoadCursor(nullptr, IDC_ARROW));
-             return TRUE;
-         }},
-        {WM_ACTIVATEAPP,
-         [](HWND, WPARAM wParam, LPARAM, bool &handled) -> LRESULT {
-             if (wParam == FALSE) {
-                 ApplyVisibleCursorState();
-             } else {
-                 RestoreCursorForAppInteraction();
-             }
-             handled = false;
-             return 0;
-         }},
-        {WM_SETFOCUS,
-         [](HWND, WPARAM, LPARAM, bool &handled) -> LRESULT {
-             RestoreCursorForAppInteraction();
-             handled = false;
-             return 0;
-         }},
-        {WM_KILLFOCUS,
-         [](HWND, WPARAM, LPARAM, bool &handled) -> LRESULT {
-             ApplyVisibleCursorState();
-             handled = false;
-             return 0;
-         }},
-        {WM_KEYDOWN,
-         [](HWND, WPARAM wParam, LPARAM, bool &handled) -> LRESULT {
-             if ((wParam == VK_LWIN || wParam == VK_RWIN || wParam == VK_MENU ||
-                  wParam == VK_APPS) &&
-                 requestedCursorVisible_) {
-                 ApplyVisibleCursorState();
-             }
-             handled = false;
-             return 0;
-         }},
-        {WM_SYSKEYDOWN,
-         [](HWND, WPARAM wParam, LPARAM, bool &handled) -> LRESULT {
-             if ((wParam == VK_LWIN || wParam == VK_RWIN || wParam == VK_MENU ||
-                  wParam == VK_APPS) &&
-                 requestedCursorVisible_) {
-                 ApplyVisibleCursorState();
-             }
-             handled = false;
-             return 0;
-         }},
-        {WM_SYSCOMMAND,
-         [](HWND, WPARAM wParam, LPARAM, bool &handled) -> LRESULT {
-             if ((wParam & 0xFFF0) == SC_MINIMIZE ||
-                 (wParam & 0xFFF0) == SC_TASKLIST) {
-                 ApplyVisibleCursorState();
-             }
-             handled = false;
-             return 0;
-         }},
-        {WM_DESTROY,
-         [](HWND hwnd, WPARAM, LPARAM, bool &handled) -> LRESULT {
-             handled = true;
-             if (cursorWindow_ == hwnd) {
-                 requestedCursorVisible_ = true;
-                 ApplyVisibleCursorState();
-                 cursorWindow_ = nullptr;
-             }
-             PostQuitMessage(0);
-             return 0;
-         }},
-    }};
-
-    const auto it = std::find_if(
-        kHandlers.begin(), kHandlers.end(),
-        [msg](const WindowMessageHandler &entry) { return entry.message == msg; });
-    if (it != kHandlers.end()) {
-        bool handled = false;
-        const LRESULT result = it->handler(hwnd, wParam, lParam, handled);
-        if (handled) {
-            return result;
-        }
+    LRESULT result = 0;
+    if (TryHandleWindowMessage(hwnd, msg, wParam, lParam, result)) {
+        return result;
     }
 
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
-void WinApp::Initialize(HINSTANCE hInstance, int nCmdShow, int width,
-                        int height, const std::wstring &title,
-                        bool fullscreen) {
+void WinApp::Initialize(HINSTANCE hInstance, int nCmdShow, int width, int height,
+                        const std::wstring& title, bool fullscreen) {
     hwnd_ = nullptr;
     cursorWindow_ = nullptr;
     width_ = 0;
@@ -176,23 +174,14 @@ void WinApp::Initialize(HINSTANCE hInstance, int nCmdShow, int width,
         const int restoredH = restoredRect.bottom - restoredRect.top;
         MONITORINFO monitorInfo{};
         monitorInfo.cbSize = sizeof(monitorInfo);
-        const HMONITOR monitor =
-            MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
+        const HMONITOR monitor = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
         if (GetMonitorInfo(monitor, &monitorInfo)) {
-            const RECT &monitorRect = monitorInfo.rcMonitor;
+            const RECT& monitorRect = monitorInfo.rcMonitor;
             windowedRect_ = {
-                monitorRect.left + (monitorRect.right - monitorRect.left -
-                                    restoredW) /
-                                       2,
-                monitorRect.top + (monitorRect.bottom - monitorRect.top -
-                                   restoredH) /
-                                      2,
-                monitorRect.left + (monitorRect.right - monitorRect.left +
-                                    restoredW) /
-                                       2,
-                monitorRect.top + (monitorRect.bottom - monitorRect.top +
-                                   restoredH) /
-                                      2,
+                monitorRect.left + (monitorRect.right - monitorRect.left - restoredW) / 2,
+                monitorRect.top + (monitorRect.bottom - monitorRect.top - restoredH) / 2,
+                monitorRect.left + (monitorRect.right - monitorRect.left + restoredW) / 2,
+                monitorRect.top + (monitorRect.bottom - monitorRect.top + restoredH) / 2,
             };
             windowX = monitorRect.left;
             windowY = monitorRect.top;
@@ -208,10 +197,9 @@ void WinApp::Initialize(HINSTANCE hInstance, int nCmdShow, int width,
         windowHeight = windowRect.bottom - windowRect.top;
         MONITORINFO monitorInfo{};
         monitorInfo.cbSize = sizeof(monitorInfo);
-        const HMONITOR monitor =
-            MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
+        const HMONITOR monitor = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
         if (GetMonitorInfo(monitor, &monitorInfo)) {
-            const RECT &workRect = monitorInfo.rcWork;
+            const RECT& workRect = monitorInfo.rcWork;
             const int workWidth = workRect.right - workRect.left;
             const int workHeight = workRect.bottom - workRect.top;
             windowX = workRect.left + (workWidth - windowWidth) / 2;
@@ -223,15 +211,13 @@ void WinApp::Initialize(HINSTANCE hInstance, int nCmdShow, int width,
                 windowY = workRect.top;
             }
         }
-        windowedRect_ = {windowX, windowY, windowX + windowWidth,
-                         windowY + windowHeight};
+        windowedRect_ = {windowX, windowY, windowX + windowWidth, windowY + windowHeight};
         fullscreen_ = false;
     }
     windowedStyle_ = WS_OVERLAPPEDWINDOW;
 
-    hwnd_ = CreateWindowEx(exStyle, kClassName, title.c_str(), style, windowX,
-                           windowY, windowWidth, windowHeight, nullptr,
-                           nullptr, hInstance, nullptr);
+    hwnd_ = CreateWindowEx(exStyle, kClassName, title.c_str(), style, windowX, windowY, windowWidth,
+                           windowHeight, nullptr, nullptr, hInstance, nullptr);
 
     if (!hwnd_) {
         OutputDebugStringA("WinApp: CreateWindowEx failed\n");
@@ -243,7 +229,7 @@ void WinApp::Initialize(HINSTANCE hInstance, int nCmdShow, int width,
     UpdateClientSize();
 }
 
-bool WinApp::ProcessMessage() {
+bool WinApp::ProcessMessage() const {
     if (hwnd_ == nullptr) {
         return false;
     }
@@ -271,7 +257,7 @@ void WinApp::RequestClose() {
     }
 }
 
-void WinApp::SetCursorVisible(bool visible) {
+void WinApp::SetCursorVisible(bool visible) const {
     requestedCursorVisible_ = visible;
     ApplyRequestedCursorState(hwnd_);
 }
@@ -295,11 +281,10 @@ void WinApp::SetFullscreen(bool fullscreen) {
             return;
         }
 
-        const RECT &monitorRect = monitorInfo.rcMonitor;
+        const RECT& monitorRect = monitorInfo.rcMonitor;
         SetWindowLongPtr(hwnd_, GWL_STYLE, WS_POPUP);
         SetWindowPos(hwnd_, HWND_TOP, monitorRect.left, monitorRect.top,
-                     monitorRect.right - monitorRect.left,
-                     monitorRect.bottom - monitorRect.top,
+                     monitorRect.right - monitorRect.left, monitorRect.bottom - monitorRect.top,
                      SWP_FRAMECHANGED | SWP_SHOWWINDOW);
         fullscreen_ = true;
     } else {
@@ -318,8 +303,7 @@ void WinApp::ApplyHiddenCursorState(HWND hwnd, bool lockToClient) {
     CURSORINFO cursorInfo{};
     cursorInfo.cbSize = sizeof(cursorInfo);
     const bool osCursorVisible =
-        GetCursorInfo(&cursorInfo) &&
-        (cursorInfo.flags & CURSOR_SHOWING) == CURSOR_SHOWING;
+        GetCursorInfo(&cursorInfo) && (cursorInfo.flags & CURSOR_SHOWING) == CURSOR_SHOWING;
     const bool shouldUpdateShowCount = cursorVisible_ || osCursorVisible;
 
     cursorVisible_ = false;
@@ -392,7 +376,9 @@ void WinApp::CenterCursorInClient(HWND hwnd) {
     SetCursorPos(center.x, center.y);
 }
 
-void WinApp::ReleaseCursorLock() { ClipCursor(nullptr); }
+void WinApp::ReleaseCursorLock() {
+    ClipCursor(nullptr);
+}
 
 bool WinApp::ShouldLockHiddenCursor(HWND hwnd) {
     return ShouldHideCursor(hwnd);
@@ -407,16 +393,16 @@ void WinApp::RestoreCursorForAppInteraction() {
 }
 
 int WinApp::GetWidth() const {
-    const_cast<WinApp *>(this)->UpdateClientSize();
+    UpdateClientSize();
     return width_;
 }
 
 int WinApp::GetHeight() const {
-    const_cast<WinApp *>(this)->UpdateClientSize();
+    UpdateClientSize();
     return height_;
 }
 
-void WinApp::UpdateClientSize() {
+void WinApp::UpdateClientSize() const {
     if (!hwnd_) {
         return;
     }

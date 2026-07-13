@@ -25,31 +25,25 @@ enum class RenderObjectFlags : uint32_t {
     Foliage = 1u << 6,
 };
 
-inline constexpr RenderObjectFlags operator|(RenderObjectFlags lhs,
-                                             RenderObjectFlags rhs) {
-    return static_cast<RenderObjectFlags>(static_cast<uint32_t>(lhs) |
-                                          static_cast<uint32_t>(rhs));
+inline constexpr RenderObjectFlags operator|(RenderObjectFlags lhs, RenderObjectFlags rhs) {
+    return static_cast<RenderObjectFlags>(static_cast<uint32_t>(lhs) | static_cast<uint32_t>(rhs));
 }
 
-inline constexpr RenderObjectFlags operator&(RenderObjectFlags lhs,
-                                             RenderObjectFlags rhs) {
-    return static_cast<RenderObjectFlags>(static_cast<uint32_t>(lhs) &
-                                          static_cast<uint32_t>(rhs));
+inline constexpr RenderObjectFlags operator&(RenderObjectFlags lhs, RenderObjectFlags rhs) {
+    return static_cast<RenderObjectFlags>(static_cast<uint32_t>(lhs) & static_cast<uint32_t>(rhs));
 }
 
-inline RenderObjectFlags &operator|=(RenderObjectFlags &lhs,
-                                     RenderObjectFlags rhs) {
+inline RenderObjectFlags& operator|=(RenderObjectFlags& lhs, RenderObjectFlags rhs) {
     lhs = lhs | rhs;
     return lhs;
 }
 
-inline constexpr bool HasRenderObjectFlag(RenderObjectFlags flags,
-                                          RenderObjectFlags flag) {
+inline constexpr bool HasRenderObjectFlag(RenderObjectFlags flags, RenderObjectFlags flag) {
     return static_cast<uint32_t>(flags & flag) != 0u;
 }
 
 struct RenderMeshItem {
-    const Mesh *mesh = nullptr;
+    const Mesh* mesh = nullptr;
     Material material{};
     Transform transform{};
     uint32_t textureId = kInvalidResourceId;
@@ -57,25 +51,23 @@ struct RenderMeshItem {
     uint32_t pipelineId = kInvalidResourceId;
     MaterialDomain materialDomain = MaterialDomain::Surface;
     MaterialFeatureFlags materialFeatures = MaterialFeatureFlags::None;
-    RenderObjectFlags flags =
-        RenderObjectFlags::Opaque | RenderObjectFlags::CastShadow |
-        RenderObjectFlags::ReceiveShadow;
+    RenderObjectFlags flags = RenderObjectFlags::Opaque | RenderObjectFlags::CastShadow |
+                              RenderObjectFlags::ReceiveShadow;
     uint32_t objectId = kInvalidResourceId;
 };
 
 struct RenderInstancedMeshItem {
-    const Mesh *mesh = nullptr;
+    const Mesh* mesh = nullptr;
     Material material{};
-    const InstanceData *instances = nullptr;
+    const InstanceData* instances = nullptr;
     uint32_t instanceCount = 0;
     uint32_t textureId = kInvalidResourceId;
     uint32_t normalTextureId = kInvalidResourceId;
     uint32_t pipelineId = kInvalidResourceId;
     MaterialDomain materialDomain = MaterialDomain::Surface;
     MaterialFeatureFlags materialFeatures = MaterialFeatureFlags::None;
-    RenderObjectFlags flags =
-        RenderObjectFlags::Opaque | RenderObjectFlags::CastShadow |
-        RenderObjectFlags::ReceiveShadow | RenderObjectFlags::GpuCull;
+    RenderObjectFlags flags = RenderObjectFlags::Opaque | RenderObjectFlags::CastShadow |
+                              RenderObjectFlags::ReceiveShadow | RenderObjectFlags::GpuCull;
     MeshGpuCullBounds localBounds{};
     uint32_t objectIdBase = kInvalidResourceId;
 };
@@ -91,11 +83,11 @@ struct RenderSceneStats {
 };
 
 class RenderScene {
-  public:
+public:
     void BeginFrame();
 
-    void SubmitMesh(const RenderMeshItem &item);
-    void SubmitInstancedMesh(const RenderInstancedMeshItem &item);
+    void SubmitMesh(const RenderMeshItem& item);
+    void SubmitInstancedMesh(const RenderInstancedMeshItem& item);
 
     std::span<const RenderMeshItem> Meshes() const;
     std::span<const RenderMeshItem> OpaqueMeshes() const;
@@ -106,18 +98,22 @@ class RenderScene {
     std::span<const RenderInstancedMeshItem> OpaqueInstancedMeshes() const;
     std::span<const RenderInstancedMeshItem> ShadowInstancedMeshes() const;
 
-    const RenderSceneStats &GetStats() const { return stats_; }
+    const RenderSceneStats& GetStats() const {
+        return stats_;
+    }
     bool Empty() const {
         return meshes_.empty() && instancedMeshes_.empty();
     }
 
-  private:
-    void CategorizeMesh(const RenderMeshItem &item);
-    void CategorizeInstancedMesh(const RenderInstancedMeshItem &item);
-    static RenderMeshItem Normalize(const RenderMeshItem &item);
-    static RenderInstancedMeshItem Normalize(const RenderInstancedMeshItem &item);
-    static bool IsValid(const RenderMeshItem &item);
-    static bool IsValid(const RenderInstancedMeshItem &item);
+private:
+    bool ReserveForMeshSubmit(const RenderMeshItem& item);
+    bool ReserveForInstancedMeshSubmit(const RenderInstancedMeshItem& item);
+    void CategorizeMesh(const RenderMeshItem& item);
+    void CategorizeInstancedMesh(const RenderInstancedMeshItem& item);
+    static RenderMeshItem Normalize(const RenderMeshItem& item);
+    static RenderInstancedMeshItem Normalize(const RenderInstancedMeshItem& item);
+    static bool IsValid(const RenderMeshItem& item);
+    static bool IsValid(const RenderInstancedMeshItem& item);
     void ReserveForLikelyFrame();
 
     std::vector<RenderMeshItem> meshes_;

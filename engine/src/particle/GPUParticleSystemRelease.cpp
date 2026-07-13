@@ -1,17 +1,16 @@
-#include "particle/GPUParticleSystem.h"
-
-#include "internal/GPUParticleSystemInternal.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/GpuResourceLifetime.h"
 #include "graphics/SrvManager.h"
+#include "internal/GPUParticleSystemInternal.h"
+#include "particle/GPUParticleSystem.h"
 
 #include <algorithm>
 
 namespace {
 
 template <typename ResourceState>
-bool HasParticleDescriptors(const ResourceState &resources) noexcept {
+bool HasParticleDescriptors(const ResourceState& resources) noexcept {
     return IsValidResourceId(resources.particleSrvIndex) ||
            IsValidResourceId(resources.particleUavIndex) ||
            IsValidResourceId(resources.freeListUavIndex) ||
@@ -20,15 +19,11 @@ bool HasParticleDescriptors(const ResourceState &resources) noexcept {
            IsValidResourceId(resources.activeIndexUavIndex) ||
            IsValidResourceId(resources.activeCountUavIndex) ||
            IsValidResourceId(resources.drawArgsUavIndex) ||
-           std::any_of(resources.explicitSpawnFrames.begin(),
-                       resources.explicitSpawnFrames.end(),
-                       [](const auto &frame) {
-                           return IsValidResourceId(frame.srvIndex);
-                       });
+           std::any_of(resources.explicitSpawnFrames.begin(), resources.explicitSpawnFrames.end(),
+                       [](const auto& frame) { return IsValidResourceId(frame.srvIndex); });
 }
 
-void ReleaseDescriptorIndex(SrvManager *srvManager,
-                            uint32_t &index) noexcept {
+void ReleaseDescriptorIndex(SrvManager* srvManager, uint32_t& index) noexcept {
     if (srvManager != nullptr && IsValidResourceId(index)) {
         srvManager->FreeIfAllocated(index);
     }
@@ -36,7 +31,7 @@ void ReleaseDescriptorIndex(SrvManager *srvManager,
 }
 
 template <typename ResourceState>
-void ResetParticleDescriptorIndices(ResourceState &resources) noexcept {
+void ResetParticleDescriptorIndices(ResourceState& resources) noexcept {
     resources.particleSrvIndex = kInvalidResourceId;
     resources.particleUavIndex = kInvalidResourceId;
     resources.freeListUavIndex = kInvalidResourceId;
@@ -47,33 +42,95 @@ void ResetParticleDescriptorIndices(ResourceState &resources) noexcept {
     resources.drawArgsUavIndex = kInvalidResourceId;
 }
 
+template <typename ResourceState>
+bool HasParticleResourceObjects(const ResourceState& resources) noexcept {
+    const bool resourceObjects[] = {
+        !resources.constantFrames.empty(),
+        static_cast<bool>(resources.particleResource),
+        static_cast<bool>(resources.particleUploadResource),
+        static_cast<bool>(resources.freeListResource),
+        static_cast<bool>(resources.freeListUploadResource),
+        static_cast<bool>(resources.freeListIndexResource),
+        static_cast<bool>(resources.freeListIndexUploadResource),
+        static_cast<bool>(resources.activeIndexResource),
+        static_cast<bool>(resources.activeCountResource),
+        static_cast<bool>(resources.drawArgsResource),
+    };
+    return std::any_of(std::begin(resourceObjects), std::end(resourceObjects),
+                       [](bool value) { return value; });
+}
+
+template <typename ResourceState>
+bool HasParticlePipelineObjects(const ResourceState& resources) noexcept {
+    const bool pipelineObjects[] = {
+        static_cast<bool>(resources.updatePso),
+        static_cast<bool>(resources.drawPso),
+        static_cast<bool>(resources.updateRootSignature),
+        static_cast<bool>(resources.drawRootSignature),
+        static_cast<bool>(resources.drawCommandSignature),
+    };
+    return std::any_of(std::begin(pipelineObjects), std::end(pipelineObjects),
+                       [](bool value) { return value; });
+}
+
+template <typename ResourceState>
+bool HasExplicitSpawnFrameResources(const ResourceState& resources) noexcept {
+    return std::any_of(resources.explicitSpawnFrames.begin(), resources.explicitSpawnFrames.end(),
+                       [](const auto& frame) { return frame.resource != nullptr; });
+}
+
+template <typename ResourceState>
+bool HasParticleGpuResources(const ResourceState& resources) noexcept {
+    return HasParticleResourceObjects(resources) || HasExplicitSpawnFrameResources(resources) ||
+           HasParticlePipelineObjects(resources) || HasParticleDescriptors(resources);
+}
+
+template <typename ResourceState>
+void ReleaseParticleDescriptors(SrvManager* srvManager, ResourceState& resources) noexcept {
+    ReleaseDescriptorIndex(srvManager, resources.particleSrvIndex);
+    ReleaseDescriptorIndex(srvManager, resources.particleUavIndex);
+    ReleaseDescriptorIndex(srvManager, resources.freeListUavIndex);
+    ReleaseDescriptorIndex(srvManager, resources.freeListIndexUavIndex);
+    ReleaseDescriptorIndex(srvManager, resources.activeIndexSrvIndex);
+    ReleaseDescriptorIndex(srvManager, resources.activeIndexUavIndex);
+    ReleaseDescriptorIndex(srvManager, resources.activeCountUavIndex);
+    ReleaseDescriptorIndex(srvManager, resources.drawArgsUavIndex);
+    for (auto& frame : resources.explicitSpawnFrames) {
+        ReleaseDescriptorIndex(srvManager, frame.srvIndex);
+    }
+}
+
+template <typename ResourceState> void ResetParticleGpuHandles(ResourceState& resources) noexcept {
+    resources.particleSrvGpuHandle = {};
+    resources.particleSrvCpuHandle = {};
+    resources.particleUavGpuHandle = {};
+    resources.particleUavCpuHandle = {};
+    resources.freeListUavGpuHandle = {};
+    resources.freeListUavCpuHandle = {};
+    resources.freeListIndexUavGpuHandle = {};
+    resources.freeListIndexUavCpuHandle = {};
+    resources.activeIndexSrvGpuHandle = {};
+    resources.activeIndexSrvCpuHandle = {};
+    resources.activeIndexUavGpuHandle = {};
+    resources.activeIndexUavCpuHandle = {};
+    resources.activeCountUavGpuHandle = {};
+    resources.activeCountUavCpuHandle = {};
+    resources.drawArgsUavGpuHandle = {};
+    resources.drawArgsUavCpuHandle = {};
+}
+
 } // namespace
 
-bool GPUParticleSystem::ReleaseResources() { return ReleaseResources(false); }
+bool GPUParticleSystem::ReleaseResources() {
+    return ReleaseResources(false);
+}
 
-bool GPUParticleSystem::Release() { return ReleaseResources(); }
+bool GPUParticleSystem::Release() {
+    return ReleaseResources();
+}
 
 bool GPUParticleSystem::ReleaseResources(bool allowFrameAbort) {
-    const bool hasDescriptors = HasParticleDescriptors(*resources_);
-    const bool hasGpuResources =
-        !resources_->constantFrames.empty() || resources_->particleResource ||
-        resources_->particleUploadResource || resources_->freeListResource ||
-        resources_->freeListUploadResource ||
-        resources_->freeListIndexResource ||
-        resources_->freeListIndexUploadResource ||
-        resources_->activeIndexResource || resources_->activeCountResource ||
-        resources_->drawArgsResource ||
-        std::any_of(resources_->explicitSpawnFrames.begin(),
-                    resources_->explicitSpawnFrames.end(),
-                    [](const ExplicitSpawnFrame &frame) {
-                        return frame.resource != nullptr;
-                    }) ||
-        resources_->updatePso ||
-        resources_->drawPso || resources_->updateRootSignature ||
-        resources_->drawRootSignature || resources_->drawCommandSignature ||
-        hasDescriptors;
-    if (!CanReleaseGpuResources(dxCommon_, hasGpuResources,
-                                allowFrameAbort)) {
+    if (!CanReleaseGpuResources(dxCommon_, HasParticleGpuResources(*resources_), allowFrameAbort)) {
         return false;
     }
 
@@ -81,23 +138,13 @@ bool GPUParticleSystem::ReleaseResources(bool allowFrameAbort) {
         dxCommon_->UnregisterFrameRollbacks(this);
     }
 
-    ReleaseDescriptorIndex(srvManager_, resources_->particleSrvIndex);
-    ReleaseDescriptorIndex(srvManager_, resources_->particleUavIndex);
-    ReleaseDescriptorIndex(srvManager_, resources_->freeListUavIndex);
-    ReleaseDescriptorIndex(srvManager_, resources_->freeListIndexUavIndex);
-    ReleaseDescriptorIndex(srvManager_, resources_->activeIndexSrvIndex);
-    ReleaseDescriptorIndex(srvManager_, resources_->activeIndexUavIndex);
-    ReleaseDescriptorIndex(srvManager_, resources_->activeCountUavIndex);
-    ReleaseDescriptorIndex(srvManager_, resources_->drawArgsUavIndex);
-    for (ExplicitSpawnFrame &frame : resources_->explicitSpawnFrames) {
-        ReleaseDescriptorIndex(srvManager_, frame.srvIndex);
-    }
+    ReleaseParticleDescriptors(srvManager_, *resources_);
 
-    for (ConstantFrame &frame : resources_->constantFrames) {
+    for (ConstantFrame& frame : resources_->constantFrames) {
         frame.Reset();
     }
     resources_->constantFrames.clear();
-    for (ExplicitSpawnFrame &frame : resources_->explicitSpawnFrames) {
+    for (ExplicitSpawnFrame& frame : resources_->explicitSpawnFrames) {
         frame.Reset();
     }
     resources_->explicitSpawnFrames.clear();
@@ -124,22 +171,7 @@ bool GPUParticleSystem::ReleaseResources(bool allowFrameAbort) {
     pendingEmitSettings_.clear();
     pendingExplicitParticles_.clear();
     ResetParticleDescriptorIndices(*resources_);
-    resources_->particleSrvGpuHandle = {};
-    resources_->particleSrvCpuHandle = {};
-    resources_->particleUavGpuHandle = {};
-    resources_->particleUavCpuHandle = {};
-    resources_->freeListUavGpuHandle = {};
-    resources_->freeListUavCpuHandle = {};
-    resources_->freeListIndexUavGpuHandle = {};
-    resources_->freeListIndexUavCpuHandle = {};
-    resources_->activeIndexSrvGpuHandle = {};
-    resources_->activeIndexSrvCpuHandle = {};
-    resources_->activeIndexUavGpuHandle = {};
-    resources_->activeIndexUavCpuHandle = {};
-    resources_->activeCountUavGpuHandle = {};
-    resources_->activeCountUavCpuHandle = {};
-    resources_->drawArgsUavGpuHandle = {};
-    resources_->drawArgsUavCpuHandle = {};
+    ResetParticleGpuHandles(*resources_);
     resources_->updateConstants = {};
     dxCommon_ = nullptr;
     srvManager_ = nullptr;

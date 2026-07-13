@@ -1,15 +1,17 @@
 #include "model/MaterialManager.h"
 
-#include "internal/MaterialManagerInternal.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/GpuResourceHelpers.h"
 #include "graphics/GpuResourceLifetime.h"
+#include "internal/MaterialManagerInternal.h"
 
 #include <algorithm>
 #include <cstring>
+#include <exception>
 #include <limits>
+#include <new>
 
 using namespace DirectX;
 
@@ -46,7 +48,12 @@ void MaterialManager::Initialize(DirectXCommon* dxCommon) {
     }
     dxCommon_ = dxCommon;
     const UINT frameCount = (std::max)(1u, dxCommon_->GetSwapChainBufferCount());
-    state_->frameDeferredDestroyedMaterials.resize(frameCount);
+    try {
+        state_->frameDeferredDestroyedMaterials.resize(frameCount);
+    } catch (const std::exception&) {
+        dxCommon_ = nullptr;
+        state_->frameDeferredDestroyedMaterials.clear();
+    }
 }
 
 bool MaterialManager::Finalize() {
@@ -54,13 +61,13 @@ bool MaterialManager::Finalize() {
 }
 
 bool MaterialManager::Finalize(bool allowFrameAbort) {
-    const bool hasFrameDeferredMaterials = std::any_of(
-        state_->frameDeferredDestroyedMaterials.begin(),
-        state_->frameDeferredDestroyedMaterials.end(),
-        [](const auto &materials) { return !materials.empty(); });
-    const bool hasGpuResources =
-        !state_->materials.empty() || !state_->deferredDestroyedMaterials.empty() ||
-        hasFrameDeferredMaterials;
+    const bool hasFrameDeferredMaterials =
+        std::any_of(state_->frameDeferredDestroyedMaterials.begin(),
+                    state_->frameDeferredDestroyedMaterials.end(),
+                    [](const auto& materials) { return !materials.empty(); });
+    const bool hasGpuResources = !state_->materials.empty() ||
+                                 !state_->deferredDestroyedMaterials.empty() ||
+                                 hasFrameDeferredMaterials;
     if (!CanReleaseGpuResources(dxCommon_, hasGpuResources, allowFrameAbort)) {
         return false;
     }
@@ -92,9 +99,13 @@ uint32_t MaterialManager::CreateMaterial(const Material& material) {
     CD3DX12_HEAP_PROPERTIES heapProp(D3D12_HEAP_TYPE_UPLOAD);
     auto resourceDesc = CD3DX12_RESOURCE_DESC::Buffer(size);
     const UINT frameCount = (std::max)(1u, dxCommon_->GetSwapChainBufferCount());
-    matRes.frameResources.resize(frameCount);
-    matRes.dirtyFrames.assign(frameCount, false);
-    state_->materials.reserve(state_->materials.size() + 1);
+    try {
+        matRes.frameResources.resize(frameCount);
+        matRes.dirtyFrames.assign(frameCount, false);
+        state_->materials.reserve(state_->materials.size() + 1);
+    } catch (const std::exception&) {
+        return kInvalidResourceId;
+    }
     for (MaterialResource::FrameResource& frame : matRes.frameResources) {
         if (!CreateCommittedResourceChecked(dxCommon_->GetDevice(), &heapProp, D3D12_HEAP_FLAG_NONE,
                                             &resourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ,
@@ -109,7 +120,11 @@ uint32_t MaterialManager::CreateMaterial(const Material& material) {
         std::memcpy(frame.mappedData, &matRes.material, sizeof(Material));
     }
 
-    state_->materials.push_back(std::move(matRes));
+    try {
+        state_->materials.push_back(std::move(matRes));
+    } catch (const std::exception&) {
+        return kInvalidResourceId;
+    }
     return static_cast<uint32_t>(state_->materials.size() - 1);
 }
 
@@ -121,14 +136,21 @@ void MaterialManager::DestroyMaterial(uint32_t materialId) {
     if (dxCommon_ != nullptr && dxCommon_->IsCommandListRecording()) {
         const UINT frameIndex = dxCommon_->GetBackBufferIndex();
         if (frameIndex < state_->frameDeferredDestroyedMaterials.size()) {
-            state_->frameDeferredDestroyedMaterials[frameIndex].push_back(
-                std::move(state_->materials[materialId]));
+            try {
+                state_->frameDeferredDestroyedMaterials[frameIndex].push_back(
+                    std::move(state_->materials[materialId]));
+            } catch (const std::exception&) {
+                return;
+            }
             state_->materials[materialId] = MaterialResource{};
             return;
         }
     }
-    state_->deferredDestroyedMaterials.push_back(
-        std::move(state_->materials[materialId]));
+    try {
+        state_->deferredDestroyedMaterials.push_back(std::move(state_->materials[materialId]));
+    } catch (const std::exception&) {
+        return;
+    }
     state_->materials[materialId] = MaterialResource{};
 }
 

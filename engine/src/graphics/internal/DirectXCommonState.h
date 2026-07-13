@@ -10,18 +10,14 @@
 
 struct DirectXCommon::State {
     struct FrameResourceStateSnapshot {
-        std::array<D3D12_RESOURCE_STATES, DirectXCommon::kSwapChainBufferCount>
-            backBufferStates{};
-        D3D12_RESOURCE_STATES sceneColorState =
-            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        std::array<D3D12_RESOURCE_STATES, DirectXCommon::kSwapChainBufferCount> backBufferStates{};
+        D3D12_RESOURCE_STATES sceneColorState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
         D3D12_RESOURCE_STATES depthState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
         bool valid = false;
     };
 
-    float clearColor[4] = {DirectXCommon::kClearColor[0],
-                           DirectXCommon::kClearColor[1],
-                           DirectXCommon::kClearColor[2],
-                           DirectXCommon::kClearColor[3]};
+    float clearColor[4] = {DirectXCommon::kClearColor[0], DirectXCommon::kClearColor[1],
+                           DirectXCommon::kClearColor[2], DirectXCommon::kClearColor[3]};
 
     Microsoft::WRL::ComPtr<IDXGIFactory7> factory;
     Microsoft::WRL::ComPtr<IDXGISwapChain4> swapChain;
@@ -36,13 +32,11 @@ struct DirectXCommon::State {
     UINT uploadPassDepth = 0;
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap;
-    Microsoft::WRL::ComPtr<ID3D12Resource>
-        backBuffers[DirectXCommon::kSwapChainBufferCount];
+    Microsoft::WRL::ComPtr<ID3D12Resource> backBuffers[DirectXCommon::kSwapChainBufferCount];
     D3D12_RESOURCE_STATES
-        backBufferStates[DirectXCommon::kSwapChainBufferCount]{};
+    backBufferStates[DirectXCommon::kSwapChainBufferCount]{};
     Microsoft::WRL::ComPtr<ID3D12Resource> sceneColorBuffer;
-    D3D12_RESOURCE_STATES sceneColorState =
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    D3D12_RESOURCE_STATES sceneColorState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     UINT sceneSrvIndex = UINT_MAX;
     UINT rtvDescriptorSize = 0;
     UINT backBufferIndex = 0;
@@ -59,7 +53,7 @@ struct DirectXCommon::State {
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap;
     Microsoft::WRL::ComPtr<ID3D12Resource> depthBuffer;
-    SrvManager *srvManager = nullptr;
+    SrvManager* srvManager = nullptr;
     UINT depthSrvIndex = UINT_MAX;
     D3D12_GPU_DESCRIPTOR_HANDLE depthSrvGpuHandle{};
     D3D12_RESOURCE_STATES depthState = D3D12_RESOURCE_STATE_DEPTH_WRITE;

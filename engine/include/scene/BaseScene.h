@@ -23,7 +23,7 @@ struct SceneLoadingStatus {
 /// すべてのシーン実装が継承する基底クラス
 /// </summary>
 class BaseScene {
-  public:
+public:
     /// <summary>
     /// シーン基底クラスを破棄する
     /// </summary>
@@ -33,7 +33,9 @@ class BaseScene {
     /// シーンで使用する共有コンテキストを保持する
     /// </summary>
     /// <param name="ctx">シーンコンテキスト</param>
-    virtual void Initialize(const SceneContext &ctx) { ctx_ = &ctx; }
+    virtual void Initialize(const SceneContext& ctx) {
+        ctx_ = &ctx;
+    }
 
     /// <summary>
     /// LoadingSceneから1ステップずつ進める遅延ロード処理。
@@ -43,7 +45,9 @@ class BaseScene {
     /// <summary>
     /// LoadingSceneへ現在のロード状態を返す。
     /// </summary>
-    virtual SceneLoadingStatus GetLoadingStatus() const { return {}; }
+    virtual SceneLoadingStatus GetLoadingStatus() const {
+        return {};
+    }
 
     /// <summary>
     /// シーン固有の状態を更新する
@@ -53,21 +57,21 @@ class BaseScene {
     /// <summary>
     /// シーンのフレーム描画オブジェクトを登録する。
     /// </summary>
-    virtual void SubmitRenderScene(RenderScene &renderScene) {
+    virtual void SubmitRenderScene(RenderScene& renderScene) {
         (void)renderScene;
     }
 
     /// <summary>
     /// シーンのフレーム照明状態を登録する。
     /// </summary>
-    virtual void SubmitLighting(LightingScene &lightingScene) {
+    virtual void SubmitLighting(LightingScene& lightingScene) {
         (void)lightingScene;
     }
 
     /// <summary>
     /// temporal系で使うカメラとオブジェクト履歴を登録する。
     /// </summary>
-    virtual void SubmitFrameHistory(FrameHistory &frameHistory) {
+    virtual void SubmitFrameHistory(FrameHistory& frameHistory) {
         (void)frameHistory;
     }
 
@@ -84,7 +88,9 @@ class BaseScene {
     /// <summary>
     /// SpotLight用ShadowPassが必要かを返す。
     /// </summary>
-    virtual bool UsesSpotLightShadowPass() const { return false; }
+    virtual bool UsesSpotLightShadowPass() const {
+        return false;
+    }
 
     /// <summary>
     /// シーン固有の内容を描画する
@@ -94,7 +100,9 @@ class BaseScene {
     /// <summary>
     /// 背景や通常3Dの手前に重ねる3D描画が必要かを返す。
     /// </summary>
-    virtual bool UsesForeground3DPass() const { return false; }
+    virtual bool UsesForeground3DPass() const {
+        return false;
+    }
 
     /// <summary>
     /// 背景深度を無視して手前に重ねる3D描画を行う。
@@ -104,7 +112,9 @@ class BaseScene {
     /// <summary>
     /// 深度とシャドウを参照するボリューム光パスが必要かを返す。
     /// </summary>
-    virtual bool UsesVolumetricLightingPass() const { return false; }
+    virtual bool UsesVolumetricLightingPass() const {
+        return false;
+    }
 
     /// <summary>
     /// 透明描画だけをSceneColorPassの後段で描画する。
@@ -125,11 +135,11 @@ class BaseScene {
     /// シーンマネージャーを設定する
     /// </summary>
     /// <param name="sceneManager">関連付けるシーンマネージャー</param>
-    void SetSceneManager(SceneManager *sceneManager) {
+    void SetSceneManager(SceneManager* sceneManager) {
         sceneManager_ = sceneManager;
     }
 
-  protected:
-    SceneManager *sceneManager_ = nullptr;
-    const SceneContext *ctx_ = nullptr;
+protected:
+    SceneManager* sceneManager_ = nullptr;
+    const SceneContext* ctx_ = nullptr;
 };

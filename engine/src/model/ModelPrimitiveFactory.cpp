@@ -1,9 +1,11 @@
-#include "internal/ModelPrimitiveFactoryInternal.h"
 #include "core/ResourceHandle.h"
+#include "internal/ModelPrimitiveFactoryInternal.h"
 #include "model/ModelLimits.h"
 
 #include <algorithm>
+#include <exception>
 #include <limits>
+#include <new>
 
 using namespace DirectX;
 
@@ -59,8 +61,12 @@ bool ReserveProceduralMesh(std::vector<ModelVertex>& vertices, std::vector<uint3
     if (!CanBuildProceduralMesh(vertexCount, indexCount, extraCpuBytes)) {
         return false;
     }
-    vertices.reserve(vertexCount);
-    indices.reserve(indexCount);
+    try {
+        vertices.reserve(vertexCount);
+        indices.reserve(indexCount);
+    } catch (const std::exception&) {
+        return false;
+    }
     return true;
 }
 

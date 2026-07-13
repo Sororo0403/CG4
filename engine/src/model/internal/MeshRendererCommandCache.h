@@ -16,31 +16,27 @@ struct MeshRendererCommandCache {
         ShaderResource,
     };
 
-    ID3D12RootSignature *rootSignature = nullptr;
-    ID3D12PipelineState *pipelineState = nullptr;
+    ID3D12RootSignature* rootSignature = nullptr;
+    ID3D12PipelineState* pipelineState = nullptr;
     std::array<RootParameterKind, kRootParameterCount> rootParameterKinds{};
     std::array<uint64_t, kRootParameterCount> rootParameterValues{};
-    std::array<D3D12_VERTEX_BUFFER_VIEW, kVertexBufferViewCount>
-        vertexBufferViews{};
+    std::array<D3D12_VERTEX_BUFFER_VIEW, kVertexBufferViewCount> vertexBufferViews{};
     uint32_t vertexBufferStartSlot = 0;
     uint32_t vertexBufferViewCount = 0;
     bool vertexBuffersValid = false;
     D3D12_INDEX_BUFFER_VIEW indexBufferView{};
     bool indexBufferValid = false;
-    D3D12_PRIMITIVE_TOPOLOGY primitiveTopology =
-        D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
+    D3D12_PRIMITIVE_TOPOLOGY primitiveTopology = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
 
-    static bool SameVertexBufferView(const D3D12_VERTEX_BUFFER_VIEW &lhs,
-                                     const D3D12_VERTEX_BUFFER_VIEW &rhs) noexcept {
-        return lhs.BufferLocation == rhs.BufferLocation &&
-               lhs.SizeInBytes == rhs.SizeInBytes &&
+    static bool SameVertexBufferView(const D3D12_VERTEX_BUFFER_VIEW& lhs,
+                                     const D3D12_VERTEX_BUFFER_VIEW& rhs) noexcept {
+        return lhs.BufferLocation == rhs.BufferLocation && lhs.SizeInBytes == rhs.SizeInBytes &&
                lhs.StrideInBytes == rhs.StrideInBytes;
     }
 
-    static bool SameIndexBufferView(const D3D12_INDEX_BUFFER_VIEW &lhs,
-                                    const D3D12_INDEX_BUFFER_VIEW &rhs) noexcept {
-        return lhs.BufferLocation == rhs.BufferLocation &&
-               lhs.SizeInBytes == rhs.SizeInBytes &&
+    static bool SameIndexBufferView(const D3D12_INDEX_BUFFER_VIEW& lhs,
+                                    const D3D12_INDEX_BUFFER_VIEW& rhs) noexcept {
+        return lhs.BufferLocation == rhs.BufferLocation && lhs.SizeInBytes == rhs.SizeInBytes &&
                lhs.Format == rhs.Format;
     }
 

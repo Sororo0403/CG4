@@ -6,20 +6,21 @@
 #include <vector>
 
 class AssetHotReloader {
-  public:
-    using ReloadCallback = std::function<void(const std::filesystem::path &)>;
+public:
+    using ReloadCallback = std::function<void(const std::filesystem::path&)>;
 
-    bool WatchFile(const std::filesystem::path &path, ReloadCallback callback);
-    bool WatchDirectory(const std::filesystem::path &directory,
-                        const std::vector<std::wstring> &extensions,
-                        ReloadCallback callback);
-    void Unwatch(const std::filesystem::path &path);
+    bool WatchFile(const std::filesystem::path& path, ReloadCallback callback);
+    bool WatchDirectory(const std::filesystem::path& directory,
+                        const std::vector<std::wstring>& extensions, ReloadCallback callback);
+    void Unwatch(const std::filesystem::path& path);
     void Clear();
 
     void Poll();
-    size_t GetWatchedFileCount() const { return watchedFiles_.size(); }
+    size_t GetWatchedFileCount() const {
+        return watchedFiles_.size();
+    }
 
-  private:
+private:
     struct WatchedFile {
         std::wstring key;
         std::filesystem::path path;
@@ -27,12 +28,11 @@ class AssetHotReloader {
         ReloadCallback callback;
     };
 
-    static std::filesystem::path NormalizePath(const std::filesystem::path &path);
-    static bool TryGetLastWriteTime(
-        const std::filesystem::path &path,
-        std::filesystem::file_time_type &lastWriteTime);
-    static bool HasExtension(const std::filesystem::path &path,
-                             const std::vector<std::wstring> &extensions);
+    static std::filesystem::path NormalizePath(const std::filesystem::path& path);
+    static bool TryGetLastWriteTime(const std::filesystem::path& path,
+                                    std::filesystem::file_time_type& lastWriteTime);
+    static bool HasExtension(const std::filesystem::path& path,
+                             const std::vector<std::wstring>& extensions);
 
     std::vector<WatchedFile> watchedFiles_;
 };

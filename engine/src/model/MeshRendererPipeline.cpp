@@ -1,28 +1,35 @@
-#include "model/MeshRenderer.h"
-#include "internal/MeshRendererInternal.h"
-
+#include "../graphics/internal/RootSignatureUtils.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
-#include "internal/RendererPipelineVariantUtils.h"
+#include "internal/MeshRendererInternal.h"
 #include "internal/RendererInputLayouts.h"
+#include "internal/RendererPipelineVariantUtils.h"
 #include "internal/RendererShadowPipelineUtils.h"
-#include "../graphics/internal/RootSignatureUtils.h"
-#include "model/RendererMath.h"
-#include "model/Vertex.h"
-#include <algorithm>
-#include <cmath>
+#include "model/MeshRenderer.h"
+
+#include <exception>
 #include <limits>
 #include <utility>
 
-using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
 namespace {
 using RendererPipelineVariantUtils::MaterialPipelineVariantIndex;
 using RendererPipelineVariantUtils::ToD3D12CullMode;
-}
+} // namespace
+
+struct MeshRenderer::InstancedPipelineBuild {
+    std::wstring vertexShaderPath;
+    std::wstring pixelShaderPath;
+    std::wstring shadowVertexShaderPath;
+    std::wstring shadowPixelShaderPath;
+    D3D12_INPUT_LAYOUT_DESC inputLayout{};
+    ComPtr<IDxcBlob> shadowInstancedVs;
+    ComPtr<IDxcBlob> shadowPs;
+    InstancedPipelineSet pipelineSet{};
+};
 
 void MeshRenderer::CreateRootSignature() {
     if (!state_->dxCommon || !state_->dxCommon->GetDevice()) {
@@ -65,8 +72,8 @@ void MeshRenderer::CreateRootSignature() {
     planarReflectionRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 9);
     params[10].InitAsDescriptorTable(1, &planarReflectionRange);
 
-    const auto samplers = RendererPipelineVariantUtils::MakeMaterialTextureSamplers(
-        D3D12_TEXTURE_ADDRESS_MODE_WRAP);
+    const auto samplers =
+        RendererPipelineVariantUtils::MakeMaterialTextureSamplers(D3D12_TEXTURE_ADDRESS_MODE_WRAP);
 
     CD3DX12_ROOT_SIGNATURE_DESC desc;
     desc.Init(_countof(params), params, static_cast<UINT>(samplers.size()), samplers.data(),
@@ -82,18 +89,16 @@ void MeshRenderer::CreateShadowRootSignature() {
     }
     constexpr uint32_t kShadowCbvRegisters[] = {0u, 1u, 2u};
     RendererShadowPipelineUtils::CreateTexturedShadowRootSignature(
-        state_->dxCommon->GetDevice(), kShadowCbvRegisters,
-        state_->shadowRootSignature);
+        state_->dxCommon->GetDevice(), kShadowCbvRegisters, state_->shadowRootSignature);
 }
 
 void MeshRenderer::CreatePipelineStates() {
-    auto *device = state_->dxCommon->GetDevice();
+    auto* device = state_->dxCommon->GetDevice();
     if (device == nullptr || !state_->rootSignature) {
         return;
     }
 
-    const auto baseInputLayout =
-        RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshVertex);
+    const auto baseInputLayout = RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshVertex);
     const auto instancedInputLayout =
         RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshInstanced);
 
@@ -103,29 +108,23 @@ void MeshRenderer::CreatePipelineStates() {
     baseDesc.variantMode = MeshPipelineVariantMode::MaterialDriven;
     MeshPipelineSet basePipelineSet = MeshPipelineFactory::CreatePipelineSet(
         device, state_->rootSignature.Get(), baseDesc, baseInputLayout,
-        DirectXCommon::kSceneColorFormat,
-        DirectXCommon::kDepthStencilFormat);
+        DirectXCommon::kSceneColorFormat, DirectXCommon::kDepthStencilFormat);
     state_->pipelineStates = std::move(basePipelineSet.pipelineStates);
 
     MeshPipelineDesc instancedDesc = baseDesc;
     instancedDesc.vertexShader = ShaderPaths::MeshInstancedVS;
     instancedDesc.instanced = true;
-    MeshPipelineSet instancedPipelineSet =
-        MeshPipelineFactory::CreatePipelineSet(
-            device, state_->rootSignature.Get(), instancedDesc,
-            instancedInputLayout, DirectXCommon::kSceneColorFormat,
-            DirectXCommon::kDepthStencilFormat);
-    state_->instancedPipelineStates =
-        std::move(instancedPipelineSet.pipelineStates);
+    MeshPipelineSet instancedPipelineSet = MeshPipelineFactory::CreatePipelineSet(
+        device, state_->rootSignature.Get(), instancedDesc, instancedInputLayout,
+        DirectXCommon::kSceneColorFormat, DirectXCommon::kDepthStencilFormat);
+    state_->instancedPipelineStates = std::move(instancedPipelineSet.pipelineStates);
 }
 
-uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc &desc) {
-    return CreatePipeline(
-        desc, RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshVertex));
+uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc& desc) {
+    return CreatePipeline(desc, RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshVertex));
 }
 
-uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc &desc,
-                                      MeshVertexLayout vertexLayout) {
+uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc& desc, MeshVertexLayout vertexLayout) {
     const D3D12_INPUT_LAYOUT_DESC inputLayout =
         vertexLayout == MeshVertexLayout::Surface
             ? RendererInputLayouts::MakeDesc(RendererInputLayouts::kSurfaceVertex)
@@ -133,16 +132,15 @@ uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc &desc,
     return CreatePipeline(desc, inputLayout);
 }
 
-uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc &desc,
+uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc& desc,
                                       D3D12_INPUT_LAYOUT_DESC inputLayout) {
     if (!state_->dxCommon || !state_->dxCommon->GetDevice() || !state_->rootSignature) {
         return kInvalidResourceId;
     }
 
     MeshPipelineSet pipelineSet = MeshPipelineFactory::CreatePipelineSet(
-        state_->dxCommon->GetDevice(), state_->rootSignature.Get(), desc,
-        inputLayout, DirectXCommon::kSceneColorFormat,
-        DirectXCommon::kDepthStencilFormat);
+        state_->dxCommon->GetDevice(), state_->rootSignature.Get(), desc, inputLayout,
+        DirectXCommon::kSceneColorFormat, DirectXCommon::kDepthStencilFormat);
     if (!pipelineSet.pipelineStates[0]) {
         return kInvalidResourceId;
     }
@@ -157,12 +155,16 @@ uint32_t MeshRenderer::CreatePipeline(const MeshPipelineDesc &desc,
         return kInvalidResourceId;
     }
     const uint32_t pipelineId = static_cast<uint32_t>(state_->customPipelines.size());
-    state_->customPipelines.push_back(std::move(pipelineSet));
+    try {
+        state_->customPipelines.push_back(std::move(pipelineSet));
+    } catch (const std::exception&) {
+        return kInvalidResourceId;
+    }
     return pipelineId;
 }
 
-uint32_t MeshRenderer::CreatePipeline(const std::wstring &vertexShaderPath,
-                                      const std::wstring &pixelShaderPath) {
+uint32_t MeshRenderer::CreatePipeline(const std::wstring& vertexShaderPath,
+                                      const std::wstring& pixelShaderPath) {
     MeshPipelineDesc desc{};
     desc.vertexShader = vertexShaderPath;
     desc.pixelShader = pixelShaderPath;
@@ -170,8 +172,8 @@ uint32_t MeshRenderer::CreatePipeline(const std::wstring &vertexShaderPath,
     return CreatePipeline(desc);
 }
 
-uint32_t MeshRenderer::CreatePipeline(const std::wstring &vertexShaderPath,
-                                      const std::wstring &pixelShaderPath,
+uint32_t MeshRenderer::CreatePipeline(const std::wstring& vertexShaderPath,
+                                      const std::wstring& pixelShaderPath,
                                       MeshVertexLayout vertexLayout) {
     MeshPipelineDesc desc{};
     desc.vertexShader = vertexShaderPath;
@@ -180,9 +182,8 @@ uint32_t MeshRenderer::CreatePipeline(const std::wstring &vertexShaderPath,
     return CreatePipeline(desc, vertexLayout);
 }
 
-uint32_t MeshRenderer::CreateAdditiveNoDepthPipeline(
-    const std::wstring &vertexShaderPath,
-    const std::wstring &pixelShaderPath) {
+uint32_t MeshRenderer::CreateAdditiveNoDepthPipeline(const std::wstring& vertexShaderPath,
+                                                     const std::wstring& pixelShaderPath) {
     MeshPipelineDesc desc{};
     desc.vertexShader = vertexShaderPath;
     desc.pixelShader = pixelShaderPath;
@@ -193,123 +194,138 @@ uint32_t MeshRenderer::CreateAdditiveNoDepthPipeline(
     return CreatePipeline(desc);
 }
 
-uint32_t MeshRenderer::CreateInstancedPipeline(
-    const std::wstring &vertexShaderPath, const std::wstring &pixelShaderPath,
-    const std::wstring &shadowVertexShaderPath,
-    const std::wstring &shadowPixelShaderPath) {
+uint32_t MeshRenderer::CreateInstancedPipeline(const std::wstring& vertexShaderPath,
+                                               const std::wstring& pixelShaderPath,
+                                               const std::wstring& shadowVertexShaderPath,
+                                               const std::wstring& shadowPixelShaderPath) {
     return CreateInstancedPipeline(
-        vertexShaderPath, pixelShaderPath, shadowVertexShaderPath,
-        shadowPixelShaderPath,
+        vertexShaderPath, pixelShaderPath, shadowVertexShaderPath, shadowPixelShaderPath,
         RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshInstanced));
 }
 
-uint32_t MeshRenderer::CreateInstancedPipeline(
-    const std::wstring &vertexShaderPath, const std::wstring &pixelShaderPath,
-    const std::wstring &shadowVertexShaderPath,
-    const std::wstring &shadowPixelShaderPath,
-    MeshInstancedVertexLayout vertexLayout) {
+uint32_t MeshRenderer::CreateInstancedPipeline(const std::wstring& vertexShaderPath,
+                                               const std::wstring& pixelShaderPath,
+                                               const std::wstring& shadowVertexShaderPath,
+                                               const std::wstring& shadowPixelShaderPath,
+                                               MeshInstancedVertexLayout vertexLayout) {
     const D3D12_INPUT_LAYOUT_DESC inputLayout =
         vertexLayout == MeshInstancedVertexLayout::Tree
             ? RendererInputLayouts::MakeDesc(RendererInputLayouts::kTreeInstanced)
             : RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshInstanced);
-    return CreateInstancedPipeline(vertexShaderPath, pixelShaderPath,
-                                   shadowVertexShaderPath,
+    return CreateInstancedPipeline(vertexShaderPath, pixelShaderPath, shadowVertexShaderPath,
                                    shadowPixelShaderPath, inputLayout);
 }
 
-uint32_t MeshRenderer::CreateInstancedPipeline(
-    const std::wstring &vertexShaderPath, const std::wstring &pixelShaderPath,
-    const std::wstring &shadowVertexShaderPath,
-    const std::wstring &shadowPixelShaderPath,
-    D3D12_INPUT_LAYOUT_DESC inputLayout) {
-    if (!state_->dxCommon || !state_->dxCommon->GetDevice() || !state_->rootSignature ||
-        !state_->shadowRootSignature) {
+uint32_t MeshRenderer::CreateInstancedPipeline(const std::wstring& vertexShaderPath,
+                                               const std::wstring& pixelShaderPath,
+                                               const std::wstring& shadowVertexShaderPath,
+                                               const std::wstring& shadowPixelShaderPath,
+                                               D3D12_INPUT_LAYOUT_DESC inputLayout) {
+    InstancedPipelineBuild build{};
+    if (!PrepareInstancedPipelineBuild(vertexShaderPath, pixelShaderPath, shadowVertexShaderPath,
+                                       shadowPixelShaderPath, inputLayout, build)) {
         return kInvalidResourceId;
     }
+    if (!CreateInstancedShadowPipelineVariants(build)) {
+        return kInvalidResourceId;
+    }
+    return StoreInstancedPipelineSet(std::move(build.pipelineSet));
+}
 
-    InstancedPipelineSet pipelineSet{};
+bool MeshRenderer::PrepareInstancedPipelineBuild(const std::wstring& vertexShaderPath,
+                                                 const std::wstring& pixelShaderPath,
+                                                 const std::wstring& shadowVertexShaderPath,
+                                                 const std::wstring& shadowPixelShaderPath,
+                                                 D3D12_INPUT_LAYOUT_DESC inputLayout,
+                                                 InstancedPipelineBuild& build) {
+    if (!state_->dxCommon || !state_->dxCommon->GetDevice() || !state_->rootSignature ||
+        !state_->shadowRootSignature) {
+        return false;
+    }
+
+    build.vertexShaderPath = vertexShaderPath;
+    build.pixelShaderPath = pixelShaderPath;
+    build.shadowVertexShaderPath = shadowVertexShaderPath;
+    build.shadowPixelShaderPath = shadowPixelShaderPath;
+    build.inputLayout = inputLayout;
 
     MeshPipelineDesc desc{};
-    desc.vertexShader = vertexShaderPath;
-    desc.pixelShader = pixelShaderPath;
+    desc.vertexShader = build.vertexShaderPath;
+    desc.pixelShader = build.pixelShaderPath;
     desc.instanced = true;
     desc.variantMode = MeshPipelineVariantMode::MaterialDriven;
     MeshPipelineSet forwardPipelines = MeshPipelineFactory::CreatePipelineSet(
-        state_->dxCommon->GetDevice(), state_->rootSignature.Get(), desc,
-        inputLayout, DirectXCommon::kSceneColorFormat,
-        DirectXCommon::kDepthStencilFormat);
+        state_->dxCommon->GetDevice(), state_->rootSignature.Get(), desc, build.inputLayout,
+        DirectXCommon::kSceneColorFormat, DirectXCommon::kDepthStencilFormat);
     if (!forwardPipelines.pipelineStates[0]) {
-        return kInvalidResourceId;
+        return false;
     }
-    pipelineSet.pipelineStates = std::move(forwardPipelines.pipelineStates);
+    build.pipelineSet.pipelineStates = std::move(forwardPipelines.pipelineStates);
 
-    auto *device = state_->dxCommon->GetDevice();
-    auto shadowInstancedVs =
-        ShaderCompiler::Compile(shadowVertexShaderPath, "main", "vs_6_6");
-    auto shadowPs =
-        ShaderCompiler::Compile(shadowPixelShaderPath, "main", "ps_6_6");
-    if (!shadowInstancedVs || !shadowPs) {
-        return kInvalidResourceId;
+    build.shadowInstancedVs =
+        ShaderCompiler::Compile(build.shadowVertexShaderPath, "main", "vs_6_6");
+    build.shadowPs = ShaderCompiler::Compile(build.shadowPixelShaderPath, "main", "ps_6_6");
+    return build.shadowInstancedVs && build.shadowPs;
+}
+
+bool MeshRenderer::CreateInstancedShadowPipelineVariant(const InstancedPipelineBuild& build,
+                                                        MaterialCullMode cullMode,
+                                                        bool usePixelShader,
+                                                        ComPtr<ID3D12PipelineState>& psoOut) {
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC shadowPso{};
+    shadowPso.pRootSignature = state_->shadowRootSignature.Get();
+    shadowPso.VS = {build.shadowInstancedVs->GetBufferPointer(),
+                    build.shadowInstancedVs->GetBufferSize()};
+    if (usePixelShader) {
+        shadowPso.PS = {build.shadowPs->GetBufferPointer(), build.shadowPs->GetBufferSize()};
     }
+    shadowPso.InputLayout = build.inputLayout;
+    shadowPso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    shadowPso.NumRenderTargets = 0;
+    shadowPso.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    shadowPso.SampleDesc.Count = 1;
+    shadowPso.SampleMask = UINT_MAX;
+    shadowPso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    shadowPso.RasterizerState.CullMode = ToD3D12CullMode(cullMode);
+    shadowPso.RasterizerState.DepthBias = 1000;
+    shadowPso.RasterizerState.SlopeScaledDepthBias = 1.5f;
+    shadowPso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 
-    auto makeShadowPso = [&](MaterialCullMode cullMode, bool usePixelShader,
-                             ComPtr<ID3D12PipelineState> &psoOut) {
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC shadowPso{};
-        shadowPso.pRootSignature = state_->shadowRootSignature.Get();
-        shadowPso.VS = {shadowInstancedVs->GetBufferPointer(),
-                        shadowInstancedVs->GetBufferSize()};
-        if (usePixelShader) {
-            shadowPso.PS = {shadowPs->GetBufferPointer(),
-                            shadowPs->GetBufferSize()};
-        }
-        shadowPso.InputLayout = inputLayout;
-        shadowPso.PrimitiveTopologyType =
-            D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        shadowPso.NumRenderTargets = 0;
-        shadowPso.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-        shadowPso.SampleDesc.Count = 1;
-        shadowPso.SampleMask = UINT_MAX;
-        shadowPso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-        shadowPso.RasterizerState.CullMode = ToD3D12CullMode(cullMode);
-        shadowPso.RasterizerState.DepthBias = 1000;
-        shadowPso.RasterizerState.SlopeScaledDepthBias = 1.5f;
-        shadowPso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    D3D12_DEPTH_STENCIL_DESC shadowDepth = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    shadowDepth.DepthEnable = TRUE;
+    shadowDepth.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+    shadowDepth.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+    shadowPso.DepthStencilState = shadowDepth;
 
-        D3D12_DEPTH_STENCIL_DESC shadowDepth =
-            CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-        shadowDepth.DepthEnable = TRUE;
-        shadowDepth.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-        shadowDepth.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
-        shadowPso.DepthStencilState = shadowDepth;
+    auto* device = state_->dxCommon->GetDevice();
+    return SUCCEEDED(device->CreateGraphicsPipelineState(&shadowPso, IID_PPV_ARGS(&psoOut))) &&
+           psoOut;
+}
 
-        return SUCCEEDED(device->CreateGraphicsPipelineState(
-                   &shadowPso, IID_PPV_ARGS(&psoOut))) &&
-               psoOut;
-    };
-
+bool MeshRenderer::CreateInstancedShadowPipelineVariants(InstancedPipelineBuild& build) {
     for (bool transparent : {false, true}) {
         for (MaterialCullMode cullMode :
-             {MaterialCullMode::None, MaterialCullMode::Front,
-              MaterialCullMode::Back}) {
+             {MaterialCullMode::None, MaterialCullMode::Front, MaterialCullMode::Back}) {
             for (bool depthWrite : {false, true}) {
                 const size_t variantIndex =
-                    MaterialPipelineVariantIndex(transparent, cullMode,
-                                                 depthWrite);
-                if (!makeShadowPso(
-                        cullMode, true,
-                        pipelineSet.shadowPipelineStates[variantIndex]) ||
-                    !makeShadowPso(
-                        cullMode, false,
-                        pipelineSet.opaqueShadowPipelineStates[variantIndex])) {
-                    return kInvalidResourceId;
+                    MaterialPipelineVariantIndex(transparent, cullMode, depthWrite);
+                if (!CreateInstancedShadowPipelineVariant(
+                        build, cullMode, true,
+                        build.pipelineSet.shadowPipelineStates[variantIndex]) ||
+                    !CreateInstancedShadowPipelineVariant(
+                        build, cullMode, false,
+                        build.pipelineSet.opaqueShadowPipelineStates[variantIndex])) {
+                    return false;
                 }
             }
         }
     }
+    return true;
+}
 
+uint32_t MeshRenderer::StoreInstancedPipelineSet(InstancedPipelineSet&& pipelineSet) {
     for (size_t index = 0; index < state_->customInstancedPipelines.size(); ++index) {
-        const InstancedPipelineSet &existing =
-            state_->customInstancedPipelines[index];
+        const InstancedPipelineSet& existing = state_->customInstancedPipelines[index];
         if (!existing.pipelineStates[0] && !existing.shadowPipelineStates[0] &&
             !existing.opaqueShadowPipelineStates[0]) {
             state_->customInstancedPipelines[index] = std::move(pipelineSet);
@@ -320,43 +336,41 @@ uint32_t MeshRenderer::CreateInstancedPipeline(
         static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
         return kInvalidResourceId;
     }
-    const uint32_t pipelineId =
-        static_cast<uint32_t>(state_->customInstancedPipelines.size());
-    state_->customInstancedPipelines.push_back(std::move(pipelineSet));
+    const uint32_t pipelineId = static_cast<uint32_t>(state_->customInstancedPipelines.size());
+    try {
+        state_->customInstancedPipelines.push_back(std::move(pipelineSet));
+    } catch (const std::exception&) {
+        return kInvalidResourceId;
+    }
     return pipelineId;
 }
 
 void MeshRenderer::CreateShadowPipelineStates() {
-    auto *device = state_->dxCommon->GetDevice();
+    auto* device = state_->dxCommon->GetDevice();
     if (device == nullptr || !state_->shadowRootSignature) {
         return;
     }
-    auto vs =
-        ShaderCompiler::Compile(ShaderPaths::MeshShadowVS, "main", "vs_6_6");
-    auto instancedVs = ShaderCompiler::Compile(
-        ShaderPaths::MeshShadowInstancedVS, "main", "vs_6_6");
-    auto ps =
-        ShaderCompiler::Compile(ShaderPaths::MeshShadowPS, "main", "ps_6_6");
+    auto vs = ShaderCompiler::Compile(ShaderPaths::MeshShadowVS, "main", "vs_6_6");
+    auto instancedVs =
+        ShaderCompiler::Compile(ShaderPaths::MeshShadowInstancedVS, "main", "vs_6_6");
+    auto ps = ShaderCompiler::Compile(ShaderPaths::MeshShadowPS, "main", "ps_6_6");
     if (!vs || !instancedVs || !ps) {
         return;
     }
 
-    const auto baseInputLayout =
-        RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshVertex);
+    const auto baseInputLayout = RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshVertex);
     const auto instancedInputLayout =
         RendererInputLayouts::MakeDesc(RendererInputLayouts::kMeshInstanced);
 
-    auto makePso = [&](D3D12_SHADER_BYTECODE vertexShader,
-                       D3D12_INPUT_LAYOUT_DESC inputLayout,
-                       ComPtr<ID3D12PipelineState> &psoOut) {
+    auto makePso = [&](D3D12_SHADER_BYTECODE vertexShader, D3D12_INPUT_LAYOUT_DESC inputLayout,
+                       ComPtr<ID3D12PipelineState>& psoOut) {
         RendererShadowPipelineUtils::CreateDepthPipelineState(
             device, state_->shadowRootSignature.Get(), vertexShader,
-            {ps->GetBufferPointer(), ps->GetBufferSize()}, inputLayout,
-            D3D12_CULL_MODE_NONE, psoOut);
+            {ps->GetBufferPointer(), ps->GetBufferSize()}, inputLayout, D3D12_CULL_MODE_NONE,
+            psoOut);
     };
 
-    makePso({vs->GetBufferPointer(), vs->GetBufferSize()}, baseInputLayout,
-            state_->shadowPSO);
-    makePso({instancedVs->GetBufferPointer(), instancedVs->GetBufferSize()},
-            instancedInputLayout, state_->instancedShadowPSO);
+    makePso({vs->GetBufferPointer(), vs->GetBufferSize()}, baseInputLayout, state_->shadowPSO);
+    makePso({instancedVs->GetBufferPointer(), instancedVs->GetBufferSize()}, instancedInputLayout,
+            state_->instancedShadowPSO);
 }

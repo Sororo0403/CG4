@@ -133,6 +133,15 @@
     <Filter Include="src\texture">
       <UniqueIdentifier>{2ac959bb-4c96-f137-a7c8-2126cb79a674}</UniqueIdentifier>
     </Filter>
+    <Filter Include="externals">
+      <UniqueIdentifier>{07B77D6B-C71C-44B8-B368-4307D548A813}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="externals\assimp">
+      <UniqueIdentifier>{32B43A30-A89B-4E25-AEC5-BEE9341D7305}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="externals\assimp\bin">
+      <UniqueIdentifier>{76FC25E0-01C8-4400-90C4-4F67F37E485C}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\animation\AnimationSampler.cpp">
@@ -226,6 +235,9 @@
       <Filter>src\graphics</Filter>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PipelineManager.cpp">
+      <Filter>src\graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\ShaderCompiler.cpp">
       <Filter>src\graphics</Filter>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PostEffectManager.cpp">
@@ -978,6 +990,9 @@
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)externals\assimp\bin\assimp-vc145-mt.dll">
+      <Filter>externals\assimp\bin</Filter>
+    </None>
     <None Include="$(MSBuildThisFileDirectory)resources\fonts\MPLUS1\MPLUS1-ExtraBold.ttf">
       <Filter>resources\fonts\MPLUS1</Filter>
     </None>

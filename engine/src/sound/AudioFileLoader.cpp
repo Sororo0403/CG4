@@ -1,9 +1,10 @@
 #include "sound/AudioFileLoader.h"
 
 #include "core/PathUtils.h"
-#include "sound/AudioLimits.h"
 #include "internal/SoundFormatUtils.h"
+#include "sound/AudioLimits.h"
 
+#include <exception>
 #include <filesystem>
 #include <mfapi.h>
 #include <mfidl.h>
@@ -14,8 +15,7 @@ using Microsoft::WRL::ComPtr;
 
 namespace {
 
-AudioFileLoader::SoundData::Info MakeSoundInfo(const WAVEFORMATEX &format,
-                                                size_t decodedBytes) {
+AudioFileLoader::SoundData::Info MakeSoundInfo(const WAVEFORMATEX& format, size_t decodedBytes) {
     AudioFileLoader::SoundData::Info info{};
     info.sampleRate = format.nSamplesPerSec;
     info.channels = format.nChannels;
@@ -23,15 +23,14 @@ AudioFileLoader::SoundData::Info MakeSoundInfo(const WAVEFORMATEX &format,
     info.decodedBytes = decodedBytes;
     if (format.nAvgBytesPerSec > 0) {
         info.durationSeconds =
-            static_cast<float>(decodedBytes) /
-            static_cast<float>(format.nAvgBytesPerSec);
+            static_cast<float>(decodedBytes) / static_cast<float>(format.nAvgBytesPerSec);
     }
     return info;
 }
 
 } // namespace
 
-AudioFileLoader::SoundData AudioFileLoader::Load(const std::wstring &path) {
+AudioFileLoader::SoundData AudioFileLoader::Load(const std::wstring& path) {
     SoundData data{};
     if (TryLoad(path, data)) {
         return data;
@@ -39,31 +38,36 @@ AudioFileLoader::SoundData AudioFileLoader::Load(const std::wstring &path) {
     return {};
 }
 
-bool AudioFileLoader::TryLoad(const std::wstring &path, SoundData &outData) {
+bool AudioFileLoader::TryLoad(const std::wstring& path, SoundData& outData) {
     outData = {};
 
-    const std::filesystem::path resolvedPath = PathUtils::ResolveAssetPath(path);
+    std::filesystem::path resolvedPath;
+    try {
+        resolvedPath = PathUtils::ResolveAssetPath(path);
+    } catch (const std::exception&) {
+        return false;
+    }
     std::error_code ec;
-    if (!std::filesystem::exists(resolvedPath, ec)) {
+    try {
+        if (!std::filesystem::exists(resolvedPath, ec)) {
+            return false;
+        }
+    } catch (const std::exception&) {
         return false;
     }
 
     ComPtr<IMFSourceReader> reader;
     ComPtr<IMFMediaType> currentMediaType;
-    if (!SoundFormatUtils::CreatePcmSourceReader(resolvedPath, reader,
-                                                 &currentMediaType)) {
+    if (!SoundFormatUtils::CreatePcmSourceReader(resolvedPath, reader, &currentMediaType)) {
         return false;
     }
 
     SoundData data{};
     WAVEFORMATEX format{};
-    if (!SoundFormatUtils::GetWaveFormatBytes(currentMediaType.Get(),
-                                              data.waveFormat) ||
-        !SoundFormatUtils::ReadAllPcmData(reader.Get(),
-                                          AudioLimits::kMaxDecodedPcmBytes,
+    if (!SoundFormatUtils::GetWaveFormatBytes(currentMediaType.Get(), data.waveFormat) ||
+        !SoundFormatUtils::ReadAllPcmData(reader.Get(), AudioLimits::kMaxDecodedPcmBytes,
                                           data.decodedPcm) ||
-        data.waveFormat.empty() || data.decodedPcm.empty() ||
-        !data.CopyFormat(format)) {
+        data.waveFormat.empty() || data.decodedPcm.empty() || !data.CopyFormat(format)) {
         return false;
     }
 

@@ -2,6 +2,7 @@
 #include "animation/AnimationTypes.h"
 #include "core/ResourceHandle.h"
 #include "model/VertexInfluence.h"
+
 #include <DirectXMath.h>
 #include <cstdint>
 #include <d3d12.h>
@@ -36,7 +37,7 @@ struct WellForGPU {
 
 struct SkinPaletteFrame {
     Microsoft::WRL::ComPtr<ID3D12Resource> resource;
-    WellForGPU *mappedPalette = nullptr;
+    WellForGPU* mappedPalette = nullptr;
 };
 
 /// <summary>
@@ -46,7 +47,7 @@ struct SkinCluster {
     std::vector<DirectX::XMFLOAT4X4> inverseBindPoseMatrices;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> influenceResource;
-    VertexInfluence *mappedInfluence = nullptr;
+    VertexInfluence* mappedInfluence = nullptr;
     uint32_t influenceCount = 0;
     uint32_t influenceSrvIndex = kInvalidResourceId;
     D3D12_CPU_DESCRIPTOR_HANDLE influenceSrvCpuHandle{};
@@ -118,14 +119,13 @@ struct Model {
     std::vector<DirectX::XMFLOAT4X4> skeletonSpaceMatrices;
     std::vector<DirectX::XMFLOAT4X4> finalBoneMatrices;
 
-    std::string currentAnimation = "";
+    std::string currentAnimation;
     float animationTime = 0.0f;
     bool isLoop = true;
     bool isPlaying = true;
     bool animationFinished = false;
 
     bool hasRootAnimation = false;
-    DirectX::XMFLOAT4X4 rootAnimationMatrix = {
-        1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+    DirectX::XMFLOAT4X4 rootAnimationMatrix = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                                               0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 };

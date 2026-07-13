@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <numeric>
 #include <unordered_map>
 #include <vector>
@@ -13,6 +14,11 @@ namespace {
 constexpr float kDefaultTicksPerSecond = 25.0f;
 constexpr float kMinimumClipDuration = 0.000001f;
 constexpr size_t kMaxAssimpNodeTraversal = 65536u;
+
+struct AnimationLoadCounters {
+    size_t totalChannels = 0;
+    size_t totalKeys = 0;
+};
 
 float ToSeconds(double ticks, float ticksPerSecond) {
     const float safeTicksPerSecond = (std::isfinite(ticksPerSecond) && ticksPerSecond > 0.0f)
@@ -63,16 +69,15 @@ float MaxNodeAnimationTime(const NodeAnimation& nodeAnimation) {
 }
 
 float MaxClipKeyTime(const AnimationClip& clip) {
-    return std::accumulate(
-        clip.nodeAnimations.begin(), clip.nodeAnimations.end(), 0.0f,
-        [](float maxTime, const auto &entry) {
-            return (std::max)(maxTime, MaxNodeAnimationTime(entry.second));
-        });
+    return std::accumulate(clip.nodeAnimations.begin(), clip.nodeAnimations.end(), 0.0f,
+                           [](float maxTime, const auto& entry) {
+                               return (std::max)(maxTime, MaxNodeAnimationTime(entry.second));
+                           });
 }
 
 const aiNode* FindNearestAnimatedNode(
     const aiNode* node, const std::unordered_map<std::string, NodeAnimation>& nodeAnimations) {
-    if (!node) {
+    if (node == nullptr) {
         return nullptr;
     }
 
@@ -87,14 +92,14 @@ const aiNode* FindNearestAnimatedNode(
     while (!stack.empty()) {
         const aiNode* current = stack.back();
         stack.pop_back();
-        if (!current) {
+        if (current == nullptr) {
             continue;
         }
         if (++visited > kMaxAssimpNodeTraversal) {
             return nullptr;
         }
 
-        if (nodeAnimations.find(current->mName.C_Str()) != nodeAnimations.end()) {
+        if (nodeAnimations.contains(current->mName.C_Str())) {
             return current;
         }
 
@@ -113,8 +118,8 @@ const aiNode* FindNearestAnimatedNode(
     return nullptr;
 }
 
-bool IsSceneAnimationListUsable(const aiScene *scene) {
-    if (!scene || !scene->HasAnimations()) {
+bool IsSceneAnimationListUsable(const aiScene* scene) {
+    if (scene == nullptr || !scene->HasAnimations()) {
         return false;
     }
     if (scene->mNumAnimations > ModelLimits::kMaxAnimations) {
@@ -123,75 +128,75 @@ bool IsSceneAnimationListUsable(const aiScene *scene) {
     return scene->mNumAnimations == 0 || scene->mAnimations != nullptr;
 }
 
-bool TryReserveAnimationChannels(const aiAnimation *animation, size_t &totalChannels) {
+bool TryReserveAnimationChannels(const aiAnimation* animation, AnimationLoadCounters& counters) {
     if (animation->mNumChannels > ModelLimits::kMaxAnimationChannels ||
-        totalChannels > ModelLimits::kMaxAnimationChannels - animation->mNumChannels) {
+        counters.totalChannels > ModelLimits::kMaxAnimationChannels - animation->mNumChannels) {
         return false;
     }
-    totalChannels += animation->mNumChannels;
+    counters.totalChannels += animation->mNumChannels;
     return true;
 }
 
-bool HasUsableAnimationChannels(const aiAnimation *animation) {
+bool HasUsableAnimationChannels(const aiAnimation* animation) {
     return animation->mNumChannels == 0 || animation->mChannels != nullptr;
 }
 
-bool HasUsableChannelKeyArrays(const aiNodeAnim *channel) {
-    return (channel->mNumPositionKeys == 0 || channel->mPositionKeys) &&
-           (channel->mNumRotationKeys == 0 || channel->mRotationKeys) &&
-           (channel->mNumScalingKeys == 0 || channel->mScalingKeys);
+bool HasUsableChannelKeyArrays(const aiNodeAnim* channel) {
+    return (channel->mNumPositionKeys == 0 || channel->mPositionKeys != nullptr) &&
+           (channel->mNumRotationKeys == 0 || channel->mRotationKeys != nullptr) &&
+           (channel->mNumScalingKeys == 0 || channel->mScalingKeys != nullptr);
 }
 
-size_t ChannelKeyCount(const aiNodeAnim *channel) {
+size_t ChannelKeyCount(const aiNodeAnim* channel) {
     return static_cast<size_t>(channel->mNumPositionKeys) +
            static_cast<size_t>(channel->mNumRotationKeys) +
            static_cast<size_t>(channel->mNumScalingKeys);
 }
 
-bool TryReserveChannelKeys(const aiNodeAnim *channel, size_t &totalKeys) {
+bool TryReserveChannelKeys(const aiNodeAnim* channel, AnimationLoadCounters& counters) {
     const size_t keyCount = ChannelKeyCount(channel);
     if (keyCount > ModelLimits::kMaxAnimationKeysPerChannel ||
-        totalKeys > ModelLimits::kMaxAnimationKeysTotal - keyCount) {
+        counters.totalKeys > ModelLimits::kMaxAnimationKeysTotal - keyCount) {
         return false;
     }
-    totalKeys += keyCount;
+    counters.totalKeys += keyCount;
     return true;
 }
 
-void AppendPositionKeys(const aiNodeAnim *channel, float ticksPerSecond,
-                        NodeAnimation &nodeAnimation) {
+void AppendPositionKeys(const aiNodeAnim* channel, float ticksPerSecond,
+                        NodeAnimation& nodeAnimation) {
     for (unsigned int k = 0; k < channel->mNumPositionKeys; k++) {
-        const aiVectorKey &key = channel->mPositionKeys[k];
+        const aiVectorKey& key = channel->mPositionKeys[k];
         nodeAnimation.translate.keyframes.push_back(
-            {ToSeconds(key.mTime, ticksPerSecond),
-             {key.mValue.x, key.mValue.y, key.mValue.z}});
+            {.time = ToSeconds(key.mTime, ticksPerSecond),
+             .value = {key.mValue.x, key.mValue.y, key.mValue.z}});
     }
 }
 
-void AppendRotationKeys(const aiNodeAnim *channel, float ticksPerSecond,
-                        NodeAnimation &nodeAnimation) {
+void AppendRotationKeys(const aiNodeAnim* channel, float ticksPerSecond,
+                        NodeAnimation& nodeAnimation) {
     for (unsigned int k = 0; k < channel->mNumRotationKeys; k++) {
-        const aiQuatKey &key = channel->mRotationKeys[k];
+        const aiQuatKey& key = channel->mRotationKeys[k];
         nodeAnimation.rotate.keyframes.push_back(
-            {ToSeconds(key.mTime, ticksPerSecond),
-             {key.mValue.x, key.mValue.y, key.mValue.z, key.mValue.w}});
+            {.time = ToSeconds(key.mTime, ticksPerSecond),
+             .value = {key.mValue.x, key.mValue.y, key.mValue.z, key.mValue.w}});
     }
 }
 
-void AppendScalingKeys(const aiNodeAnim *channel, float ticksPerSecond,
-                       NodeAnimation &nodeAnimation) {
+void AppendScalingKeys(const aiNodeAnim* channel, float ticksPerSecond,
+                       NodeAnimation& nodeAnimation) {
     for (unsigned int k = 0; k < channel->mNumScalingKeys; k++) {
-        const aiVectorKey &key = channel->mScalingKeys[k];
+        const aiVectorKey& key = channel->mScalingKeys[k];
         nodeAnimation.scale.keyframes.push_back(
-            {ToSeconds(key.mTime, ticksPerSecond),
-             {key.mValue.x, key.mValue.y, key.mValue.z}});
+            {.time = ToSeconds(key.mTime, ticksPerSecond),
+             .value = {key.mValue.x, key.mValue.y, key.mValue.z}});
     }
 }
 
-bool TryLoadNodeAnimation(const aiNodeAnim *channel, float ticksPerSecond,
-                          size_t &totalKeys, NodeAnimation &nodeAnimation) {
-    if (!channel || !HasUsableChannelKeyArrays(channel) ||
-        !TryReserveChannelKeys(channel, totalKeys)) {
+bool TryLoadNodeAnimation(const aiNodeAnim* channel, float ticksPerSecond,
+                          AnimationLoadCounters& counters, NodeAnimation& nodeAnimation) {
+    if (channel == nullptr || !HasUsableChannelKeyArrays(channel) ||
+        !TryReserveChannelKeys(channel, counters)) {
         return false;
     }
 
@@ -202,15 +207,15 @@ bool TryLoadNodeAnimation(const aiNodeAnim *channel, float ticksPerSecond,
     return HasKeyframes(nodeAnimation);
 }
 
-void FinalizeClipDuration(AnimationClip &clip) {
+void FinalizeClipDuration(AnimationClip& clip) {
     clip.duration = (std::max)(clip.duration, MaxClipKeyTime(clip));
     if (!std::isfinite(clip.duration) || clip.duration <= 0.0f) {
         clip.duration = kMinimumClipDuration;
     }
 }
 
-void ResolveClipRootNode(const aiScene *scene, AnimationClip &clip) {
-    if (const aiNode *rootAnimatedNode =
+void ResolveClipRootNode(const aiScene* scene, AnimationClip& clip) {
+    if (const aiNode* rootAnimatedNode =
             FindNearestAnimatedNode(scene->mRootNode, clip.nodeAnimations)) {
         clip.rootNodeName = rootAnimatedNode->mName.C_Str();
     } else if (clip.nodeAnimations.size() == 1) {
@@ -218,7 +223,7 @@ void ResolveClipRootNode(const aiScene *scene, AnimationClip &clip) {
     }
 }
 
-std::string ResolveAnimationName(const aiAnimation *animation, unsigned int index) {
+std::string ResolveAnimationName(const aiAnimation* animation, unsigned int index) {
     std::string animationName = animation->mName.C_Str();
     if (animationName.empty()) {
         animationName = "Anim_" + std::to_string(index);
@@ -226,20 +231,19 @@ std::string ResolveAnimationName(const aiAnimation *animation, unsigned int inde
     return animationName;
 }
 
-bool TryLoadAnimationClip(const aiScene *scene, const aiAnimation *animation,
-                          size_t &totalChannels, size_t &totalKeys,
-                          AnimationClip &clip) {
-    if (!animation || !TryReserveAnimationChannels(animation, totalChannels) ||
+bool TryLoadAnimationClip(const aiScene* scene, const aiAnimation* animation,
+                          AnimationLoadCounters& counters, AnimationClip& clip) {
+    if (animation == nullptr || !TryReserveAnimationChannels(animation, counters) ||
         !HasUsableAnimationChannels(animation)) {
         return false;
     }
 
-    const float ticksPerSecond = static_cast<float>(animation->mTicksPerSecond);
+    const auto ticksPerSecond = static_cast<float>(animation->mTicksPerSecond);
     clip.duration = ToSeconds(animation->mDuration, ticksPerSecond);
     for (unsigned int i = 0; i < animation->mNumChannels; i++) {
         NodeAnimation nodeAnimation;
-        const aiNodeAnim *channel = animation->mChannels[i];
-        if (!TryLoadNodeAnimation(channel, ticksPerSecond, totalKeys, nodeAnimation)) {
+        const aiNodeAnim* channel = animation->mChannels[i];
+        if (!TryLoadNodeAnimation(channel, ticksPerSecond, counters, nodeAnimation)) {
             continue;
         }
         clip.nodeAnimations[channel->mNodeName.C_Str()] = nodeAnimation;
@@ -253,7 +257,7 @@ bool TryLoadAnimationClip(const aiScene *scene, const aiAnimation *animation,
     return true;
 }
 
-void EnableModelAnimationPlayback(Model &model) {
+void EnableModelAnimationPlayback(Model& model) {
     if (model.animations.empty()) {
         return;
     }
@@ -270,14 +274,19 @@ void AssimpAnimationLoader::LoadAnimations(const aiScene* scene, Model& model) {
         return;
     }
 
-    size_t totalChannels = 0;
-    size_t totalKeys = 0;
-    for (unsigned int a = 0; a < scene->mNumAnimations; a++) {
-        AnimationClip clip{};
-        const aiAnimation *animation = scene->mAnimations[a];
-        if (TryLoadAnimationClip(scene, animation, totalChannels, totalKeys, clip)) {
-            model.animations[ResolveAnimationName(animation, a)] = clip;
+    try {
+        AnimationLoadCounters counters;
+        for (unsigned int a = 0; a < scene->mNumAnimations; a++) {
+            AnimationClip clip{};
+            const aiAnimation* animation = scene->mAnimations[a];
+            if (TryLoadAnimationClip(scene, animation, counters, clip)) {
+                model.animations[ResolveAnimationName(animation, a)] = clip;
+            }
         }
+        EnableModelAnimationPlayback(model);
+    } catch (const std::exception&) {
+        model.animations.clear();
+        model.currentAnimation.clear();
+        model.isPlaying = false;
     }
-    EnableModelAnimationPlayback(model);
 }

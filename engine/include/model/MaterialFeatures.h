@@ -26,26 +26,24 @@ enum class MaterialFeatureFlags : uint32_t {
     WritesMotionVectors = 1u << 9,
 };
 
-inline constexpr MaterialFeatureFlags
-operator|(MaterialFeatureFlags lhs, MaterialFeatureFlags rhs) {
-    return static_cast<MaterialFeatureFlags>(
-        static_cast<uint32_t>(lhs) | static_cast<uint32_t>(rhs));
+inline constexpr MaterialFeatureFlags operator|(MaterialFeatureFlags lhs,
+                                                MaterialFeatureFlags rhs) {
+    return static_cast<MaterialFeatureFlags>(static_cast<uint32_t>(lhs) |
+                                             static_cast<uint32_t>(rhs));
 }
 
-inline constexpr MaterialFeatureFlags
-operator&(MaterialFeatureFlags lhs, MaterialFeatureFlags rhs) {
-    return static_cast<MaterialFeatureFlags>(
-        static_cast<uint32_t>(lhs) & static_cast<uint32_t>(rhs));
+inline constexpr MaterialFeatureFlags operator&(MaterialFeatureFlags lhs,
+                                                MaterialFeatureFlags rhs) {
+    return static_cast<MaterialFeatureFlags>(static_cast<uint32_t>(lhs) &
+                                             static_cast<uint32_t>(rhs));
 }
 
-inline MaterialFeatureFlags &operator|=(MaterialFeatureFlags &lhs,
-                                        MaterialFeatureFlags rhs) {
+inline MaterialFeatureFlags& operator|=(MaterialFeatureFlags& lhs, MaterialFeatureFlags rhs) {
     lhs = lhs | rhs;
     return lhs;
 }
 
-inline constexpr bool HasMaterialFeature(MaterialFeatureFlags flags,
-                                         MaterialFeatureFlags feature) {
+inline constexpr bool HasMaterialFeature(MaterialFeatureFlags flags, MaterialFeatureFlags feature) {
     return (static_cast<uint32_t>(flags & feature) != 0u);
 }
 
@@ -57,11 +55,9 @@ struct MaterialPipelineKey {
     bool depthWrite = true;
 };
 
-inline MaterialPipelineKey
-BuildMaterialPipelineKey(const Material &material,
-                         MaterialDomain domain = MaterialDomain::Surface,
-                         MaterialFeatureFlags extraFeatures =
-                             MaterialFeatureFlags::None) {
+inline MaterialPipelineKey BuildMaterialPipelineKey(
+    const Material& material, MaterialDomain domain = MaterialDomain::Surface,
+    MaterialFeatureFlags extraFeatures = MaterialFeatureFlags::None) {
     const Material normalized = NormalizeMaterialForDraw(material);
     MaterialPipelineKey key{};
     key.domain = domain;
@@ -82,8 +78,7 @@ BuildMaterialPipelineKey(const Material &material,
     if (normalized.enableNormalMap != 0) {
         key.features |= MaterialFeatureFlags::NormalMap;
     }
-    if (normalized.pbrTextureParams.x != 0.0f ||
-        normalized.pbrTextureParams.y != 0.0f) {
+    if (normalized.pbrTextureParams.x != 0.0f || normalized.pbrTextureParams.y != 0.0f) {
         key.features |= MaterialFeatureFlags::OrmMap;
     }
     return key;

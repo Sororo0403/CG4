@@ -1,9 +1,9 @@
 #pragma once
 
+#include "TextureManagerAsyncState.h"
 #include "core/ResourceHandle.h"
 #include "texture/Texture.h"
 #include "texture/TextureManager.h"
-#include "TextureManagerAsyncState.h"
 
 #include <cstdint>
 #include <memory>
@@ -20,8 +20,7 @@ struct TextureManager::Entry {
 struct TextureManager::State {
     std::vector<Entry> textures;
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> uploadBuffers;
-    std::vector<std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>>
-        frameUploadBuffers;
+    std::vector<std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>> frameUploadBuffers;
     std::unordered_map<std::wstring, uint32_t> filePathToTextureId;
     std::unique_ptr<TextureManagerAsyncState> asyncState =
         std::make_unique<TextureManagerAsyncState>();

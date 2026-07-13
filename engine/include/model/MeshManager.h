@@ -1,5 +1,6 @@
 #pragma once
 #include "core/ResourceHandle.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <d3d12.h>
@@ -22,15 +23,14 @@ struct Mesh {
     uint32_t vertexStride = 0;
     uint64_t vertexBytes = 0;
     uint64_t indexBytes = 0;
-    D3D12_PRIMITIVE_TOPOLOGY primitiveTopology =
-        D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+    D3D12_PRIMITIVE_TOPOLOGY primitiveTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 };
 
 /// <summary>
 /// GPUメッシュリソースの生成と参照を管理する
 /// </summary>
 class MeshManager {
-  public:
+public:
     MeshManager();
     ~MeshManager();
 
@@ -38,7 +38,7 @@ class MeshManager {
     /// メッシュ用GPUリソースを生成できるようDirectX参照を設定する
     /// </summary>
     /// <param name="dxCommon">DirectXCommonインスタンス</param>
-    void Initialize(DirectXCommon *dxCommon);
+    void Initialize(DirectXCommon* dxCommon);
 
     /// <summary>
     /// 管理中のメッシュGPUリソースを解放する
@@ -61,18 +61,15 @@ class MeshManager {
     /// <param name="indexData">16bitインデックス配列</param>
     /// <param name="indexCount">インデックス数</param>
     /// <returns>登録されたMeshのID</returns>
-    uint32_t CreateMesh(const void *vertexData, uint32_t vertexStride,
-                        uint32_t vertexCount, const uint32_t *indexData,
-                        uint32_t indexCount,
-                        D3D12_PRIMITIVE_TOPOLOGY primitiveTopology =
-                            D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    uint32_t CreateMesh(
+        const void* vertexData, uint32_t vertexStride, uint32_t vertexCount,
+        const uint32_t* indexData, uint32_t indexCount,
+        D3D12_PRIMITIVE_TOPOLOGY primitiveTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     MeshHandle CreateMeshHandle(
-        const void *vertexData, uint32_t vertexStride, uint32_t vertexCount,
-        const uint32_t *indexData, uint32_t indexCount,
-        D3D12_PRIMITIVE_TOPOLOGY primitiveTopology =
-            D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST) {
-        return MeshHandle(CreateMesh(vertexData, vertexStride, vertexCount,
-                                     indexData, indexCount,
+        const void* vertexData, uint32_t vertexStride, uint32_t vertexCount,
+        const uint32_t* indexData, uint32_t indexCount,
+        D3D12_PRIMITIVE_TOPOLOGY primitiveTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST) {
+        return MeshHandle(CreateMesh(vertexData, vertexStride, vertexCount, indexData, indexCount,
                                      primitiveTopology));
     }
 
@@ -80,15 +77,19 @@ class MeshManager {
     /// 登録済みメッシュを破棄してIDを無効化する
     /// </summary>
     void DestroyMesh(uint32_t meshId);
-    void DestroyMesh(MeshHandle mesh) { DestroyMesh(mesh.Get()); }
+    void DestroyMesh(MeshHandle mesh) {
+        DestroyMesh(mesh.Get());
+    }
 
     /// <summary>
     /// メッシュ情報を取得する
     /// </summary>
     /// <param name="meshId">メッシュID</param>
     /// <returns>メッシュ情報</returns>
-    const Mesh &GetMesh(uint32_t meshId) const;
-    const Mesh &GetMesh(MeshHandle mesh) const { return GetMesh(mesh.Get()); }
+    const Mesh& GetMesh(uint32_t meshId) const;
+    const Mesh& GetMesh(MeshHandle mesh) const {
+        return GetMesh(mesh.Get());
+    }
 
     /// <summary>
     /// 指定IDが有効なメッシュを指しているかを取得する
@@ -102,25 +103,32 @@ class MeshManager {
     uint64_t GetDeferredGpuBytes() const;
     uint64_t GetUploadBytes() const;
 
-  private:
+private:
     struct State;
 
     bool ReserveMeshStorage();
-    bool StoreFrameUploadBuffers(
-        const Microsoft::WRL::ComPtr<ID3D12Resource> &vertexUploadBuffer,
-        const Microsoft::WRL::ComPtr<ID3D12Resource> &indexUploadBuffer);
+    bool StoreFrameUploadBuffers(const Microsoft::WRL::ComPtr<ID3D12Resource>& vertexUploadBuffer,
+                                 const Microsoft::WRL::ComPtr<ID3D12Resource>& indexUploadBuffer);
     bool StoreFallbackUploadBuffers(
-        const Microsoft::WRL::ComPtr<ID3D12Resource> &vertexUploadBuffer,
-        const Microsoft::WRL::ComPtr<ID3D12Resource> &indexUploadBuffer);
-    bool StoreMesh(Mesh &&mesh, uint32_t &meshId);
+        const Microsoft::WRL::ComPtr<ID3D12Resource>& vertexUploadBuffer,
+        const Microsoft::WRL::ComPtr<ID3D12Resource>& indexUploadBuffer);
+    bool StoreMesh(Mesh&& mesh, uint32_t& meshId);
     void RollBackStoredMesh(uint32_t meshId);
     void RemoveLastStoredUploadBuffers();
     bool RegisterMeshFrameRollback(uint32_t meshId);
     bool KeepSubmittedUploadBuffers(
-        uint32_t meshId,
-        const Microsoft::WRL::ComPtr<ID3D12Resource> &vertexUploadBuffer,
-        const Microsoft::WRL::ComPtr<ID3D12Resource> &indexUploadBuffer);
+        uint32_t meshId, const Microsoft::WRL::ComPtr<ID3D12Resource>& vertexUploadBuffer,
+        const Microsoft::WRL::ComPtr<ID3D12Resource>& indexUploadBuffer);
+    ID3D12GraphicsCommandList* BeginMeshUpload(bool ownsUploadPass);
+    bool StoreMeshForUpload(bool ownsUploadPass, Mesh&& mesh,
+                            const Microsoft::WRL::ComPtr<ID3D12Resource>& vertexUploadBuffer,
+                            const Microsoft::WRL::ComPtr<ID3D12Resource>& indexUploadBuffer,
+                            uint32_t& meshId);
+    bool RegisterMeshRollbackIfNeeded(bool ownsUploadPass, uint32_t meshId);
+    bool FinishMeshUpload(bool ownsUploadPass, uint32_t meshId,
+                          const Microsoft::WRL::ComPtr<ID3D12Resource>& vertexUploadBuffer,
+                          const Microsoft::WRL::ComPtr<ID3D12Resource>& indexUploadBuffer);
 
-    DirectXCommon *dxCommon_ = nullptr;
+    DirectXCommon* dxCommon_ = nullptr;
     std::unique_ptr<State> state_;
 };

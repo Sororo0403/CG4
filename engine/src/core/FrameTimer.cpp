@@ -1,4 +1,5 @@
 #include "core/FrameTimer.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -25,8 +26,7 @@ void FrameTimer::Tick() {
     lastTime_ = now;
 
     frameTime_.deltaTime = SanitizeDeltaSeconds(delta.count());
-    if (frameTime_.elapsedTime <=
-        (std::numeric_limits<double>::max)() - frameTime_.deltaTime) {
+    if (frameTime_.elapsedTime <= (std::numeric_limits<double>::max)() - frameTime_.deltaTime) {
         frameTime_.elapsedTime += frameTime_.deltaTime;
     }
     if (frameTime_.frameCount < (std::numeric_limits<uint64_t>::max)()) {

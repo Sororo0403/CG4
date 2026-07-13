@@ -1,14 +1,16 @@
+#include "core/PathUtils.h"
 #include "internal/SoundFormatUtils.h"
 #include "internal/SoundManagerInternal.h"
-#include "core/PathUtils.h"
 #include "sound/AudioLimits.h"
 #include "sound/SoundManager.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <limits>
+#include <new>
 #include <utility>
 
 namespace {
@@ -24,21 +26,42 @@ uint32_t SoundManager::Load(const std::wstring& path) {
 bool SoundManager::TryLoad(const std::wstring& path, uint32_t& soundId) {
     soundId = kInvalidSoundId;
 
-    const std::filesystem::path resolvedPath = PathUtils::ResolveAssetPath(path);
+    std::filesystem::path resolvedPath;
+    try {
+        resolvedPath = PathUtils::ResolveAssetPath(path);
+    } catch (const std::exception&) {
+        return false;
+    }
     std::error_code ec;
-    if (!std::filesystem::exists(resolvedPath, ec)) {
+    try {
+        if (!std::filesystem::exists(resolvedPath, ec)) {
+            return false;
+        }
+    } catch (const std::exception&) {
         return false;
     }
 
-    const std::wstring key = PathUtils::NormalizePathKey(resolvedPath);
+    std::wstring key;
+    try {
+        key = PathUtils::NormalizePathKey(resolvedPath);
+    } catch (const std::exception&) {
+        return false;
+    }
     const auto cached = state_->pathToSoundId.find(key);
     if (cached != state_->pathToSoundId.end()) {
         soundId = cached->second;
         return true;
     }
 
+    std::wstring resolvedPathText;
+    try {
+        resolvedPathText = resolvedPath.wstring();
+    } catch (const std::exception&) {
+        return false;
+    }
+
     AudioFileLoader::SoundData data{};
-    if (!AudioFileLoader::TryLoad(resolvedPath.wstring(), data)) {
+    if (!AudioFileLoader::TryLoad(resolvedPathText, data)) {
         return false;
     }
 
@@ -48,13 +71,24 @@ bool SoundManager::TryLoad(const std::wstring& path, uint32_t& soundId) {
     if (soundId == kInvalidSoundId) {
         return false;
     }
-    state_->pathToSoundId[key] = soundId;
+    try {
+        state_->pathToSoundId[key] = soundId;
+    } catch (const std::exception&) {
+        RemoveSound(soundId);
+        soundId = kInvalidSoundId;
+        return false;
+    }
     return true;
 }
 
 uint32_t SoundManager::LoadOrCreateSilent(const std::wstring& path) {
-    const std::filesystem::path resolvedPath = PathUtils::ResolveAssetPath(path);
-    const std::wstring key = PathUtils::NormalizePathKey(resolvedPath);
+    std::wstring key;
+    try {
+        const std::filesystem::path resolvedPath = PathUtils::ResolveAssetPath(path);
+        key = PathUtils::NormalizePathKey(resolvedPath);
+    } catch (const std::exception&) {
+        key = L"silent:fallback";
+    }
     const auto cached = state_->pathToSoundId.find(key);
     if (cached != state_->pathToSoundId.end()) {
         return cached->second;
@@ -71,7 +105,12 @@ uint32_t SoundManager::LoadOrCreateSilent(const std::wstring& path) {
 uint32_t SoundManager::CreatePcm16Sound(const std::wstring& cacheKey,
                                         const std::vector<int16_t>& pcmSamples, uint32_t sampleRate,
                                         uint16_t channels) {
-    const std::wstring key = PathUtils::NormalizeKey(L"procedural:" + cacheKey);
+    std::wstring key;
+    try {
+        key = PathUtils::NormalizeKey(L"procedural:" + cacheKey);
+    } catch (const std::exception&) {
+        return CreateSilentSound(L"procedural:fallback");
+    }
     const auto cached = state_->pathToSoundId.find(key);
     if (cached != state_->pathToSoundId.end()) {
         return cached->second;
@@ -92,28 +131,43 @@ uint32_t SoundManager::CreatePcm16Sound(const std::wstring& cacheKey,
     }
 
     SoundResource resource{};
-    resource.data.waveFormat.resize(sizeof(WAVEFORMATEX));
+    try {
+        resource.data.waveFormat.resize(sizeof(WAVEFORMATEX));
+        resource.data.decodedPcm.resize(pcmSamples.size() * sizeof(int16_t));
+    } catch (const std::exception&) {
+        return CreateSilentSound(key);
+    }
     std::memcpy(resource.data.waveFormat.data(), &format, sizeof(format));
-    resource.data.decodedPcm.resize(pcmSamples.size() * sizeof(int16_t));
     std::memcpy(resource.data.decodedPcm.data(), pcmSamples.data(),
                 resource.data.decodedPcm.size());
     resource.data.info.sampleRate = sampleRate;
     resource.data.info.channels = channels;
     resource.data.info.bitsPerSample = 16;
     resource.data.info.durationSeconds =
-        static_cast<float>(pcmSamples.size() / channels) / static_cast<float>(sampleRate);
+        static_cast<float>(pcmSamples.size()) /
+        (static_cast<float>(channels) * static_cast<float>(sampleRate));
     resource.data.info.decodedBytes = resource.data.decodedPcm.size();
 
     const uint32_t soundId = AppendSoundResource(std::move(resource));
     if (soundId == kInvalidSoundId) {
         return soundId;
     }
-    state_->pathToSoundId[key] = soundId;
+    try {
+        state_->pathToSoundId[key] = soundId;
+    } catch (const std::exception&) {
+        RemoveSound(soundId);
+        return kInvalidSoundId;
+    }
     return soundId;
 }
 
 uint32_t SoundManager::FindPcm16Sound(const std::wstring& cacheKey) const {
-    const std::wstring key = PathUtils::NormalizeKey(L"procedural:" + cacheKey);
+    std::wstring key;
+    try {
+        key = PathUtils::NormalizeKey(L"procedural:" + cacheKey);
+    } catch (const std::exception&) {
+        return kInvalidSoundId;
+    }
     const auto cached = state_->pathToSoundId.find(key);
     return cached != state_->pathToSoundId.end() ? cached->second : kInvalidSoundId;
 }
@@ -179,9 +233,13 @@ uint32_t SoundManager::CreateSilentSound(const std::wstring& cacheKey, uint32_t 
     const size_t decodedBytes = static_cast<size_t>(decodedBytesDouble);
 
     SoundResource resource{};
-    resource.data.waveFormat.resize(sizeof(WAVEFORMATEX));
+    try {
+        resource.data.waveFormat.resize(sizeof(WAVEFORMATEX));
+        resource.data.decodedPcm.assign(decodedBytes, 0);
+    } catch (const std::exception&) {
+        return kInvalidSoundId;
+    }
     std::memcpy(resource.data.waveFormat.data(), &format, sizeof(format));
-    resource.data.decodedPcm.assign(decodedBytes, 0);
     resource.data.info.sampleRate = sampleRate;
     resource.data.info.channels = channels;
     resource.data.info.bitsPerSample = bitsPerSample;
@@ -193,7 +251,12 @@ uint32_t SoundManager::CreateSilentSound(const std::wstring& cacheKey, uint32_t 
     if (soundId == kInvalidSoundId) {
         return soundId;
     }
-    state_->pathToSoundId[cacheKey] = soundId;
+    try {
+        state_->pathToSoundId[cacheKey] = soundId;
+    } catch (const std::exception&) {
+        RemoveSound(soundId);
+        return kInvalidSoundId;
+    }
     return soundId;
 }
 
@@ -201,6 +264,10 @@ uint32_t SoundManager::AppendSoundResource(SoundResource resource) {
     if (state_->sounds.size() >= static_cast<size_t>((std::numeric_limits<uint32_t>::max)())) {
         return kInvalidSoundId;
     }
-    state_->sounds.push_back(std::move(resource));
+    try {
+        state_->sounds.push_back(std::move(resource));
+    } catch (const std::exception&) {
+        return kInvalidSoundId;
+    }
     return static_cast<uint32_t>(state_->sounds.size() - 1);
 }

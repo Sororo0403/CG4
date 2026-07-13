@@ -9,6 +9,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -36,6 +37,12 @@ struct TextureManagerAsyncRequest {
     bool failed = false;
 };
 
+struct TextureManagerAsyncTerminalState {
+    uint32_t requestId = 0;
+    std::optional<uint32_t> textureId;
+    bool failed = false;
+};
+
 struct TextureManagerAsyncWorkItem {
     uint32_t requestId = 0;
     std::wstring filePath;
@@ -44,8 +51,7 @@ struct TextureManagerAsyncWorkItem {
 
 class TextureAsyncWorkerPool {
 public:
-    template <class WorkHandler>
-    bool Start(size_t workerCount, WorkHandler workHandler) {
+    template <class WorkHandler> bool Start(size_t workerCount, WorkHandler workHandler) {
         if (!workers_.empty()) {
             return true;
         }
@@ -59,9 +65,8 @@ public:
                         TextureManagerAsyncWorkItem item{};
                         {
                             std::unique_lock<std::mutex> lock(workerMutex_);
-                            workerCv_.wait(lock, [this]() {
-                                return stopWorkers_ || !pendingJobs_.empty();
-                            });
+                            workerCv_.wait(
+                                lock, [this]() { return stopWorkers_ || !pendingJobs_.empty(); });
                             if (stopWorkers_ && pendingJobs_.empty()) {
                                 return;
                             }
@@ -83,12 +88,17 @@ public:
         return !workers_.empty();
     }
 
-    void Enqueue(TextureManagerAsyncWorkItem item) {
-        {
-            std::lock_guard<std::mutex> lock(workerMutex_);
-            pendingJobs_.push_back(std::move(item));
+    bool Enqueue(TextureManagerAsyncWorkItem item) {
+        try {
+            {
+                std::lock_guard<std::mutex> lock(workerMutex_);
+                pendingJobs_.push_back(std::move(item));
+            }
+            workerCv_.notify_one();
+            return true;
+        } catch (...) {
+            return false;
         }
-        workerCv_.notify_one();
     }
 
     void Stop() {
@@ -108,7 +118,7 @@ public:
 
 private:
     void JoinWorkers() {
-        for (std::thread &worker : workers_) {
+        for (std::thread& worker : workers_) {
             if (worker.joinable()) {
                 worker.join();
             }
@@ -125,12 +135,14 @@ private:
 
 struct TextureManagerAsyncState {
     std::vector<TextureManagerAsyncRequest> requests;
+    std::deque<TextureManagerAsyncTerminalState> terminalStates;
     TextureAsyncWorkerPool workerPool;
     uint32_t nextRequestId = 1;
 
     void Reset() {
         StopWorkers();
         requests.clear();
+        terminalStates.clear();
         workerPool.ClearPending();
         nextRequestId = 1;
     }

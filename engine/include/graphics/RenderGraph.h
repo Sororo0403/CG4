@@ -14,15 +14,15 @@ class DirectXCommon;
 class SrvManager;
 
 struct RenderGraphContext {
-    DirectXCommon *dxCommon = nullptr;
-    SrvManager *srvManager = nullptr;
-    ID3D12GraphicsCommandList *commandList = nullptr;
+    DirectXCommon* dxCommon = nullptr;
+    SrvManager* srvManager = nullptr;
+    ID3D12GraphicsCommandList* commandList = nullptr;
 };
 
 class RenderGraph {
-  public:
+public:
     using PassCallback = std::function<void()>;
-    using ContextPassCallback = std::function<void(RenderGraphContext &)>;
+    using ContextPassCallback = std::function<void(RenderGraphContext&)>;
     static constexpr uint32_t kInvalidIndex = kInvalidResourceId;
 
     enum class ResourceUsage {
@@ -75,21 +75,23 @@ class RenderGraph {
     bool Execute();
     bool Execute(RenderGraphContext context);
 
-    const std::vector<std::string> &GetExecutionOrder() const {
+    const std::vector<std::string>& GetExecutionOrder() const {
         return executionOrder_;
     }
-    const std::vector<ResourceDesc> &GetResources() const {
+    const std::vector<ResourceDesc>& GetResources() const {
         return resources_;
     }
-    const std::vector<ResourceAccess> &GetResourceAccesses() const {
+    const std::vector<ResourceAccess>& GetResourceAccesses() const {
         return resourceAccesses_;
     }
-    const std::vector<ResourceTransition> &GetResourceTransitions() const {
+    const std::vector<ResourceTransition>& GetResourceTransitions() const {
         return resourceTransitions_;
     }
-    const std::string &GetLastError() const { return lastError_; }
+    const std::string& GetLastError() const {
+        return lastError_;
+    }
 
-  private:
+private:
     struct Pass {
         std::string name;
         PassCallback callback;
@@ -97,14 +99,24 @@ class RenderGraph {
         std::vector<uint32_t> dependencies;
     };
 
+    struct DependencyGraph {
+        std::vector<uint32_t> incoming;
+        std::vector<std::vector<uint32_t>> outgoing;
+    };
+
     int FindPass(std::string_view name) const;
     int FindResource(std::string_view name) const;
-    bool AddResourceAccess(std::string_view pass, std::string_view resource,
-                           ResourceUsage usage, bool write);
+    bool AddResourceAccess(std::string_view pass, std::string_view resource, ResourceUsage usage,
+                           bool write);
+    void ResetCompiledState();
+    bool InitializeDependencyGraph(DependencyGraph* graph);
+    bool BuildExplicitDependencies(DependencyGraph* graph);
+    bool BuildResourceDependencies(DependencyGraph* graph);
+    bool CompileExecutionOrder(DependencyGraph* graph);
     bool AddDependencyByIndex(uint32_t before, uint32_t after,
-                              std::vector<std::vector<uint32_t>> *outgoing,
-                              std::vector<uint32_t> *incoming);
-    void BuildResourceTransitions();
+                              std::vector<std::vector<uint32_t>>* outgoing,
+                              std::vector<uint32_t>* incoming);
+    bool BuildResourceTransitions();
 
     std::vector<Pass> passes_;
     std::vector<ResourceDesc> resources_;

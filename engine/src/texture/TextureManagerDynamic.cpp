@@ -1,15 +1,18 @@
 #include "../graphics/internal/GpuResourceScopes.h"
-#include "internal/TextureManagerInternal.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/GpuResourceHelpers.h"
 #include "graphics/SrvManager.h"
+#include "internal/TextureManagerInternal.h"
 #include "texture/Texture.h"
 #include "texture/TextureManager.h"
 
 #include <array>
+#include <exception>
 #include <limits>
+#include <new>
+#include <vector>
 
 using namespace DirectX;
 using GraphicsResourceScopes::ScopedUploadPass;
@@ -27,24 +30,83 @@ void PrepareDynamicUploadFrame(TextureManagerState& state, UINT frameIndex) {
 }
 
 template <typename TextureManagerState>
-void RetainDynamicUploadBuffer(
-    TextureManagerState& state, UINT frameIndex,
-    const ComPtr<ID3D12Resource>& uploadBuffer) {
-    if (frameIndex < state.frameUploadBuffers.size()) {
-        state.frameUploadBuffers[frameIndex].push_back(uploadBuffer);
-    } else {
-        state.uploadBuffers.push_back(uploadBuffer);
+bool RetainDynamicUploadBuffer(TextureManagerState& state, UINT frameIndex,
+                               const ComPtr<ID3D12Resource>& uploadBuffer) {
+    try {
+        if (frameIndex < state.frameUploadBuffers.size()) {
+            state.frameUploadBuffers[frameIndex].push_back(uploadBuffer);
+        } else {
+            state.uploadBuffers.push_back(uploadBuffer);
+        }
+    } catch (const std::exception&) {
+        return false;
     }
+    return true;
+}
+
+bool CreateDynamicTextureUploadBuffer(const DirectXCommon* dxCommon, UINT64 uploadSize,
+                                      ComPtr<ID3D12Resource>& uploadBuffer) {
+    CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
+    auto uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadSize);
+    return GpuResourceHelpers::CreateCommittedResourceChecked(
+        dxCommon->GetDevice(), &uploadHeap, D3D12_HEAP_FLAG_NONE, &uploadDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ, uploadBuffer.GetAddressOf());
 }
 
 template <typename TextureManagerState>
-void UploadTextureSubresources(TextureManager* textureManager,
-                               DirectXCommon* dxCommon,
-                               TextureManagerState& state,
-                               uint32_t textureId,
-                               Texture& texture,
-                               D3D12_SUBRESOURCE_DATA* subresources,
-                               UINT subresourceCount) {
+bool RegisterTextureStateRollback(TextureManager* textureManager, DirectXCommon* dxCommon,
+                                  TextureManagerState& state, uint32_t textureId,
+                                  D3D12_RESOURCE_STATES previousState, bool& rollbackRegistered) {
+    if (rollbackRegistered || !dxCommon->IsCommandListRecording()) {
+        return true;
+    }
+    if (!dxCommon->RegisterFrameRollback(textureManager, [&state, textureId, previousState]() {
+            if (textureId < state.textures.size()) {
+                state.textures[textureId].texture.state = previousState;
+            }
+        })) {
+        return false;
+    }
+    rollbackRegistered = true;
+    return true;
+}
+
+bool TransitionTextureForUpload(ID3D12GraphicsCommandList* commandList, Texture& texture,
+                                D3D12_RESOURCE_STATES previousState) {
+    if (texture.state == D3D12_RESOURCE_STATE_COPY_DEST) {
+        return true;
+    }
+    auto toCopyDest = CD3DX12_RESOURCE_BARRIER::Transition(texture.resource.Get(), texture.state,
+                                                           D3D12_RESOURCE_STATE_COPY_DEST);
+    commandList->ResourceBarrier(1, &toCopyDest);
+    texture.state = D3D12_RESOURCE_STATE_COPY_DEST;
+    (void)previousState;
+    return true;
+}
+
+void RestoreTextureStateAfterFailedCopy(ID3D12GraphicsCommandList* commandList, Texture& texture,
+                                        D3D12_RESOURCE_STATES previousState) {
+    if (texture.state == previousState) {
+        return;
+    }
+    auto restoreState =
+        CD3DX12_RESOURCE_BARRIER::Transition(texture.resource.Get(), texture.state, previousState);
+    commandList->ResourceBarrier(1, &restoreState);
+    texture.state = previousState;
+}
+
+void TransitionTextureToShaderResource(ID3D12GraphicsCommandList* commandList, Texture& texture) {
+    auto toShaderResource =
+        CD3DX12_RESOURCE_BARRIER::Transition(texture.resource.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+                                             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    commandList->ResourceBarrier(1, &toShaderResource);
+    texture.state = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+}
+
+template <typename TextureManagerState>
+void UploadTextureSubresources(TextureManager* textureManager, DirectXCommon* dxCommon,
+                               TextureManagerState& state, uint32_t textureId, Texture& texture,
+                               D3D12_SUBRESOURCE_DATA* subresources, UINT subresourceCount) {
     const bool ownsUploadPass = !dxCommon->IsCommandListRecording();
     if (ownsUploadPass && !dxCommon->BeginUpload()) {
         return;
@@ -64,12 +126,7 @@ void UploadTextureSubresources(TextureManager* textureManager,
     }
 
     ComPtr<ID3D12Resource> uploadBuffer;
-    CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
-    auto uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadSize);
-    if (!GpuResourceHelpers::CreateCommittedResourceChecked(
-            dxCommon->GetDevice(), &uploadHeap, D3D12_HEAP_FLAG_NONE,
-            &uploadDesc, D3D12_RESOURCE_STATE_GENERIC_READ,
-            uploadBuffer.GetAddressOf())) {
+    if (!CreateDynamicTextureUploadBuffer(dxCommon, uploadSize, uploadBuffer)) {
         return;
     }
 
@@ -78,64 +135,120 @@ void UploadTextureSubresources(TextureManager* textureManager,
         return;
     }
 
-    RetainDynamicUploadBuffer(state, frameIndex, uploadBuffer);
+    if (!RetainDynamicUploadBuffer(state, frameIndex, uploadBuffer)) {
+        return;
+    }
     const D3D12_RESOURCE_STATES previousState = texture.state;
     bool rollbackRegistered = false;
-    auto registerStateRollback = [&]() -> bool {
-        if (rollbackRegistered || !dxCommon->IsCommandListRecording()) {
-            return true;
-        }
-        if (!dxCommon->RegisterFrameRollback(
-                textureManager, [&state, textureId, previousState]() {
-                    if (textureId < state.textures.size()) {
-                        state.textures[textureId].texture.state = previousState;
-                    }
-                })) {
-            return false;
-        }
-        rollbackRegistered = true;
-        return true;
-    };
     if (texture.state != D3D12_RESOURCE_STATE_COPY_DEST) {
-        if (!registerStateRollback()) {
+        if (!RegisterTextureStateRollback(textureManager, dxCommon, state, textureId, previousState,
+                                          rollbackRegistered)) {
             return;
         }
-        auto toCopyDest = CD3DX12_RESOURCE_BARRIER::Transition(
-            texture.resource.Get(), texture.state,
-            D3D12_RESOURCE_STATE_COPY_DEST);
-        cmdList->ResourceBarrier(1, &toCopyDest);
-        texture.state = D3D12_RESOURCE_STATE_COPY_DEST;
+        TransitionTextureForUpload(cmdList, texture, previousState);
     }
 
-    const UINT64 copiedBytes =
-        UpdateSubresources(cmdList, texture.resource.Get(),
-                           uploadBuffer.Get(), 0, 0, subresourceCount,
-                           subresources);
+    const UINT64 copiedBytes = UpdateSubresources(
+        cmdList, texture.resource.Get(), uploadBuffer.Get(), 0, 0, subresourceCount, subresources);
     if (copiedBytes == 0) {
-        if (texture.state != previousState) {
-            auto restoreState = CD3DX12_RESOURCE_BARRIER::Transition(
-                texture.resource.Get(), texture.state, previousState);
-            cmdList->ResourceBarrier(1, &restoreState);
-            texture.state = previousState;
-        }
+        RestoreTextureStateAfterFailedCopy(cmdList, texture, previousState);
         if (!uploadPass.Finish()) {
             texture.state = previousState;
         }
         return;
     }
 
-    auto toShaderResource = CD3DX12_RESOURCE_BARRIER::Transition(
-        texture.resource.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-    if (!registerStateRollback()) {
+    if (!RegisterTextureStateRollback(textureManager, dxCommon, state, textureId, previousState,
+                                      rollbackRegistered)) {
         return;
     }
-    cmdList->ResourceBarrier(1, &toShaderResource);
-    texture.state = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    TransitionTextureToShaderResource(cmdList, texture);
 
     if (!uploadPass.Finish()) {
         texture.state = previousState;
     }
+}
+
+bool TryResolveRgbaTexturePitches(uint32_t width, uint32_t height, size_t& rowPitch,
+                                  size_t& slicePitch) {
+    if (static_cast<size_t>(width) > (std::numeric_limits<size_t>::max)() / 4u) {
+        return false;
+    }
+    rowPitch = static_cast<size_t>(width) * 4u;
+    if (rowPitch > (std::numeric_limits<size_t>::max)() / static_cast<size_t>(height)) {
+        return false;
+    }
+    slicePitch = rowPitch * static_cast<size_t>(height);
+    return rowPitch <= static_cast<size_t>((std::numeric_limits<LONG_PTR>::max)()) &&
+           slicePitch <= static_cast<size_t>((std::numeric_limits<LONG_PTR>::max)());
+}
+
+bool IsCubeTextureUpdateTargetValid(const Texture& texture, uint32_t size) {
+    if (!texture.resource || texture.width <= 0 || texture.height <= 0 || texture.arraySize != 6 ||
+        !texture.isCube) {
+        return false;
+    }
+
+    D3D12_RESOURCE_DESC textureDesc = texture.resource->GetDesc();
+    return textureDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D &&
+           textureDesc.DepthOrArraySize == 6 && textureDesc.MipLevels == 1 &&
+           textureDesc.Width == size && textureDesc.Height == size &&
+           textureDesc.Format == DXGI_FORMAT_R8G8B8A8_UNORM;
+}
+
+bool TryBuildCubeSubresources(const uint8_t* const* facePixels, size_t rowPitch, size_t slicePitch,
+                              std::array<D3D12_SUBRESOURCE_DATA, 6>& subresources) {
+    for (size_t face = 0; face < subresources.size(); ++face) {
+        if (!facePixels[face]) {
+            return false;
+        }
+        subresources[face].pData = facePixels[face];
+        subresources[face].RowPitch = static_cast<LONG_PTR>(rowPitch);
+        subresources[face].SlicePitch = static_cast<LONG_PTR>(slicePitch);
+    }
+    return true;
+}
+
+bool IsTexture2DUpdateTargetValid(const Texture& texture, const D3D12_RESOURCE_DESC& textureDesc) {
+    if (!texture.resource || texture.width <= 0 || texture.height <= 0) {
+        return false;
+    }
+    if (textureDesc.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D ||
+        textureDesc.DepthOrArraySize != 1 || textureDesc.MipLevels != 1) {
+        return false;
+    }
+    return textureDesc.Width <= static_cast<UINT64>((std::numeric_limits<int>::max)()) &&
+           textureDesc.Height <= static_cast<UINT>((std::numeric_limits<int>::max)()) &&
+           static_cast<int>(textureDesc.Width) == texture.width &&
+           static_cast<int>(textureDesc.Height) == texture.height;
+}
+
+bool TryBuildTexture2DSubresource(const Texture& texture, const D3D12_RESOURCE_DESC& textureDesc,
+                                  const uint8_t* pixels, size_t rowPitch,
+                                  D3D12_SUBRESOURCE_DATA& subresource) {
+    const size_t bitsPerPixel = DirectX::BitsPerPixel(textureDesc.Format);
+    if (bitsPerPixel == 0 || DirectX::IsCompressed(textureDesc.Format) ||
+        DirectX::IsDepthStencil(textureDesc.Format)) {
+        return false;
+    }
+    const size_t width = static_cast<size_t>(texture.width);
+    if (width > ((std::numeric_limits<size_t>::max)() - 7u) / bitsPerPixel) {
+        return false;
+    }
+    const size_t expectedRowPitch = (width * bitsPerPixel + 7u) / 8u;
+    if (rowPitch < expectedRowPitch ||
+        rowPitch > static_cast<size_t>((std::numeric_limits<LONG_PTR>::max)()) ||
+        rowPitch > (std::numeric_limits<size_t>::max)() / static_cast<size_t>(texture.height)) {
+        return false;
+    }
+    const size_t slicePitch = rowPitch * static_cast<size_t>(texture.height);
+    if (slicePitch > static_cast<size_t>((std::numeric_limits<LONG_PTR>::max)())) {
+        return false;
+    }
+    subresource.pData = pixels;
+    subresource.RowPitch = static_cast<LONG_PTR>(rowPitch);
+    subresource.SlicePitch = static_cast<LONG_PTR>(slicePitch);
+    return true;
 }
 
 } // namespace
@@ -152,25 +265,21 @@ uint32_t TextureManager::CreateFromRgbaPixelsSrgb(uint32_t width, uint32_t heigh
                            static_cast<size_t>(width) * 4u);
 }
 
-uint32_t
-TextureManager::CreateCubeFromRgbaPixels(uint32_t size,
-                                         const uint8_t *const *facePixels) {
-    const uint32_t fallbackTextureId =
-        IsValidTextureId(state_->blackCubeTextureId)
-            ? state_->blackCubeTextureId
-            : kInvalidResourceId;
+uint32_t TextureManager::CreateCubeFromRgbaPixels(uint32_t size, const uint8_t* const* facePixels) {
+    const uint32_t fallbackTextureId = IsValidTextureId(state_->blackCubeTextureId)
+                                           ? state_->blackCubeTextureId
+                                           : kInvalidResourceId;
     if (size == 0 || !facePixels) {
         return fallbackTextureId;
     }
-    if (static_cast<size_t>(size) >
-        (std::numeric_limits<size_t>::max)() / 4u) {
+    if (static_cast<size_t>(size) > (std::numeric_limits<size_t>::max)() / 4u) {
         return fallbackTextureId;
     }
 
     std::array<Image, 6> images{};
+    std::array<std::vector<uint8_t>, 6> ownedPixels;
     const size_t rowPitch = static_cast<size_t>(size) * 4u;
-    if (rowPitch > (std::numeric_limits<size_t>::max)() /
-                       static_cast<size_t>(size)) {
+    if (rowPitch > (std::numeric_limits<size_t>::max)() / static_cast<size_t>(size)) {
         return fallbackTextureId;
     }
     const size_t slicePitch = rowPitch * static_cast<size_t>(size);
@@ -178,12 +287,17 @@ TextureManager::CreateCubeFromRgbaPixels(uint32_t size,
         if (!facePixels[face]) {
             return fallbackTextureId;
         }
+        try {
+            ownedPixels[face].assign(facePixels[face], facePixels[face] + slicePitch);
+        } catch (const std::exception&) {
+            return fallbackTextureId;
+        }
         images[face].width = size;
         images[face].height = size;
         images[face].format = DXGI_FORMAT_R8G8B8A8_UNORM;
         images[face].rowPitch = rowPitch;
         images[face].slicePitch = slicePitch;
-        images[face].pixels = const_cast<uint8_t *>(facePixels[face]);
+        images[face].pixels = ownedPixels[face].data();
     }
 
     TexMetadata metadata{};
@@ -200,58 +314,31 @@ TextureManager::CreateCubeFromRgbaPixels(uint32_t size,
     return IsCubeTextureId(textureId) ? textureId : fallbackTextureId;
 }
 
-void TextureManager::UpdateCubeFromRgbaPixels(
-    uint32_t textureId, uint32_t size, const uint8_t *const *facePixels) {
+void TextureManager::UpdateCubeFromRgbaPixels(uint32_t textureId, uint32_t size,
+                                              const uint8_t* const* facePixels) {
     if (!dxCommon_ || !dxCommon_->GetDevice()) {
         return;
     }
-    if (size == 0 || !facePixels || !IsValidTextureId(textureId) ||
-        !IsCubeTextureId(textureId)) {
+    if (size == 0 || !facePixels || !IsValidTextureId(textureId) || !IsCubeTextureId(textureId)) {
         return;
     }
-    if (static_cast<size_t>(size) >
-        (std::numeric_limits<size_t>::max)() / 4u) {
-        return;
-    }
-
-    Texture &texture = state_->textures[textureId].texture;
-    if (!texture.resource || texture.width <= 0 || texture.height <= 0 ||
-        texture.arraySize != 6 || !texture.isCube) {
+    Texture& texture = state_->textures[textureId].texture;
+    if (!IsCubeTextureUpdateTargetValid(texture, size)) {
         return;
     }
 
-    D3D12_RESOURCE_DESC textureDesc = texture.resource->GetDesc();
-    if (textureDesc.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D ||
-        textureDesc.DepthOrArraySize != 6 || textureDesc.MipLevels != 1 ||
-        textureDesc.Width != size || textureDesc.Height != size ||
-        textureDesc.Format != DXGI_FORMAT_R8G8B8A8_UNORM) {
-        return;
-    }
-
-    const size_t rowPitch = static_cast<size_t>(size) * 4u;
-    if (rowPitch > (std::numeric_limits<size_t>::max)() /
-                       static_cast<size_t>(size)) {
-        return;
-    }
-    const size_t slicePitch = rowPitch * static_cast<size_t>(size);
-    if (rowPitch > static_cast<size_t>((std::numeric_limits<LONG_PTR>::max)()) ||
-        slicePitch >
-            static_cast<size_t>((std::numeric_limits<LONG_PTR>::max)())) {
+    size_t rowPitch = 0;
+    size_t slicePitch = 0;
+    if (!TryResolveRgbaTexturePitches(size, size, rowPitch, slicePitch)) {
         return;
     }
 
     std::array<D3D12_SUBRESOURCE_DATA, 6> subresources{};
-    for (size_t face = 0; face < subresources.size(); ++face) {
-        if (!facePixels[face]) {
-            return;
-        }
-        subresources[face].pData = facePixels[face];
-        subresources[face].RowPitch = static_cast<LONG_PTR>(rowPitch);
-        subresources[face].SlicePitch = static_cast<LONG_PTR>(slicePitch);
+    if (!TryBuildCubeSubresources(facePixels, rowPitch, slicePitch, subresources)) {
+        return;
     }
 
-    UploadTextureSubresources(this, dxCommon_, *state_, textureId, texture,
-                              subresources.data(),
+    UploadTextureSubresources(this, dxCommon_, *state_, textureId, texture, subresources.data(),
                               static_cast<UINT>(subresources.size()));
 }
 
@@ -281,12 +368,18 @@ uint32_t TextureManager::CreateTexture2D(uint32_t width, uint32_t height, DXGI_F
     }
 
     Image image{};
+    std::vector<uint8_t> ownedPixels;
+    try {
+        ownedPixels.assign(pixels, pixels + rowPitch * height);
+    } catch (const std::exception&) {
+        return fallbackTextureId;
+    }
     image.width = width;
     image.height = height;
     image.format = format;
     image.rowPitch = rowPitch;
     image.slicePitch = rowPitch * height;
-    image.pixels = const_cast<uint8_t*>(pixels);
+    image.pixels = ownedPixels.data();
 
     TexMetadata metadata{};
     metadata.width = width;
@@ -309,52 +402,15 @@ void TextureManager::UpdateTexture2D(uint32_t textureId, const uint8_t* pixels, 
     }
 
     Texture& texture = state_->textures[textureId].texture;
-    if (!texture.resource || texture.width <= 0 || texture.height <= 0) {
-        return;
-    }
-
     D3D12_RESOURCE_DESC textureDesc = texture.resource->GetDesc();
-    if (textureDesc.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D ||
-        textureDesc.DepthOrArraySize != 1 || textureDesc.MipLevels != 1) {
-        return;
-    }
-    if (textureDesc.Width > static_cast<UINT64>((std::numeric_limits<int>::max)()) ||
-        textureDesc.Height > static_cast<UINT>((std::numeric_limits<int>::max)()) ||
-        static_cast<int>(textureDesc.Width) != texture.width ||
-        static_cast<int>(textureDesc.Height) != texture.height) {
-        return;
-    }
-    const size_t bitsPerPixel = DirectX::BitsPerPixel(textureDesc.Format);
-    if (bitsPerPixel == 0) {
-        return;
-    }
-    if (DirectX::IsCompressed(textureDesc.Format) || DirectX::IsDepthStencil(textureDesc.Format)) {
-        return;
-    }
-    const size_t width = static_cast<size_t>(texture.width);
-    if (width > ((std::numeric_limits<size_t>::max)() - 7u) / bitsPerPixel) {
-        return;
-    }
-    const size_t expectedRowPitch = (width * bitsPerPixel + 7u) / 8u;
-    if (rowPitch < expectedRowPitch) {
+    if (!IsTexture2DUpdateTargetValid(texture, textureDesc)) {
         return;
     }
 
     D3D12_SUBRESOURCE_DATA subresource{};
-    subresource.pData = pixels;
-    if (rowPitch > static_cast<size_t>((std::numeric_limits<LONG_PTR>::max)())) {
+    if (!TryBuildTexture2DSubresource(texture, textureDesc, pixels, rowPitch, subresource)) {
         return;
     }
-    if (rowPitch > (std::numeric_limits<size_t>::max)() / static_cast<size_t>(texture.height)) {
-        return;
-    }
-    const size_t slicePitch = rowPitch * static_cast<size_t>(texture.height);
-    if (slicePitch > static_cast<size_t>((std::numeric_limits<LONG_PTR>::max)())) {
-        return;
-    }
-    subresource.RowPitch = static_cast<LONG_PTR>(rowPitch);
-    subresource.SlicePitch = static_cast<LONG_PTR>(slicePitch);
 
-    UploadTextureSubresources(this, dxCommon_, *state_, textureId, texture,
-                              &subresource, 1);
+    UploadTextureSubresources(this, dxCommon_, *state_, textureId, texture, &subresource, 1);
 }

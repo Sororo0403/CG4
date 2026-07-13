@@ -98,19 +98,15 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\main.cpp" />
-    <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\EvaluationScene.cpp" />
-    <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\ParticleDemoScene.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\GameScene.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="$(MSBuildThisFileDirectory)include\effects\FireworkHitEffectPresets.h" />
-    <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\EvaluationScene.h" />
-    <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\ParticleDemoScene.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\GameScene.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)resources\models\human\walk.bin" />
     <None Include="$(MSBuildThisFileDirectory)resources\models\human\walk.gltf" />
     <None Include="$(MSBuildThisFileDirectory)resources\models\human\white.png" />
-    <None Include="$(MSBuildThisFileDirectory)resources\ui\space_particle_prompt.png" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="$(MSBuildThisFileDirectory)..\engine\Engine.vcxproj">

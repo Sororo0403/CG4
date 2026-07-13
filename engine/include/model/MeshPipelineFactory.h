@@ -38,26 +38,24 @@ struct MeshPipelineDesc {
     MeshDepthMode depth = MeshDepthMode::TestWrite;
     MeshCullMode cull = MeshCullMode::Back;
     bool instanced = false;
-    MeshPipelineVariantMode variantMode =
-        MeshPipelineVariantMode::MaterialDriven;
+    MeshPipelineVariantMode variantMode = MeshPipelineVariantMode::MaterialDriven;
 };
 
 static constexpr size_t kMeshPipelineVariantCount = 12;
 
 using MeshPipelineStateArray =
-    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
-               kMeshPipelineVariantCount>;
+    std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>, kMeshPipelineVariantCount>;
 
 struct MeshPipelineSet {
     MeshPipelineStateArray pipelineStates;
 };
 
 class MeshPipelineFactory {
-  public:
-    static MeshPipelineSet CreatePipelineSet(
-        ID3D12Device *device, ID3D12RootSignature *rootSignature,
-        const MeshPipelineDesc &desc,
-        D3D12_INPUT_LAYOUT_DESC inputLayout,
-        DXGI_FORMAT renderTargetFormat,
-        DXGI_FORMAT depthStencilFormat);
+public:
+    static MeshPipelineSet CreatePipelineSet(ID3D12Device* device,
+                                             ID3D12RootSignature* rootSignature,
+                                             const MeshPipelineDesc& desc,
+                                             D3D12_INPUT_LAYOUT_DESC inputLayout,
+                                             DXGI_FORMAT renderTargetFormat,
+                                             DXGI_FORMAT depthStencilFormat);
 };

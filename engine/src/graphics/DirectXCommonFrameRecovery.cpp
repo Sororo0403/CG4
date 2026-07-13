@@ -14,15 +14,14 @@ bool DirectXCommon::RegisterFrameRollback(std::function<void()> rollback) {
     return RegisterFrameRollback(nullptr, std::move(rollback));
 }
 
-bool DirectXCommon::RegisterFrameRollback(
-    const void *owner, std::function<void()> rollback) {
+bool DirectXCommon::RegisterFrameRollback(const void* owner, std::function<void()> rollback) {
     if (!state_->isCommandListRecording || !rollback) {
         return true;
     }
     return state_->frameRollbacks.Add(owner, std::move(rollback));
 }
 
-void DirectXCommon::UnregisterFrameRollbacks(const void *owner) noexcept {
+void DirectXCommon::UnregisterFrameRollbacks(const void* owner) noexcept {
     state_->frameRollbacks.RemoveOwner(owner);
 }
 

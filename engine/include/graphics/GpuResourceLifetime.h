@@ -2,8 +2,7 @@
 
 #include "graphics/DirectXCommon.h"
 
-inline bool CanReleaseGpuResources(DirectXCommon *dxCommon,
-                                   bool hasGpuResources,
+inline bool CanReleaseGpuResources(DirectXCommon* dxCommon, bool hasGpuResources,
                                    bool allowFrameAbort = false) {
     if (!hasGpuResources || dxCommon == nullptr || dxCommon->IsDeviceRemoved()) {
         return true;

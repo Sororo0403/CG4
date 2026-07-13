@@ -9,8 +9,7 @@ inline float FiniteOr(float value, float fallback) {
     return std::isfinite(value) ? value : fallback;
 }
 
-inline float ClampFinite(float value, float minimum, float maximum,
-                         float fallback) {
+inline float ClampFinite(float value, float minimum, float maximum, float fallback) {
     return std::clamp(FiniteOr(value, fallback), minimum, maximum);
 }
 

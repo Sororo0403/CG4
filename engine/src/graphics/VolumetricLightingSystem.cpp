@@ -1,7 +1,5 @@
 #include "graphics/VolumetricLightingSystem.h"
 
-#include "internal/ConstantBufferUtils.h"
-#include "internal/RootSignatureUtils.h"
 #include "camera/Camera.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxUtils.h"
@@ -10,9 +8,12 @@
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
+#include "internal/ConstantBufferUtils.h"
+#include "internal/RootSignatureUtils.h"
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <vector>
 #include <wrl.h>
 
@@ -95,7 +96,11 @@ VolumetricLightingSettings SanitizeSettings(const VolumetricLightingSettings& so
 }
 
 uint32_t ResolveHalfResolution(int extent) {
-    return (std::max)(1u, static_cast<uint32_t>((extent + 1) / 2));
+    if (extent <= 1) {
+        return 1u;
+    }
+    const uint32_t positiveExtent = static_cast<uint32_t>(extent);
+    return positiveExtent / 2u + positiveExtent % 2u;
 }
 
 void DrawCompositeTriangle(ID3D12GraphicsCommandList* commandList, ID3D12DescriptorHeap* heap,
@@ -118,8 +123,7 @@ bool HasReadyVolumePair(const std::unique_ptr<RenderTexture>& currentVolume,
     return currentVolume && currentVolume->IsReady() && historyVolume && historyVolume->IsReady();
 }
 
-bool TryGetCommandContext(const DirectXCommon* dxCommon,
-                          const SrvManager* srvManager,
+bool TryGetCommandContext(const DirectXCommon* dxCommon, const SrvManager* srvManager,
                           ID3D12GraphicsCommandList*& commandList, ID3D12DescriptorHeap*& heap) {
     commandList = dxCommon != nullptr ? dxCommon->GetCommandList() : nullptr;
     heap = srvManager != nullptr ? srvManager->GetHeap() : nullptr;
@@ -225,14 +229,28 @@ bool VolumetricLightingSystem::Finalize(bool allowFrameAbort) {
     return true;
 }
 
-void VolumetricLightingSystem::Resize(int width, int height) {
+bool VolumetricLightingSystem::Resize(int width, int height) {
+    const int previousWidth = state_->width;
+    const int previousHeight = state_->height;
+    const D3D12_VIEWPORT previousViewport = state_->viewport;
+    const D3D12_RECT previousScissorRect = state_->scissorRect;
+    const bool previousHasHistory = state_->hasHistory;
+
     state_->width = width > 0 ? width : 1;
     state_->height = height > 0 ? height : 1;
     DxUtils::ConfigureViewportAndScissor(static_cast<UINT>(state_->width),
                                          static_cast<UINT>(state_->height), state_->viewport,
                                          state_->scissorRect);
     state_->hasHistory = false;
-    (void)EnsureRenderTextures();
+    if (!EnsureRenderTextures()) {
+        state_->width = previousWidth;
+        state_->height = previousHeight;
+        state_->viewport = previousViewport;
+        state_->scissorRect = previousScissorRect;
+        state_->hasHistory = previousHasHistory;
+        return false;
+    }
+    return true;
 }
 
 void VolumetricLightingSystem::SetSettings(const VolumetricLightingSettings& settings) {
@@ -315,6 +333,12 @@ void VolumetricLightingSystem::CreateCompositeRootSignature() {
 }
 
 void VolumetricLightingSystem::CreatePipelineState() {
+    auto resetPipelines = [&]() {
+        state_->pipelineState.Reset();
+        state_->compositeCopyPipelineState.Reset();
+        state_->compositeAddPipelineState.Reset();
+    };
+    resetPipelines();
     if (!dxCommon_ || !dxCommon_->GetDevice() || !state_->rootSignature ||
         !state_->compositeRootSignature) {
         return;
@@ -339,7 +363,8 @@ void VolumetricLightingSystem::CreatePipelineState() {
 
     if (FAILED(dxCommon_->GetDevice()->CreateGraphicsPipelineState(
             &desc, IID_PPV_ARGS(&state_->pipelineState)))) {
-        state_->pipelineState.Reset();
+        resetPipelines();
+        return;
     }
 
     desc.pRootSignature = state_->compositeRootSignature.Get();
@@ -347,7 +372,8 @@ void VolumetricLightingSystem::CreatePipelineState() {
     desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     if (FAILED(dxCommon_->GetDevice()->CreateGraphicsPipelineState(
             &desc, IID_PPV_ARGS(&state_->compositeCopyPipelineState)))) {
-        state_->compositeCopyPipelineState.Reset();
+        resetPipelines();
+        return;
     }
 
     D3D12_BLEND_DESC additiveBlend = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
@@ -362,7 +388,7 @@ void VolumetricLightingSystem::CreatePipelineState() {
     desc.BlendState = additiveBlend;
     if (FAILED(dxCommon_->GetDevice()->CreateGraphicsPipelineState(
             &desc, IID_PPV_ARGS(&state_->compositeAddPipelineState)))) {
-        state_->compositeAddPipelineState.Reset();
+        resetPipelines();
     }
 }
 
@@ -412,12 +438,16 @@ bool VolumetricLightingSystem::EnsureRenderTextures() {
     const int targetWidth = static_cast<int>(ResolveHalfResolution(state_->width));
     const int targetHeight = static_cast<int>(ResolveHalfResolution(state_->height));
 
-    if (!state_->currentVolume) {
-        state_->currentVolume = std::make_unique<RenderTexture>();
-    }
-    if (!state_->historyVolume) {
-        state_->historyVolume = std::make_unique<RenderTexture>();
-        state_->hasHistory = false;
+    try {
+        if (!state_->currentVolume) {
+            state_->currentVolume = std::make_unique<RenderTexture>();
+        }
+        if (!state_->historyVolume) {
+            state_->historyVolume = std::make_unique<RenderTexture>();
+            state_->hasHistory = false;
+        }
+    } catch (const std::exception&) {
+        return false;
     }
 
     auto ensureTexture = [&](RenderTexture& texture) {
@@ -429,10 +459,13 @@ bool VolumetricLightingSystem::EnsureRenderTextures() {
             if (dxCommon_->IsCommandListRecording()) {
                 return false;
             }
-            texture.Resize(targetWidth, targetHeight);
+            if (!texture.Resize(targetWidth, targetHeight)) {
+                return false;
+            }
             state_->hasHistory = false;
         }
-        return texture.IsReady();
+        return texture.IsReady() && texture.GetWidth() == targetWidth &&
+               texture.GetHeight() == targetHeight;
     };
 
     return ensureTexture(*state_->currentVolume) && ensureTexture(*state_->historyVolume);

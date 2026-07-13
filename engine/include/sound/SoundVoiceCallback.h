@@ -6,7 +6,7 @@
 /// XAudio2 の再生コールバックを受ける
 /// </summary>
 class SoundVoiceCallback : public IXAudio2VoiceCallback {
-  public:
+public:
     bool IsEnded() const {
         return streamEnded_.load(std::memory_order_acquire) ||
                endedBufferCount_.load(std::memory_order_acquire) > 0;
@@ -24,7 +24,7 @@ class SoundVoiceCallback : public IXAudio2VoiceCallback {
     /// <summary>
     /// バッファ再生終了通知を受け取る
     /// </summary>
-    void STDMETHODCALLTYPE OnBufferEnd(void *) override {
+    void STDMETHODCALLTYPE OnBufferEnd(void*) override {
         endedBufferCount_.fetch_add(1, std::memory_order_acq_rel);
     }
 
@@ -48,21 +48,21 @@ class SoundVoiceCallback : public IXAudio2VoiceCallback {
     /// <summary>
     /// バッファ再生開始通知を受け取る
     /// </summary>
-    void STDMETHODCALLTYPE OnBufferStart(void *) override {}
+    void STDMETHODCALLTYPE OnBufferStart(void*) override {}
 
     /// <summary>
     /// ループ再生終了通知を受け取る
     /// </summary>
-    void STDMETHODCALLTYPE OnLoopEnd(void *) override {}
+    void STDMETHODCALLTYPE OnLoopEnd(void*) override {}
 
     /// <summary>
     /// 音声再生エラー通知を受け取る
     /// </summary>
-    void STDMETHODCALLTYPE OnVoiceError(void *, HRESULT) override {
+    void STDMETHODCALLTYPE OnVoiceError(void*, HRESULT) override {
         streamEnded_.store(true, std::memory_order_release);
     }
 
-  private:
+private:
     std::atomic_uint32_t endedBufferCount_{0};
     std::atomic_bool streamEnded_{false};
 };

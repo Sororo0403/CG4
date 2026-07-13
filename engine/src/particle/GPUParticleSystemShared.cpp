@@ -1,11 +1,12 @@
 #include "internal/GPUParticleSystemShared.h"
 
+#include "../graphics/internal/RootSignatureUtils.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
-#include "../graphics/internal/RootSignatureUtils.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 
+#include <exception>
 #include <map>
 #include <utility>
 #include <wrl.h>
@@ -14,20 +15,23 @@ using Microsoft::WRL::ComPtr;
 
 namespace {
 
-ID3D12Device *gCachedParticleDrawDevice = nullptr;
+ID3D12Device* gCachedParticleDrawDevice = nullptr;
 ComPtr<ID3D12RootSignature> gCachedParticleDrawRootSignature;
 ComPtr<ID3D12CommandSignature> gCachedParticleDrawCommandSignature;
 std::map<std::wstring, ComPtr<ID3D12PipelineState>> gParticleDrawPsoCache;
 
-std::wstring MakePipelineCacheKey(
-    const std::wstring &pixelShaderPath,
-    GPUParticleMaterialSettings::BlendMode blendMode) {
-    return pixelShaderPath + (blendMode == GPUParticleMaterialSettings::BlendMode::Additive
-                                  ? L"#additive"
-                                  : L"#alpha");
+std::wstring MakePipelineCacheKey(const std::wstring& pixelShaderPath,
+                                  GPUParticleMaterialSettings::BlendMode blendMode) {
+    try {
+        return pixelShaderPath + (blendMode == GPUParticleMaterialSettings::BlendMode::Additive
+                                      ? L"#additive"
+                                      : L"#alpha");
+    } catch (const std::exception&) {
+        return {};
+    }
 }
 
-void ResetDrawCacheIfDeviceChanged(ID3D12Device *device) {
+void ResetDrawCacheIfDeviceChanged(ID3D12Device* device) {
     if (gCachedParticleDrawDevice == device) {
         return;
     }
@@ -42,7 +46,7 @@ void ResetDrawCacheIfDeviceChanged(ID3D12Device *device) {
 
 namespace GpuParticleShared {
 
-ID3D12RootSignature *GetDrawRootSignature(ID3D12Device *device) {
+ID3D12RootSignature* GetDrawRootSignature(ID3D12Device* device) {
     if (device == nullptr) {
         return nullptr;
     }
@@ -79,30 +83,30 @@ ID3D12RootSignature *GetDrawRootSignature(ID3D12Device *device) {
     desc.Init(_countof(params), params, 1, &sampler,
               D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
-    if (!RootSignatureUtils::CreateRootSignature(
-            device, desc, gCachedParticleDrawRootSignature)) {
+    if (!RootSignatureUtils::CreateRootSignature(device, desc, gCachedParticleDrawRootSignature)) {
         return nullptr;
     }
     return gCachedParticleDrawRootSignature.Get();
 }
 
-ID3D12PipelineState *GetOrCreateDrawPipeline(
-    ID3D12Device *device, ID3D12RootSignature *rootSignature,
-    const std::wstring &pixelShaderPath,
-    GPUParticleMaterialSettings::BlendMode blendMode) {
+ID3D12PipelineState* GetOrCreateDrawPipeline(ID3D12Device* device,
+                                             ID3D12RootSignature* rootSignature,
+                                             const std::wstring& pixelShaderPath,
+                                             GPUParticleMaterialSettings::BlendMode blendMode) {
     if (device == nullptr || rootSignature == nullptr) {
         return nullptr;
     }
     ResetDrawCacheIfDeviceChanged(device);
 
     const std::wstring cacheKey = MakePipelineCacheKey(pixelShaderPath, blendMode);
-    auto found = gParticleDrawPsoCache.find(cacheKey);
-    if (found != gParticleDrawPsoCache.end()) {
-        return found->second.Get();
+    if (!cacheKey.empty()) {
+        auto found = gParticleDrawPsoCache.find(cacheKey);
+        if (found != gParticleDrawPsoCache.end()) {
+            return found->second.Get();
+        }
     }
 
-    auto vs =
-        ShaderCompiler::Compile(ShaderPaths::ParticleVS, "main", "vs_6_6");
+    auto vs = ShaderCompiler::Compile(ShaderPaths::ParticleVS, "main", "vs_6_6");
     auto ps = ShaderCompiler::Compile(pixelShaderPath, "main", "ps_6_6");
     if (!vs || !ps) {
         return nullptr;
@@ -136,9 +140,8 @@ ID3D12PipelineState *GetOrCreateDrawPipeline(
     blend.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
     blend.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
     blend.RenderTarget[0].DestBlendAlpha =
-        blendMode == GPUParticleMaterialSettings::BlendMode::Additive
-            ? D3D12_BLEND_ONE
-            : D3D12_BLEND_INV_SRC_ALPHA;
+        blendMode == GPUParticleMaterialSettings::BlendMode::Additive ? D3D12_BLEND_ONE
+                                                                      : D3D12_BLEND_INV_SRC_ALPHA;
     blend.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
     blend.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
     drawPso.BlendState = blend;
@@ -150,18 +153,22 @@ ID3D12PipelineState *GetOrCreateDrawPipeline(
     drawPso.DepthStencilState = depth;
 
     ComPtr<ID3D12PipelineState> pso;
-    if (FAILED(device->CreateGraphicsPipelineState(
-            &drawPso, IID_PPV_ARGS(&pso))) ||
-        !pso) {
+    if (FAILED(device->CreateGraphicsPipelineState(&drawPso, IID_PPV_ARGS(&pso))) || !pso) {
         return nullptr;
     }
 
-    ID3D12PipelineState *result = pso.Get();
-    gParticleDrawPsoCache[cacheKey] = std::move(pso);
-    return result;
+    if (cacheKey.empty()) {
+        return nullptr;
+    }
+    try {
+        auto it = gParticleDrawPsoCache.emplace(cacheKey, std::move(pso)).first;
+        return it->second.Get();
+    } catch (const std::exception&) {
+        return nullptr;
+    }
 }
 
-ID3D12CommandSignature *GetDrawCommandSignature(ID3D12Device *device) {
+ID3D12CommandSignature* GetDrawCommandSignature(ID3D12Device* device) {
     if (device == nullptr) {
         return nullptr;
     }
@@ -178,8 +185,7 @@ ID3D12CommandSignature *GetDrawCommandSignature(ID3D12Device *device) {
     commandSignatureDesc.NumArgumentDescs = 1;
     commandSignatureDesc.pArgumentDescs = &indirectArgument;
     if (FAILED(device->CreateCommandSignature(
-            &commandSignatureDesc, nullptr,
-            IID_PPV_ARGS(&gCachedParticleDrawCommandSignature))) ||
+            &commandSignatureDesc, nullptr, IID_PPV_ARGS(&gCachedParticleDrawCommandSignature))) ||
         !gCachedParticleDrawCommandSignature) {
         return nullptr;
     }

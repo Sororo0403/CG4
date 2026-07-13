@@ -1,5 +1,7 @@
 #include "model/SkyboxRenderer.h"
-#include "internal/SkyboxRendererInternal.h"
+
+#include "../graphics/internal/ConstantBufferUtils.h"
+#include "../graphics/internal/RootSignatureUtils.h"
 #include "core/Numeric.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
@@ -9,9 +11,9 @@
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
-#include "../graphics/internal/ConstantBufferUtils.h"
-#include "../graphics/internal/RootSignatureUtils.h"
+#include "internal/SkyboxRendererInternal.h"
 #include "texture/TextureManager.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -28,13 +30,11 @@ struct SkyboxVertex {
     XMFLOAT3 position;
 };
 
-XMFLOAT3 SanitizeFloat3(const XMFLOAT3 &value) {
-    return {FiniteOr(value.x, 0.0f), FiniteOr(value.y, 0.0f),
-            FiniteOr(value.z, 0.0f)};
+XMFLOAT3 SanitizeFloat3(const XMFLOAT3& value) {
+    return {FiniteOr(value.x, 0.0f), FiniteOr(value.y, 0.0f), FiniteOr(value.z, 0.0f)};
 }
 
-uint32_t ResolveSkyboxTextureId(const TextureManager *textureManager,
-                                uint32_t textureId) {
+uint32_t ResolveSkyboxTextureId(const TextureManager* textureManager, uint32_t textureId) {
     if (textureManager == nullptr) {
         return kInvalidResourceId;
     }
@@ -42,9 +42,8 @@ uint32_t ResolveSkyboxTextureId(const TextureManager *textureManager,
         return textureId;
     }
     const uint32_t fallbackTextureId = textureManager->GetWhiteCubeTextureId();
-    return textureManager->IsCubeTextureId(fallbackTextureId)
-               ? fallbackTextureId
-               : kInvalidResourceId;
+    return textureManager->IsCubeTextureId(fallbackTextureId) ? fallbackTextureId
+                                                              : kInvalidResourceId;
 }
 
 } // namespace
@@ -56,15 +55,13 @@ SkyboxRenderer::~SkyboxRenderer() {
 }
 
 bool SkyboxRenderer::IsReady() const {
-    return dxCommon_ != nullptr && srvManager_ != nullptr &&
-           textureManager_ != nullptr && state_->rootSignature &&
-           state_->pipelineState && state_->vertexBuffer &&
-           state_->indexBuffer && HasConstantBuffers() &&
-           state_->indexCount > 0;
+    return dxCommon_ != nullptr && srvManager_ != nullptr && textureManager_ != nullptr &&
+           state_->rootSignature && state_->pipelineState && state_->vertexBuffer &&
+           state_->indexBuffer && HasConstantBuffers() && state_->indexCount > 0;
 }
 
-void SkyboxRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
-                                TextureManager *textureManager) {
+void SkyboxRenderer::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager,
+                                TextureManager* textureManager) {
     if (!dxCommon || !dxCommon->GetDevice() || !srvManager || !textureManager) {
         Finalize();
         return;
@@ -88,18 +85,19 @@ void SkyboxRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
     }
 }
 
-bool SkyboxRenderer::Finalize() { return Finalize(false); }
+bool SkyboxRenderer::Finalize() {
+    return Finalize(false);
+}
 
 bool SkyboxRenderer::Finalize(bool allowFrameAbort) {
-    const bool hasGpuResources =
-        !state_->constantFrames.empty() || state_->indexBuffer || state_->vertexBuffer ||
-        state_->pipelineState || state_->rootSignature;
-    if (!CanReleaseGpuResources(dxCommon_, hasGpuResources,
-                                allowFrameAbort)) {
+    const bool hasGpuResources = !state_->constantFrames.empty() || state_->indexBuffer ||
+                                 state_->vertexBuffer || state_->pipelineState ||
+                                 state_->rootSignature;
+    if (!CanReleaseGpuResources(dxCommon_, hasGpuResources, allowFrameAbort)) {
         return false;
     }
 
-    for (ConstantFrame &frame : state_->constantFrames) {
+    for (ConstantFrame& frame : state_->constantFrames) {
         frame.Reset();
     }
     state_->constantFrames.clear();
@@ -117,36 +115,32 @@ bool SkyboxRenderer::Finalize(bool allowFrameAbort) {
     return true;
 }
 
-void SkyboxRenderer::Draw(uint32_t textureId, const Camera &camera) {
+void SkyboxRenderer::Draw(uint32_t textureId, const Camera& camera) {
     if (!dxCommon_ || !srvManager_ || !textureManager_ || !state_->pipelineState ||
         !state_->rootSignature || !state_->vertexBuffer || !state_->indexBuffer ||
         !HasConstantBuffers() || state_->indexCount == 0) {
         return;
     }
 
-    const uint32_t boundTextureId =
-        ResolveSkyboxTextureId(textureManager_, textureId);
+    const uint32_t boundTextureId = ResolveSkyboxTextureId(textureManager_, textureId);
     if (!IsValidResourceId(boundTextureId)) {
         return;
     }
 
-    auto *cmd = dxCommon_->GetCommandList();
-    ID3D12DescriptorHeap *srvHeap = srvManager_->GetHeap();
-    ConstantFrame *constantFrame = GetCurrentConstantFrame();
-    if (constantFrame == nullptr || !constantFrame->resource ||
-        constantFrame->mapped == nullptr) {
+    auto* cmd = dxCommon_->GetCommandList();
+    ID3D12DescriptorHeap* srvHeap = srvManager_->GetHeap();
+    ConstantFrame* constantFrame = GetCurrentConstantFrame();
+    if (constantFrame == nullptr || !constantFrame->resource || constantFrame->mapped == nullptr) {
         return;
     }
     const D3D12_GPU_VIRTUAL_ADDRESS constBufferAddress =
         constantFrame->resource->GetGPUVirtualAddress();
-    const D3D12_GPU_DESCRIPTOR_HANDLE textureHandle =
-        textureManager_->GetGpuHandle(boundTextureId);
-    if (cmd == nullptr || srvHeap == nullptr || constBufferAddress == 0 ||
-        textureHandle.ptr == 0) {
+    const D3D12_GPU_DESCRIPTOR_HANDLE textureHandle = textureManager_->GetGpuHandle(boundTextureId);
+    if (cmd == nullptr || srvHeap == nullptr || constBufferAddress == 0 || textureHandle.ptr == 0) {
         return;
     }
 
-    ID3D12DescriptorHeap *heaps[] = {srvHeap};
+    ID3D12DescriptorHeap* heaps[] = {srvHeap};
     cmd->SetDescriptorHeaps(1, heaps);
 
     cmd->SetPipelineState(state_->pipelineState.Get());
@@ -156,10 +150,8 @@ void SkyboxRenderer::Draw(uint32_t textureId, const Camera &camera) {
     cmd->IASetIndexBuffer(&state_->ibView);
 
     const XMFLOAT3 cameraPosition = SanitizeFloat3(camera.GetPosition());
-    XMMATRIX world =
-        XMMatrixScaling(50.0f, 50.0f, 50.0f) *
-        XMMatrixTranslation(cameraPosition.x, cameraPosition.y,
-                            cameraPosition.z);
+    XMMATRIX world = XMMatrixScaling(50.0f, 50.0f, 50.0f) *
+                     XMMatrixTranslation(cameraPosition.x, cameraPosition.y, cameraPosition.z);
     XMMATRIX wvp = world * camera.GetView() * camera.GetProj();
     XMStoreFloat4x4(&constantFrame->mapped->matWVP, XMMatrixTranspose(wvp));
 
@@ -185,18 +177,15 @@ void SkyboxRenderer::CreateRootSignature() {
     desc.Init(_countof(params), params, 1, &sampler,
               D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
-    RootSignatureUtils::CreateRootSignature(dxCommon_->GetDevice(), desc,
-                                            state_->rootSignature);
+    RootSignatureUtils::CreateRootSignature(dxCommon_->GetDevice(), desc, state_->rootSignature);
 }
 
 void SkyboxRenderer::CreatePipelineState() {
     if (!dxCommon_ || !dxCommon_->GetDevice() || !state_->rootSignature) {
         return;
     }
-    auto vs =
-        ShaderCompiler::Compile(ShaderPaths::SkyboxVS, "main", "vs_6_6");
-    auto ps =
-        ShaderCompiler::Compile(ShaderPaths::SkyboxPS, "main", "ps_6_6");
+    auto vs = ShaderCompiler::Compile(ShaderPaths::SkyboxVS, "main", "vs_6_6");
+    auto ps = ShaderCompiler::Compile(ShaderPaths::SkyboxPS, "main", "ps_6_6");
     if (!vs || !ps) {
         return;
     }
@@ -264,14 +253,14 @@ void SkyboxRenderer::CreateMesh() {
     CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
 
     auto vbDesc = CD3DX12_RESOURCE_DESC::Buffer(vbSize);
-    if (!CreateCommittedResourceChecked(
-            dxCommon_->GetDevice(), &heap, D3D12_HEAP_FLAG_NONE, &vbDesc,
-            D3D12_RESOURCE_STATE_GENERIC_READ, state_->vertexBuffer.GetAddressOf())) {
+    if (!CreateCommittedResourceChecked(dxCommon_->GetDevice(), &heap, D3D12_HEAP_FLAG_NONE,
+                                        &vbDesc, D3D12_RESOURCE_STATE_GENERIC_READ,
+                                        state_->vertexBuffer.GetAddressOf())) {
         state_->indexCount = 0;
         return;
     }
 
-    void *vbMapped = nullptr;
+    void* vbMapped = nullptr;
     if (!MapResourceChecked(state_->vertexBuffer.Get(), &vbMapped)) {
         state_->indexCount = 0;
         return;
@@ -284,14 +273,14 @@ void SkyboxRenderer::CreateMesh() {
     state_->vbView.StrideInBytes = sizeof(SkyboxVertex);
 
     auto ibDesc = CD3DX12_RESOURCE_DESC::Buffer(ibSize);
-    if (!CreateCommittedResourceChecked(
-            dxCommon_->GetDevice(), &heap, D3D12_HEAP_FLAG_NONE, &ibDesc,
-            D3D12_RESOURCE_STATE_GENERIC_READ, state_->indexBuffer.GetAddressOf())) {
+    if (!CreateCommittedResourceChecked(dxCommon_->GetDevice(), &heap, D3D12_HEAP_FLAG_NONE,
+                                        &ibDesc, D3D12_RESOURCE_STATE_GENERIC_READ,
+                                        state_->indexBuffer.GetAddressOf())) {
         state_->indexCount = 0;
         return;
     }
 
-    void *ibMapped = nullptr;
+    void* ibMapped = nullptr;
     if (!MapResourceChecked(state_->indexBuffer.Get(), &ibMapped)) {
         state_->indexCount = 0;
         return;
@@ -310,37 +299,30 @@ void SkyboxRenderer::CreateConstantBuffer() {
     }
     const UINT frameCount = (std::max)(1u, dxCommon_->GetSwapChainBufferCount());
     if (!ConstantBufferUtils::CreateUploadFrames(
-            dxCommon_->GetDevice(), frameCount, sizeof(ConstBufferData),
-            state_->constantFrames, &ConstantFrame::resource,
-            &ConstantFrame::mapped)) {
+            dxCommon_->GetDevice(), frameCount, sizeof(ConstBufferData), state_->constantFrames,
+            &ConstantFrame::resource, &ConstantFrame::mapped)) {
         return;
     }
-    for (ConstantFrame &frame : state_->constantFrames) {
-        XMStoreFloat4x4(&frame.mapped->matWVP,
-                        XMMatrixTranspose(XMMatrixIdentity()));
+    for (ConstantFrame& frame : state_->constantFrames) {
+        XMStoreFloat4x4(&frame.mapped->matWVP, XMMatrixTranspose(XMMatrixIdentity()));
     }
 }
 
-SkyboxRenderer::ConstantFrame *SkyboxRenderer::GetCurrentConstantFrame() {
+SkyboxRenderer::ConstantFrame* SkyboxRenderer::GetCurrentConstantFrame() {
     if (state_->constantFrames.empty()) {
         return nullptr;
     }
     const size_t frameIndex =
-        dxCommon_ != nullptr
-            ? dxCommon_->GetBackBufferIndex() % state_->constantFrames.size()
-            : 0;
+        dxCommon_ != nullptr ? dxCommon_->GetBackBufferIndex() % state_->constantFrames.size() : 0;
     return &state_->constantFrames[frameIndex];
 }
 
-const SkyboxRenderer::ConstantFrame *
-SkyboxRenderer::GetCurrentConstantFrame() const {
+const SkyboxRenderer::ConstantFrame* SkyboxRenderer::GetCurrentConstantFrame() const {
     if (state_->constantFrames.empty()) {
         return nullptr;
     }
     const size_t frameIndex =
-        dxCommon_ != nullptr
-            ? dxCommon_->GetBackBufferIndex() % state_->constantFrames.size()
-            : 0;
+        dxCommon_ != nullptr ? dxCommon_->GetBackBufferIndex() % state_->constantFrames.size() : 0;
     return &state_->constantFrames[frameIndex];
 }
 
@@ -348,9 +330,7 @@ bool SkyboxRenderer::HasConstantBuffers() const {
     if (state_->constantFrames.empty()) {
         return false;
     }
-    return std::all_of(state_->constantFrames.begin(),
-                       state_->constantFrames.end(),
-                       [](const ConstantFrame &frame) {
-                           return frame.resource && frame.mapped != nullptr;
-                       });
+    return std::all_of(
+        state_->constantFrames.begin(), state_->constantFrames.end(),
+        [](const ConstantFrame& frame) { return frame.resource && frame.mapped != nullptr; });
 }

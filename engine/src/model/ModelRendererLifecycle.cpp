@@ -1,19 +1,18 @@
-#include "internal/ModelRendererInternal.h"
 #include "core/Numeric.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
 #include "graphics/GpuResourceHelpers.h"
 #include "graphics/GpuResourceLifetime.h"
+#include "internal/ModelRendererInternal.h"
+#include "internal/RendererPipelineVariantUtils.h"
 #include "model/ModelRenderer.h"
 #include "model/RendererMath.h"
-#include "model/Vertex.h"
-#include "internal/RendererPipelineVariantUtils.h"
 #include "texture/TextureManager.h"
 
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <iterator>
+#include <exception>
 #include <memory>
 #include <vector>
 
@@ -27,11 +26,8 @@ using Numeric::ClampFinite;
 using Numeric::FiniteOr;
 
 XMFLOAT4 SanitizeEffectColor(const XMFLOAT4& value, const XMFLOAT4& fallback) {
-    return {
-        AtLeastFinite(value.x, 0.0f, fallback.x),
-        AtLeastFinite(value.y, 0.0f, fallback.y),
-        AtLeastFinite(value.z, 0.0f, fallback.z),
-        ClampFinite(value.w, 0.0f, 1.0f, fallback.w)};
+    return {AtLeastFinite(value.x, 0.0f, fallback.x), AtLeastFinite(value.y, 0.0f, fallback.y),
+            AtLeastFinite(value.z, 0.0f, fallback.z), ClampFinite(value.w, 0.0f, 1.0f, fallback.w)};
 }
 
 ModelDrawEffect SanitizeDrawEffect(ModelDrawEffect effect) {
@@ -120,15 +116,37 @@ size_t ModelRenderer::GetUploadFrameOffset() const {
 void ModelRenderer::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager,
                                MeshManager* meshManager, TextureManager* textureManager,
                                MaterialManager* materialManager) {
-    if (!dxCommon || !dxCommon->GetDevice() || !srvManager || !meshManager || !textureManager ||
-        !materialManager) {
+    if (!HasValidInitializeDependencies(dxCommon, srvManager, meshManager, textureManager,
+                                        materialManager)) {
         Finalize();
         return;
     }
-
     if (!Finalize()) {
         return;
     }
+    BindManagers(dxCommon, srvManager, meshManager, textureManager, materialManager);
+    if (!CreateDissolveNoiseTexture()) {
+        Finalize(true);
+        return;
+    }
+    CreateCoreGpuResources();
+    if (!HasRequiredGpuResources()) {
+        Finalize();
+    }
+}
+
+bool ModelRenderer::HasValidInitializeDependencies(const DirectXCommon* dxCommon,
+                                                   const SrvManager* srvManager,
+                                                   const MeshManager* meshManager,
+                                                   const TextureManager* textureManager,
+                                                   const MaterialManager* materialManager) {
+    return dxCommon && dxCommon->GetDevice() && srvManager && meshManager && textureManager &&
+           materialManager;
+}
+
+void ModelRenderer::BindManagers(DirectXCommon* dxCommon, SrvManager* srvManager,
+                                 MeshManager* meshManager, TextureManager* textureManager,
+                                 MaterialManager* materialManager) {
     state_->dxCommon = dxCommon;
     state_->srvManager = srvManager;
     state_->meshManager = meshManager;
@@ -140,10 +158,21 @@ void ModelRenderer::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager,
     state_->shadowMapGpuHandle =
         state_->textureManager->GetGpuHandle(state_->textureManager->GetWhiteTextureId());
     state_->spotLightShadowMapGpuHandle = state_->shadowMapGpuHandle;
-    const std::vector<uint8_t> dissolveNoise = CreateDissolveNoisePixels(128u, 128u);
+}
+
+bool ModelRenderer::CreateDissolveNoiseTexture() {
+    std::vector<uint8_t> dissolveNoise;
+    try {
+        dissolveNoise = CreateDissolveNoisePixels(128u, 128u);
+    } catch (const std::exception&) {
+        return false;
+    }
     state_->dissolveNoiseTextureId =
         state_->textureManager->CreateFromRgbaPixels(128u, 128u, dissolveNoise.data());
+    return IsValidResourceId(state_->dissolveNoiseTextureId);
+}
 
+void ModelRenderer::CreateCoreGpuResources() {
     CreateRootSignature();
     CreateShadowRootSignature();
     CreateSkinningRootSignature();
@@ -152,12 +181,13 @@ void ModelRenderer::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager,
     CreateSkinningPipelineState();
     CreateUploadBuffer();
     CreateIdentityPalette();
-    if (!state_->rootSignature || !state_->shadowRootSignature || !state_->skinningRootSignature ||
-        !state_->pipelineStates[0] || !state_->instancedPipelineStates[0] || !state_->shadowPSO ||
-        !state_->instancedShadowPSO || !state_->skinningPSO ||
-        state_->uploadBuffer.GetBytesPerFrame() == 0 || GetIdentityPaletteAddress() == 0) {
-        Finalize();
-    }
+}
+
+bool ModelRenderer::HasRequiredGpuResources() const {
+    return state_->rootSignature && state_->shadowRootSignature && state_->skinningRootSignature &&
+           state_->pipelineStates[0] && state_->instancedPipelineStates[0] && state_->shadowPSO &&
+           state_->instancedShadowPSO && state_->skinningPSO &&
+           state_->uploadBuffer.GetBytesPerFrame() != 0 && GetIdentityPaletteAddress() != 0;
 }
 
 bool ModelRenderer::Finalize() {
@@ -188,7 +218,12 @@ bool ModelRenderer::CreateIdentityPalette() {
     }
 
     const UINT frameCount = (std::max)(1u, state_->dxCommon->GetSwapChainBufferCount());
-    state_->identityPaletteFrames.resize(frameCount);
+    try {
+        state_->identityPaletteFrames.resize(frameCount);
+    } catch (const std::exception&) {
+        ResetIdentityPalette();
+        return false;
+    }
     WellForGPU identity{};
     identity.skeletonSpaceMatrix = RendererMath::StoreMatrix(XMMatrixTranspose(XMMatrixIdentity()));
     identity.skeletonSpaceInverseTransposeMatrix =
@@ -229,11 +264,8 @@ void ModelRenderer::ResetIdentityPalette() noexcept {
 }
 
 bool ModelRenderer::HasIdentityPaletteResources() const noexcept {
-    return std::any_of(state_->identityPaletteFrames.begin(),
-                       state_->identityPaletteFrames.end(),
-                       [](const SkinPaletteFrame &frame) {
-                           return frame.resource != nullptr;
-                       });
+    return std::any_of(state_->identityPaletteFrames.begin(), state_->identityPaletteFrames.end(),
+                       [](const SkinPaletteFrame& frame) { return frame.resource != nullptr; });
 }
 
 D3D12_GPU_VIRTUAL_ADDRESS ModelRenderer::GetIdentityPaletteAddress() const {
@@ -285,9 +317,8 @@ bool ModelRenderer::IsReady() const {
            state_->shadowRootSignature && state_->skinningRootSignature &&
            RendererPipelineVariantUtils::HasAllPipelineStates(state_->pipelineStates) &&
            RendererPipelineVariantUtils::HasAllPipelineStates(state_->instancedPipelineStates) &&
-           state_->shadowPSO && state_->instancedShadowPSO &&
-           state_->skinningPSO && GetIdentityPaletteAddress() != 0 &&
-           state_->uploadBuffer.GetBytesPerFrame() != 0;
+           state_->shadowPSO && state_->instancedShadowPSO && state_->skinningPSO &&
+           GetIdentityPaletteAddress() != 0 && state_->uploadBuffer.GetBytesPerFrame() != 0;
 }
 
 void ModelRenderer::BeginFrame() {

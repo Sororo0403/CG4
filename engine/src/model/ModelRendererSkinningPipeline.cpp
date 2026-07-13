@@ -1,11 +1,10 @@
-#include "model/ModelRenderer.h"
-#include "internal/ModelRendererInternal.h"
-
+#include "../graphics/internal/RootSignatureUtils.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
-#include "../graphics/internal/RootSignatureUtils.h"
 #include "graphics/ShaderCompiler.h"
 #include "graphics/ShaderPaths.h"
+#include "internal/ModelRendererInternal.h"
+#include "model/ModelRenderer.h"
 
 void ModelRenderer::CreateSkinningRootSignature() {
     if (!state_->dxCommon || !state_->dxCommon->GetDevice()) {
@@ -32,16 +31,14 @@ void ModelRenderer::CreateSkinningRootSignature() {
     CD3DX12_ROOT_SIGNATURE_DESC desc;
     desc.Init(_countof(params), params, 0, nullptr);
 
-    RootSignatureUtils::CreateRootSignature(state_->dxCommon->GetDevice(),
-                                            desc,
+    RootSignatureUtils::CreateRootSignature(state_->dxCommon->GetDevice(), desc,
                                             state_->skinningRootSignature);
 }
 void ModelRenderer::CreateSkinningPipelineState() {
     if (!state_->dxCommon || !state_->dxCommon->GetDevice() || !state_->skinningRootSignature) {
         return;
     }
-    auto cs =
-        ShaderCompiler::Compile(ShaderPaths::SkinningCS, "main", "cs_6_6");
+    auto cs = ShaderCompiler::Compile(ShaderPaths::SkinningCS, "main", "cs_6_6");
     if (!cs) {
         return;
     }
@@ -55,4 +52,3 @@ void ModelRenderer::CreateSkinningPipelineState() {
         state_->skinningPSO.Reset();
     }
 }
-

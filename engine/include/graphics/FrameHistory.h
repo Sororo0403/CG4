@@ -33,48 +33,58 @@ struct FrameHistoryStats {
 };
 
 class FrameHistory {
-  public:
-    void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
-                    uint32_t width, uint32_t height);
+public:
+    void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager, uint32_t width,
+                    uint32_t height);
     void Resize(uint32_t width, uint32_t height);
-    void BeginFrame(const Camera &camera);
+    void BeginFrame(const Camera& camera);
     void EndFrame();
     void Clear();
 
-    bool IsInitialized() const { return initialized_; }
-    uint64_t GetFrameIndex() const { return frameIndex_; }
-    uint32_t GetWidth() const { return width_; }
-    uint32_t GetHeight() const { return height_; }
-    bool IsJitterEnabled() const { return jitterEnabled_; }
-    float GetJitterScale() const { return jitterScale_; }
+    bool IsInitialized() const {
+        return initialized_;
+    }
+    uint64_t GetFrameIndex() const {
+        return frameIndex_;
+    }
+    uint32_t GetWidth() const {
+        return width_;
+    }
+    uint32_t GetHeight() const {
+        return height_;
+    }
+    bool IsJitterEnabled() const {
+        return jitterEnabled_;
+    }
+    float GetJitterScale() const {
+        return jitterScale_;
+    }
 
-    const FrameCameraHistory &CameraHistory() const {
+    const FrameCameraHistory& CameraHistory() const {
         return cameraHistory_;
     }
-    const FrameHistoryStats &GetStats() const { return stats_; }
+    const FrameHistoryStats& GetStats() const {
+        return stats_;
+    }
 
     void SetJitterEnabled(bool enabled);
     void SetJitterScale(float scale);
 
-    DirectX::XMFLOAT4X4
-    ResolvePreviousWorld(uint32_t objectId,
-                         const DirectX::XMFLOAT4X4 &currentWorld) const;
-    FrameObjectHistory
-    ResolveObjectHistory(uint32_t objectId,
-                         const DirectX::XMFLOAT4X4 &currentWorld) const;
-    void StoreCurrentWorld(uint32_t objectId,
-                           const DirectX::XMFLOAT4X4 &currentWorld);
+    DirectX::XMFLOAT4X4 ResolvePreviousWorld(uint32_t objectId,
+                                             const DirectX::XMFLOAT4X4& currentWorld) const;
+    FrameObjectHistory ResolveObjectHistory(uint32_t objectId,
+                                            const DirectX::XMFLOAT4X4& currentWorld) const;
+    void StoreCurrentWorld(uint32_t objectId, const DirectX::XMFLOAT4X4& currentWorld);
 
-  private:
+private:
     static DirectX::XMFLOAT4X4 IdentityMatrix();
     static float Halton(uint64_t index, uint32_t base);
-    static DirectX::XMFLOAT2 ComputeJitter(uint64_t frameIndex,
-                                           uint32_t width, uint32_t height,
+    static DirectX::XMFLOAT2 ComputeJitter(uint64_t frameIndex, uint32_t width, uint32_t height,
                                            float scale);
     void UpdateStats();
 
-    DirectXCommon *dxCommon_ = nullptr;
-    SrvManager *srvManager_ = nullptr;
+    DirectXCommon* dxCommon_ = nullptr;
+    SrvManager* srvManager_ = nullptr;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
     uint64_t frameIndex_ = 0;

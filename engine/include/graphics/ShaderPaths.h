@@ -2,79 +2,67 @@
 
 namespace ShaderPaths {
 
-inline constexpr const wchar_t *SpriteVS =
-    L"engine/resources/shaders/sprite/SpriteVS.hlsl";
-inline constexpr const wchar_t *SpritePS =
-    L"engine/resources/shaders/sprite/SpritePS.hlsl";
+inline constexpr const wchar_t* SpriteVS = L"engine/resources/shaders/sprite/SpriteVS.hlsl";
+inline constexpr const wchar_t* SpritePS = L"engine/resources/shaders/sprite/SpritePS.hlsl";
 
-inline constexpr const wchar_t *PostProcessVS =
+inline constexpr const wchar_t* PostProcessVS =
     L"engine/resources/shaders/postprocess/PostProcessVS.hlsl";
-inline constexpr const wchar_t *PostProcessPS =
+inline constexpr const wchar_t* PostProcessPS =
     L"engine/resources/shaders/postprocess/PostProcessPS.hlsl";
-inline constexpr const wchar_t *PostProcessCopyPS =
+inline constexpr const wchar_t* PostProcessCopyPS =
     L"engine/resources/shaders/postprocess/CopyPS.hlsl";
-inline constexpr const wchar_t *BloomExtractPS =
+inline constexpr const wchar_t* BloomExtractPS =
     L"engine/resources/shaders/postprocess/BloomExtractPS.hlsl";
-inline constexpr const wchar_t *BloomDownsamplePS =
+inline constexpr const wchar_t* BloomDownsamplePS =
     L"engine/resources/shaders/postprocess/BloomDownsamplePS.hlsl";
-inline constexpr const wchar_t *BloomUpsamplePS =
+inline constexpr const wchar_t* BloomUpsamplePS =
     L"engine/resources/shaders/postprocess/BloomUpsamplePS.hlsl";
-inline constexpr const wchar_t *VolumetricLightingPS =
+inline constexpr const wchar_t* VolumetricLightingPS =
     L"engine/resources/shaders/postprocess/VolumetricLightingPS.hlsl";
-inline constexpr const wchar_t *VolumetricLightingCompositePS =
+inline constexpr const wchar_t* VolumetricLightingCompositePS =
     L"engine/resources/shaders/postprocess/VolumetricLightingCompositePS.hlsl";
 
-inline constexpr const wchar_t *DepthPyramidCS =
+inline constexpr const wchar_t* DepthPyramidCS =
     L"engine/resources/shaders/depth/DepthPyramidCS.hlsl";
 
-inline constexpr const wchar_t *SkyboxVS =
-    L"engine/resources/shaders/skybox/SkyboxVS.hlsl";
-inline constexpr const wchar_t *SkyboxPS =
-    L"engine/resources/shaders/skybox/SkyboxPS.hlsl";
+inline constexpr const wchar_t* SkyboxVS = L"engine/resources/shaders/skybox/SkyboxVS.hlsl";
+inline constexpr const wchar_t* SkyboxPS = L"engine/resources/shaders/skybox/SkyboxPS.hlsl";
 
-inline constexpr const wchar_t *MeshVS =
-    L"engine/resources/shaders/mesh/MeshVS.hlsl";
-inline constexpr const wchar_t *MeshInstancedVS =
+inline constexpr const wchar_t* MeshVS = L"engine/resources/shaders/mesh/MeshVS.hlsl";
+inline constexpr const wchar_t* MeshInstancedVS =
     L"engine/resources/shaders/mesh/MeshInstancedVS.hlsl";
-inline constexpr const wchar_t *MeshPS =
-    L"engine/resources/shaders/mesh/MeshPS.hlsl";
-inline constexpr const wchar_t *MeshShadowVS =
-    L"engine/resources/shaders/mesh/MeshShadowVS.hlsl";
-inline constexpr const wchar_t *MeshShadowInstancedVS =
+inline constexpr const wchar_t* MeshPS = L"engine/resources/shaders/mesh/MeshPS.hlsl";
+inline constexpr const wchar_t* MeshShadowVS = L"engine/resources/shaders/mesh/MeshShadowVS.hlsl";
+inline constexpr const wchar_t* MeshShadowInstancedVS =
     L"engine/resources/shaders/mesh/MeshShadowInstancedVS.hlsl";
-inline constexpr const wchar_t *MeshShadowPS =
-    L"engine/resources/shaders/mesh/MeshShadowPS.hlsl";
-inline constexpr const wchar_t *MeshGpuCullCS =
-    L"engine/resources/shaders/mesh/MeshGpuCullCS.hlsl";
-inline constexpr const wchar_t *MeshGpuCullArgsCS =
+inline constexpr const wchar_t* MeshShadowPS = L"engine/resources/shaders/mesh/MeshShadowPS.hlsl";
+inline constexpr const wchar_t* MeshGpuCullCS = L"engine/resources/shaders/mesh/MeshGpuCullCS.hlsl";
+inline constexpr const wchar_t* MeshGpuCullArgsCS =
     L"engine/resources/shaders/mesh/MeshGpuCullArgsCS.hlsl";
-inline constexpr const wchar_t *MeshGpuLodCullCS =
+inline constexpr const wchar_t* MeshGpuLodCullCS =
     L"engine/resources/shaders/mesh/MeshGpuLodCullCS.hlsl";
-inline constexpr const wchar_t *MeshGpuLodCullArgsCS =
+inline constexpr const wchar_t* MeshGpuLodCullArgsCS =
     L"engine/resources/shaders/mesh/MeshGpuLodCullArgsCS.hlsl";
 
-inline constexpr const wchar_t *ModelVS =
-    L"engine/resources/shaders/model/ModelVS.hlsl";
-inline constexpr const wchar_t *ModelInstancedVS =
+inline constexpr const wchar_t* ModelVS = L"engine/resources/shaders/model/ModelVS.hlsl";
+inline constexpr const wchar_t* ModelInstancedVS =
     L"engine/resources/shaders/model/ModelInstancedVS.hlsl";
-inline constexpr const wchar_t *ModelPS =
-    L"engine/resources/shaders/model/ModelPS.hlsl";
-inline constexpr const wchar_t *ModelShadowVS =
+inline constexpr const wchar_t* ModelPS = L"engine/resources/shaders/model/ModelPS.hlsl";
+inline constexpr const wchar_t* ModelShadowVS =
     L"engine/resources/shaders/model/ModelShadowVS.hlsl";
-inline constexpr const wchar_t *ModelShadowInstancedVS =
+inline constexpr const wchar_t* ModelShadowInstancedVS =
     L"engine/resources/shaders/model/ModelShadowInstancedVS.hlsl";
-inline constexpr const wchar_t *ModelShadowPS =
+inline constexpr const wchar_t* ModelShadowPS =
     L"engine/resources/shaders/model/ModelShadowPS.hlsl";
-inline constexpr const wchar_t *SkinningCS =
-    L"engine/resources/shaders/model/SkinningCS.hlsl";
+inline constexpr const wchar_t* SkinningCS = L"engine/resources/shaders/model/SkinningCS.hlsl";
 
-inline constexpr const wchar_t *ParticleUpdateCS =
+inline constexpr const wchar_t* ParticleUpdateCS =
     L"engine/resources/shaders/particle/GPUParticleUpdateCS.hlsl";
-inline constexpr const wchar_t *ParticleArgsCS =
+inline constexpr const wchar_t* ParticleArgsCS =
     L"engine/resources/shaders/particle/GPUParticleArgsCS.hlsl";
-inline constexpr const wchar_t *ParticleVS =
+inline constexpr const wchar_t* ParticleVS =
     L"engine/resources/shaders/particle/GPUParticleVS.hlsl";
-inline constexpr const wchar_t *ParticlePS =
+inline constexpr const wchar_t* ParticlePS =
     L"engine/resources/shaders/particle/GPUParticlePS.hlsl";
 
 } // namespace ShaderPaths

@@ -13,7 +13,7 @@ struct SkyboxRenderer::ConstBufferData {
 
 struct SkyboxRenderer::ConstantFrame {
     Microsoft::WRL::ComPtr<ID3D12Resource> resource;
-    ConstBufferData *mapped = nullptr;
+    ConstBufferData* mapped = nullptr;
 
     void Reset() {
         if (resource && mapped != nullptr) {

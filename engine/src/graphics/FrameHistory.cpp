@@ -4,9 +4,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
+#include <new>
 
-void FrameHistory::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
-                              uint32_t width, uint32_t height) {
+void FrameHistory::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager, uint32_t width,
+                              uint32_t height) {
     dxCommon_ = dxCommon;
     srvManager_ = srvManager;
     width_ = width;
@@ -25,45 +27,49 @@ void FrameHistory::Resize(uint32_t width, uint32_t height) {
     UpdateStats();
 }
 
-void FrameHistory::BeginFrame(const Camera &camera) {
+void FrameHistory::BeginFrame(const Camera& camera) {
     DirectX::XMFLOAT4X4 currentView{};
     DirectX::XMFLOAT4X4 currentProjection{};
     DirectX::XMFLOAT4X4 currentViewProjection{};
     DirectX::XMStoreFloat4x4(&currentView, camera.GetView());
     DirectX::XMStoreFloat4x4(&currentProjection, camera.GetProj());
-    DirectX::XMStoreFloat4x4(&currentViewProjection,
-                             camera.GetViewProjection());
+    DirectX::XMStoreFloat4x4(&currentViewProjection, camera.GetViewProjection());
 
     const DirectX::XMFLOAT4X4 previousViewProjection =
-        hasCameraHistory_ ? cameraHistory_.viewProjection
-                          : currentViewProjection;
+        hasCameraHistory_ ? cameraHistory_.viewProjection : currentViewProjection;
     const DirectX::XMFLOAT2 previousJitter =
-        hasCameraHistory_ ? cameraHistory_.jitter
-                          : DirectX::XMFLOAT2{0.0f, 0.0f};
+        hasCameraHistory_ ? cameraHistory_.jitter : DirectX::XMFLOAT2{0.0f, 0.0f};
 
     cameraHistory_.view = currentView;
     cameraHistory_.projection = currentProjection;
     cameraHistory_.viewProjection = currentViewProjection;
     cameraHistory_.previousViewProjection = previousViewProjection;
     cameraHistory_.previousJitter = previousJitter;
-    cameraHistory_.jitter =
-        jitterEnabled_ ? ComputeJitter(frameIndex_, width_, height_,
-                                       jitterScale_)
-                       : DirectX::XMFLOAT2{0.0f, 0.0f};
+    cameraHistory_.jitter = jitterEnabled_
+                                ? ComputeJitter(frameIndex_, width_, height_, jitterScale_)
+                                : DirectX::XMFLOAT2{0.0f, 0.0f};
     hasCameraHistory_ = true;
     UpdateStats();
 }
 
 void FrameHistory::EndFrame() {
-    previousWorld_.swap(currentWorld_);
-    currentWorld_.clear();
+    try {
+        previousWorld_.swap(currentWorld_);
+        currentWorld_.clear();
+    } catch (const std::exception&) {
+        previousWorld_.clear();
+        currentWorld_.clear();
+    }
     ++frameIndex_;
     UpdateStats();
 }
 
 void FrameHistory::Clear() {
-    previousWorld_.clear();
-    currentWorld_.clear();
+    try {
+        previousWorld_.clear();
+        currentWorld_.clear();
+    } catch (const std::exception&) {
+    }
     frameIndex_ = 0;
     hasCameraHistory_ = false;
     cameraHistory_ = {};
@@ -89,7 +95,7 @@ void FrameHistory::SetJitterScale(float scale) {
 }
 
 DirectX::XMFLOAT4X4 FrameHistory::ResolvePreviousWorld(
-    uint32_t objectId, const DirectX::XMFLOAT4X4 &currentWorld) const {
+    uint32_t objectId, const DirectX::XMFLOAT4X4& currentWorld) const {
     const auto it = previousWorld_.find(objectId);
     if (it == previousWorld_.end()) {
         return currentWorld;
@@ -98,7 +104,7 @@ DirectX::XMFLOAT4X4 FrameHistory::ResolvePreviousWorld(
 }
 
 FrameObjectHistory FrameHistory::ResolveObjectHistory(
-    uint32_t objectId, const DirectX::XMFLOAT4X4 &currentWorld) const {
+    uint32_t objectId, const DirectX::XMFLOAT4X4& currentWorld) const {
     FrameObjectHistory history{};
     history.currentWorld = currentWorld;
     const auto it = previousWorld_.find(objectId);
@@ -112,12 +118,15 @@ FrameObjectHistory FrameHistory::ResolveObjectHistory(
     return history;
 }
 
-void FrameHistory::StoreCurrentWorld(
-    uint32_t objectId, const DirectX::XMFLOAT4X4 &currentWorld) {
+void FrameHistory::StoreCurrentWorld(uint32_t objectId, const DirectX::XMFLOAT4X4& currentWorld) {
     if (objectId == 0xffffffffu) {
         return;
     }
-    currentWorld_[objectId] = currentWorld;
+    try {
+        currentWorld_[objectId] = currentWorld;
+    } catch (const std::exception&) {
+        return;
+    }
     UpdateStats();
 }
 
@@ -138,9 +147,7 @@ float FrameHistory::Halton(uint64_t index, uint32_t base) {
     return result;
 }
 
-DirectX::XMFLOAT2 FrameHistory::ComputeJitter(uint64_t frameIndex,
-                                              uint32_t width,
-                                              uint32_t height,
+DirectX::XMFLOAT2 FrameHistory::ComputeJitter(uint64_t frameIndex, uint32_t width, uint32_t height,
                                               float scale) {
     if (width == 0u || height == 0u || scale <= 0.0f) {
         return {0.0f, 0.0f};

@@ -10,17 +10,16 @@ class SrvManager;
 /// 描画先として使い、あとからシェーダーで読むためのテクスチャ
 /// </summary>
 class RenderTexture {
-  public:
+public:
     RenderTexture();
     ~RenderTexture();
 
-    void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager, int width,
-                    int height);
+    void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager, int width, int height);
 
     /// <summary>
     /// サイズ変更に合わせて内部リソースを再生成する
     /// </summary>
-    void Resize(int width, int height);
+    bool Resize(int width, int height);
 
     /// <summary>
     /// 内部リソースとSRV割り当てを解放する
@@ -31,12 +30,12 @@ class RenderTexture {
     /// <summary>
     /// RenderTextureへの描画を開始する
     /// </summary>
-    void BeginRender(const DirectX::XMFLOAT4 &clearColor);
+    void BeginRender(const DirectX::XMFLOAT4& clearColor);
 
     /// <summary>
     /// Depth bufferをbindせずにRenderTextureへの描画を開始する
     /// </summary>
-    void BeginRenderNoDepth(const DirectX::XMFLOAT4 &clearColor);
+    void BeginRenderNoDepth(const DirectX::XMFLOAT4& clearColor);
 
     /// <summary>
     /// RenderTextureへの描画を終了し、シェーダーから読める状態にする
@@ -59,19 +58,18 @@ class RenderTexture {
     int GetHeight() const;
     bool IsReady() const;
 
-  private:
+private:
     /// <summary>
     /// 描画先リソースとビューを生成する
     /// </summary>
     bool CreateResources();
     bool ReleaseTextureResources();
     bool ReleaseTextureResources(bool allowFrameAbort);
-    void BeginRenderInternal(const DirectX::XMFLOAT4 &clearColor,
-                             bool bindDepth, bool clearDepth);
+    void BeginRenderInternal(const DirectX::XMFLOAT4& clearColor, bool bindDepth, bool clearDepth);
 
     struct State;
 
-    DirectXCommon *dxCommon_ = nullptr;
-    SrvManager *srvManager_ = nullptr;
+    DirectXCommon* dxCommon_ = nullptr;
+    SrvManager* srvManager_ = nullptr;
     std::unique_ptr<State> resources_;
 };

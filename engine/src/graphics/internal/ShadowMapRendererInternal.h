@@ -17,11 +17,7 @@ struct ShadowMapRenderer::State {
     D3D12_GPU_DESCRIPTOR_HANDLE srvGpuHandle{};
     D3D12_VIEWPORT viewport{};
     D3D12_RECT scissor{};
-    D3D12_RESOURCE_STATES resourceState =
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    DirectX::XMFLOAT4X4 lightViewProjection = {
-        1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 1.0f};
+    D3D12_RESOURCE_STATES resourceState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    DirectX::XMFLOAT4X4 lightViewProjection = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                                               0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 };

@@ -1,8 +1,7 @@
-#include "sprite/SpriteRenderer.h"
-
-#include "internal/SpriteRendererInternal.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/GpuResourceLifetime.h"
+#include "internal/SpriteRendererInternal.h"
+#include "sprite/SpriteRenderer.h"
 
 #include <algorithm>
 
@@ -10,7 +9,9 @@ using namespace DirectX;
 
 SpriteRenderer::SpriteRenderer() : state_(std::make_unique<State>()) {}
 
-SpriteRenderer::~SpriteRenderer() { Finalize(true); }
+SpriteRenderer::~SpriteRenderer() {
+    Finalize(true);
+}
 
 size_t SpriteRenderer::GetUploadBytesPerFrame() const {
     return state_->uploadBuffer.GetBytesPerFrame();
@@ -24,10 +25,8 @@ size_t SpriteRenderer::GetUploadFrameOffset() const {
     return state_->uploadBuffer.GetFrameOffset();
 }
 
-void SpriteRenderer::Initialize(DirectXCommon *dxCommon,
-                                TextureManager *textureManager,
-                                SrvManager *srvManager, int width,
-                                int height) {
+void SpriteRenderer::Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
+                                SrvManager* srvManager, int width, int height) {
     if (!dxCommon || !dxCommon->GetDevice() || !textureManager || !srvManager) {
         Finalize();
         return;
@@ -50,14 +49,15 @@ void SpriteRenderer::Initialize(DirectXCommon *dxCommon,
     }
 }
 
-bool SpriteRenderer::Finalize() { return Finalize(false); }
+bool SpriteRenderer::Finalize() {
+    return Finalize(false);
+}
 
 bool SpriteRenderer::Finalize(bool allowFrameAbort) {
-    if (!CanReleaseGpuResources(
-            dxCommon_,
-            state_->rootSignature || HasAllPipelineStates() ||
-                state_->uploadBuffer.GetBytesPerFrame() != 0,
-            allowFrameAbort)) {
+    if (!CanReleaseGpuResources(dxCommon_,
+                                state_->rootSignature || HasAllPipelineStates() ||
+                                    state_->uploadBuffer.GetBytesPerFrame() != 0,
+                                allowFrameAbort)) {
         return false;
     }
     ResetResources();
@@ -68,8 +68,7 @@ void SpriteRenderer::CreateUploadBuffer() {
     if (!dxCommon_ || !dxCommon_->GetDevice()) {
         return;
     }
-    state_->uploadBuffer.Initialize(dxCommon_->GetDevice(),
-                                    kUploadBytesPerFrame, 2);
+    state_->uploadBuffer.Initialize(dxCommon_->GetDevice(), kUploadBytesPerFrame, 2);
 }
 
 void SpriteRenderer::ResetResources() {
@@ -77,8 +76,8 @@ void SpriteRenderer::ResetResources() {
     textureManager_ = nullptr;
     srvManager_ = nullptr;
     state_->rootSignature.Reset();
-    for (auto &targetPipelines : state_->pipelineStates) {
-        for (auto &pipeline : targetPipelines) {
+    for (auto& targetPipelines : state_->pipelineStates) {
+        for (auto& pipeline : targetPipelines) {
             pipeline.Reset();
         }
     }
@@ -94,16 +93,14 @@ void SpriteRenderer::ResetResources() {
 void SpriteRenderer::UpdateProjection(int width, int height) {
     width = (std::max)(1, width);
     height = (std::max)(1, height);
-    XMMATRIX ortho = XMMatrixOrthographicOffCenterLH(
-        0.0f, static_cast<float>(width), static_cast<float>(height), 0.0f,
-        0.0f, 1.0f);
+    XMMATRIX ortho = XMMatrixOrthographicOffCenterLH(0.0f, static_cast<float>(width),
+                                                     static_cast<float>(height), 0.0f, 0.0f, 1.0f);
 
     XMStoreFloat4x4(&state_->matProjection, XMMatrixTranspose(ortho));
 }
 
 bool SpriteRenderer::IsReady() const {
-    return dxCommon_ != nullptr && textureManager_ != nullptr &&
-           srvManager_ != nullptr && state_->rootSignature &&
-           HasAllPipelineStates() &&
+    return dxCommon_ != nullptr && textureManager_ != nullptr && srvManager_ != nullptr &&
+           state_->rootSignature && HasAllPipelineStates() &&
            state_->uploadBuffer.GetBytesPerFrame() != 0;
 }

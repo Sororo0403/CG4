@@ -1,9 +1,8 @@
 #include "graphics/DirectXCommon.h"
-#include "internal/DirectXCommonInternal.h"
-#include "internal/DirectXCommonState.h"
-
 #include "graphics/DxHelpers.h"
 #include "graphics/SrvManager.h"
+#include "internal/DirectXCommonInternal.h"
+#include "internal/DirectXCommonState.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -14,8 +13,7 @@ using DirectXCommonInternal::LogIfFailed;
 
 namespace {
 
-Microsoft::WRL::ComPtr<IDXGIAdapter1>
-PickHighPerformanceAdapter(IDXGIFactory7 *factory) {
+Microsoft::WRL::ComPtr<IDXGIAdapter1> PickHighPerformanceAdapter(IDXGIFactory7* factory) {
     Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
     if (!factory) {
         return adapter;
@@ -23,9 +21,8 @@ PickHighPerformanceAdapter(IDXGIFactory7 *factory) {
 
     for (UINT index = 0;; ++index) {
         Microsoft::WRL::ComPtr<IDXGIAdapter1> candidate;
-        if (FAILED(factory->EnumAdapterByGpuPreference(
-                index, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
-                IID_PPV_ARGS(&candidate)))) {
+        if (FAILED(factory->EnumAdapterByGpuPreference(index, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
+                                                       IID_PPV_ARGS(&candidate)))) {
             break;
         }
 
@@ -34,8 +31,7 @@ PickHighPerformanceAdapter(IDXGIFactory7 *factory) {
         if ((desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0) {
             continue;
         }
-        if (SUCCEEDED(D3D12CreateDevice(candidate.Get(),
-                                        D3D_FEATURE_LEVEL_11_0,
+        if (SUCCEEDED(D3D12CreateDevice(candidate.Get(), D3D_FEATURE_LEVEL_11_0,
                                         __uuidof(ID3D12Device), nullptr))) {
             adapter = candidate;
             break;
@@ -59,11 +55,9 @@ void DirectXCommon::CreateFactory() {
 
 void DirectXCommon::CreateDevice() {
 #ifdef _DEBUG
-    Microsoft::WRL::ComPtr<ID3D12DeviceRemovedExtendedDataSettings>
-        dredSettings;
+    Microsoft::WRL::ComPtr<ID3D12DeviceRemovedExtendedDataSettings> dredSettings;
     if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&dredSettings)))) {
-        dredSettings->SetAutoBreadcrumbsEnablement(
-            D3D12_DRED_ENABLEMENT_FORCED_ON);
+        dredSettings->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
         dredSettings->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
         dredSettings->SetWatsonDumpEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
     }
@@ -71,10 +65,10 @@ void DirectXCommon::CreateDevice() {
 
     Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter =
         PickHighPerformanceAdapter(state_->factory.Get());
-    IUnknown *deviceAdapter = adapter ? adapter.Get() : nullptr;
-    if (LogIfFailed(D3D12CreateDevice(deviceAdapter, D3D_FEATURE_LEVEL_11_0,
-                                      IID_PPV_ARGS(&state_->device)),
-                    "D3D12CreateDevice failed") ||
+    IUnknown* deviceAdapter = adapter ? adapter.Get() : nullptr;
+    if (LogIfFailed(
+            D3D12CreateDevice(deviceAdapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&state_->device)),
+            "D3D12CreateDevice failed") ||
         !state_->device) {
         state_->device.Reset();
         return;
@@ -96,9 +90,8 @@ void DirectXCommon::CreateCommandQueue() {
         return;
     }
     D3D12_COMMAND_QUEUE_DESC desc{};
-    if (LogIfFailed(
-            state_->device->CreateCommandQueue(&desc, IID_PPV_ARGS(&state_->commandQueue)),
-            "CreateCommandQueue failed") ||
+    if (LogIfFailed(state_->device->CreateCommandQueue(&desc, IID_PPV_ARGS(&state_->commandQueue)),
+                    "CreateCommandQueue failed") ||
         !state_->commandQueue) {
         state_->commandQueue.Reset();
         return;
@@ -112,9 +105,8 @@ void DirectXCommon::CreateCommandAllocator() {
     }
     for (UINT i = 0; i < kSwapChainBufferCount; ++i) {
         if (LogIfFailed(
-                state_->device->CreateCommandAllocator(
-                    D3D12_COMMAND_LIST_TYPE_DIRECT,
-                    IID_PPV_ARGS(&state_->commandAllocators[i])),
+                state_->device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                                       IID_PPV_ARGS(&state_->commandAllocators[i])),
                 "CreateCommandAllocator failed") ||
             !state_->commandAllocators[i]) {
             state_->commandAllocators[i].Reset();
@@ -147,8 +139,7 @@ void DirectXCommon::CreateCommandList() {
 }
 
 void DirectXCommon::CreateSwapChain(HWND hwnd, int width, int height) {
-    if (!state_->factory || !state_->commandQueue || hwnd == nullptr || width <= 0 ||
-        height <= 0) {
+    if (!state_->factory || !state_->commandQueue || hwnd == nullptr || width <= 0 || height <= 0) {
         return;
     }
     DXGI_SWAP_CHAIN_DESC1 desc{};
@@ -161,17 +152,15 @@ void DirectXCommon::CreateSwapChain(HWND hwnd, int width, int height) {
     desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 
     Microsoft::WRL::ComPtr<IDXGISwapChain1> sc1;
-    if (LogIfFailed(state_->factory->CreateSwapChainForHwnd(
-                        state_->commandQueue.Get(), hwnd, &desc, nullptr, nullptr,
-                        &sc1),
+    if (LogIfFailed(state_->factory->CreateSwapChainForHwnd(state_->commandQueue.Get(), hwnd, &desc,
+                                                            nullptr, nullptr, &sc1),
                     "CreateSwapChainForHwnd failed") ||
         !sc1) {
         state_->swapChain.Reset();
         return;
     }
 
-    if (LogIfFailed(sc1.As(&state_->swapChain), "SwapChain As() failed") ||
-        !state_->swapChain) {
+    if (LogIfFailed(sc1.As(&state_->swapChain), "SwapChain As() failed") || !state_->swapChain) {
         state_->swapChain.Reset();
         return;
     }
@@ -185,11 +174,9 @@ void DirectXCommon::CreateRTV() {
     }
 
     auto resetRtvState = [this]() {
-        std::for_each(std::begin(state_->backBuffers),
-                      std::end(state_->backBuffers),
-                      [](auto &backBuffer) { backBuffer.Reset(); });
-        std::fill(std::begin(state_->backBufferStates),
-                  std::end(state_->backBufferStates),
+        std::for_each(std::begin(state_->backBuffers), std::end(state_->backBuffers),
+                      [](auto& backBuffer) { backBuffer.Reset(); });
+        std::fill(std::begin(state_->backBufferStates), std::end(state_->backBufferStates),
                   D3D12_RESOURCE_STATE_PRESENT);
         state_->rtvHeap.Reset();
         state_->rtvDescriptorSize = 0;
@@ -200,25 +187,22 @@ void DirectXCommon::CreateRTV() {
     heapDesc.NumDescriptors = kSwapChainBufferCount + 1;
     heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 
-    if (LogIfFailed(
-            state_->device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&state_->rtvHeap)),
-            "CreateDescriptorHeap(RTV) failed") ||
+    if (LogIfFailed(state_->device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&state_->rtvHeap)),
+                    "CreateDescriptorHeap(RTV) failed") ||
         !state_->rtvHeap) {
         resetRtvState();
         return;
     }
     state_->rtvHeap->SetName(L"DirectXCommon.RtvHeap");
 
-    state_->rtvDescriptorSize = state_->device->GetDescriptorHandleIncrementSize(
-        D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    state_->rtvDescriptorSize =
+        state_->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
-    CD3DX12_CPU_DESCRIPTOR_HANDLE handle(
-        state_->rtvHeap->GetCPUDescriptorHandleForHeapStart());
+    CD3DX12_CPU_DESCRIPTOR_HANDLE handle(state_->rtvHeap->GetCPUDescriptorHandleForHeapStart());
 
     for (UINT i = 0; i < kSwapChainBufferCount; i++) {
-        if (LogIfFailed(
-                state_->swapChain->GetBuffer(i, IID_PPV_ARGS(&state_->backBuffers[i])),
-                "state_->swapChain->GetBuffer failed") ||
+        if (LogIfFailed(state_->swapChain->GetBuffer(i, IID_PPV_ARGS(&state_->backBuffers[i])),
+                        "state_->swapChain->GetBuffer failed") ||
             !state_->backBuffers[i]) {
             resetRtvState();
             return;
@@ -231,8 +215,7 @@ void DirectXCommon::CreateRTV() {
         rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
         rtvDesc.Format = kBackBufferFormat;
 
-        state_->device->CreateRenderTargetView(state_->backBuffers[i].Get(), &rtvDesc,
-                                        handle);
+        state_->device->CreateRenderTargetView(state_->backBuffers[i].Get(), &rtvDesc, handle);
         state_->backBufferStates[i] = D3D12_RESOURCE_STATE_PRESENT;
 
         handle.Offset(1, state_->rtvDescriptorSize);
@@ -290,8 +273,7 @@ void DirectXCommon::CreateSceneRenderTarget(int width, int height) {
         resetSceneColorState();
         return;
     }
-    state_->device->CreateRenderTargetView(state_->sceneColorBuffer.Get(), &rtvDesc,
-                                    sceneRtv);
+    state_->device->CreateRenderTargetView(state_->sceneColorBuffer.Get(), &rtvDesc, sceneRtv);
 }
 
 void DirectXCommon::CreateViewport(int width, int height) {
@@ -325,9 +307,8 @@ void DirectXCommon::CreateDepthStencil(int width, int height) {
     dsvDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
     dsvDesc.NumDescriptors = 1;
 
-    if (LogIfFailed(
-            state_->device->CreateDescriptorHeap(&dsvDesc, IID_PPV_ARGS(&state_->dsvHeap)),
-            "CreateDescriptorHeap(DSV) failed") ||
+    if (LogIfFailed(state_->device->CreateDescriptorHeap(&dsvDesc, IID_PPV_ARGS(&state_->dsvHeap)),
+                    "CreateDescriptorHeap(DSV) failed") ||
         !state_->dsvHeap) {
         resetDepthStencilState();
         return;
@@ -351,11 +332,11 @@ void DirectXCommon::CreateDepthStencil(int width, int height) {
 
     CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
 
-    if (LogIfFailed(state_->device->CreateCommittedResource(
-                        &heapProps, D3D12_HEAP_FLAG_NONE, &resDesc,
-                        D3D12_RESOURCE_STATE_DEPTH_WRITE, &clearValue,
-                        IID_PPV_ARGS(&state_->depthBuffer)),
-                    "CreateCommittedResource(DepthStencil) failed") ||
+    if (LogIfFailed(
+            state_->device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &resDesc,
+                                                    D3D12_RESOURCE_STATE_DEPTH_WRITE, &clearValue,
+                                                    IID_PPV_ARGS(&state_->depthBuffer)),
+            "CreateCommittedResource(DepthStencil) failed") ||
         !state_->depthBuffer) {
         resetDepthStencilState();
         return;
@@ -366,17 +347,16 @@ void DirectXCommon::CreateDepthStencil(int width, int height) {
     dsvDescView.Format = kDepthStencilFormat;
     dsvDescView.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
 
-    state_->device->CreateDepthStencilView(
-        state_->depthBuffer.Get(), &dsvDescView,
-        state_->dsvHeap->GetCPUDescriptorHandleForHeapStart());
+    state_->device->CreateDepthStencilView(state_->depthBuffer.Get(), &dsvDescView,
+                                           state_->dsvHeap->GetCPUDescriptorHandleForHeapStart());
     state_->depthState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
 }
 
-void DirectXCommon::UpdateDepthStencilSrv() {
+bool DirectXCommon::UpdateDepthStencilSrv() {
     if (!state_->device || !state_->srvManager || state_->depthSrvIndex == UINT_MAX ||
         !state_->depthBuffer) {
         state_->depthSrvGpuHandle = {};
-        return;
+        return false;
     }
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
@@ -391,16 +371,17 @@ void DirectXCommon::UpdateDepthStencilSrv() {
         state_->srvManager->GetGpuHandle(state_->depthSrvIndex);
     if (srvHandle.ptr == 0 || srvGpuHandle.ptr == 0) {
         state_->depthSrvGpuHandle = {};
-        return;
+        return false;
     }
     state_->device->CreateShaderResourceView(state_->depthBuffer.Get(), &srvDesc, srvHandle);
     state_->depthSrvGpuHandle = srvGpuHandle;
+    return true;
 }
 
-void DirectXCommon::UpdateSceneColorSrv() {
+bool DirectXCommon::UpdateSceneColorSrv() {
     if (!state_->device || !state_->srvManager || state_->sceneSrvIndex == UINT_MAX ||
         !state_->sceneColorBuffer) {
-        return;
+        return false;
     }
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
@@ -412,20 +393,19 @@ void DirectXCommon::UpdateSceneColorSrv() {
     const D3D12_CPU_DESCRIPTOR_HANDLE srvHandle =
         state_->srvManager->GetCpuHandle(state_->sceneSrvIndex);
     if (srvHandle.ptr == 0) {
-        return;
+        return false;
     }
-    state_->device->CreateShaderResourceView(state_->sceneColorBuffer.Get(), &srvDesc,
-                                      srvHandle);
+    state_->device->CreateShaderResourceView(state_->sceneColorBuffer.Get(), &srvDesc, srvHandle);
+    return state_->srvManager->GetGpuHandle(state_->sceneSrvIndex).ptr != 0;
 }
 D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::GetBackBufferRtvHandle() const {
     if (!state_->rtvHeap || state_->rtvDescriptorSize == 0 ||
         state_->backBufferIndex >= kSwapChainBufferCount) {
         return {};
     }
-    return CD3DX12_CPU_DESCRIPTOR_HANDLE(
-        state_->rtvHeap->GetCPUDescriptorHandleForHeapStart(),
-        static_cast<INT>(state_->backBufferIndex),
-        static_cast<INT>(state_->rtvDescriptorSize));
+    return CD3DX12_CPU_DESCRIPTOR_HANDLE(state_->rtvHeap->GetCPUDescriptorHandleForHeapStart(),
+                                         static_cast<INT>(state_->backBufferIndex),
+                                         static_cast<INT>(state_->rtvDescriptorSize));
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::GetSceneRtvHandle() const {
@@ -433,9 +413,9 @@ D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::GetSceneRtvHandle() const {
         return {};
     }
 
-    return CD3DX12_CPU_DESCRIPTOR_HANDLE(
-        state_->rtvHeap->GetCPUDescriptorHandleForHeapStart(),
-        static_cast<INT>(kSceneRtvIndex), static_cast<INT>(state_->rtvDescriptorSize));
+    return CD3DX12_CPU_DESCRIPTOR_HANDLE(state_->rtvHeap->GetCPUDescriptorHandleForHeapStart(),
+                                         static_cast<INT>(kSceneRtvIndex),
+                                         static_cast<INT>(state_->rtvDescriptorSize));
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::GetDepthStencilView() const {
@@ -457,7 +437,7 @@ DirectXCommon::GetDepthStencilGpuHandle() const {
 }
 
 D3D12_GPU_DESCRIPTOR_HANDLE
-DirectXCommon::GetSceneSrvGpuHandle(const SrvManager *srvManager) const {
+DirectXCommon::GetSceneSrvGpuHandle(const SrvManager* srvManager) const {
     if (srvManager == nullptr) {
         return {};
     }

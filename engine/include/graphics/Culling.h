@@ -6,17 +6,16 @@
 class Camera;
 
 class Frustum {
-  public:
+public:
     /// <summary>
     /// Buildを実行する
     /// </summary>
-    void Build(const DirectX::XMMATRIX &viewProjection);
-    void Build(const Camera &camera);
+    void Build(const DirectX::XMMATRIX& viewProjection);
+    void Build(const Camera& camera);
 
-    bool IntersectsAABB(const DirectX::XMFLOAT3 &min,
-                        const DirectX::XMFLOAT3 &max) const;
+    bool IntersectsAABB(const DirectX::XMFLOAT3& min, const DirectX::XMFLOAT3& max) const;
 
-  private:
+private:
     std::array<DirectX::XMFLOAT4, 6> planes_{};
 };
 
@@ -26,7 +25,6 @@ struct LODRange {
 };
 
 class LODSelector {
-  public:
-    static uint32_t Select(float distance, const LODRange *ranges,
-                           uint32_t rangeCount);
+public:
+    static uint32_t Select(float distance, const LODRange* ranges, uint32_t rangeCount);
 };

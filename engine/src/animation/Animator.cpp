@@ -1,33 +1,36 @@
 #include "animation/Animator.h"
+
 #include "animation/AnimationSampler.h"
 #include "animation/SkeletonPoseBuilder.h"
 #include "core/MathUtils.h"
+
 #include <DirectXMath.h>
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <new>
 
 using namespace DirectX;
 
 namespace {
 
-void ResetRootAnimation(Model &model) {
+void ResetRootAnimation(Model& model) {
     model.hasRootAnimation = false;
     XMStoreFloat4x4(&model.rootAnimationMatrix, XMMatrixIdentity());
 }
 
 struct AnimationPlaybackPolicy {
     bool loop = false;
-    void (*finish)(Model &, const AnimationClip &) = nullptr;
+    void (*finish)(Model&, const AnimationClip&) = nullptr;
 };
 
-void FinishLoopingPlayback(Model &model, const AnimationClip &clip) {
+void FinishLoopingPlayback(Model& model, const AnimationClip& clip) {
     if (model.animationTime >= clip.duration) {
         model.animationTime = std::fmod(model.animationTime, clip.duration);
     }
 }
 
-void FinishOneShotPlayback(Model &model, const AnimationClip &clip) {
+void FinishOneShotPlayback(Model& model, const AnimationClip& clip) {
     if (model.animationTime >= clip.duration) {
         model.animationTime = clip.duration;
         model.isPlaying = false;
@@ -35,25 +38,22 @@ void FinishOneShotPlayback(Model &model, const AnimationClip &clip) {
     }
 }
 
-const std::array<AnimationPlaybackPolicy, 2> &AnimationPlaybackPolicies() {
+const std::array<AnimationPlaybackPolicy, 2>& AnimationPlaybackPolicies() {
     static const std::array<AnimationPlaybackPolicy, 2> kPolicies = {{
-        {false, FinishOneShotPlayback},
-        {true, FinishLoopingPlayback},
+        {.loop = false, .finish = FinishOneShotPlayback},
+        {.loop = true, .finish = FinishLoopingPlayback},
     }};
     return kPolicies;
 }
 
-const AnimationPlaybackPolicy &PlaybackPolicyFor(bool loop) {
-    const auto &policies = AnimationPlaybackPolicies();
-    const auto found =
-        std::find_if(policies.begin(), policies.end(),
-                     [loop](const AnimationPlaybackPolicy &policy) {
-                         return policy.loop == loop;
-                     });
+const AnimationPlaybackPolicy& PlaybackPolicyFor(bool loop) {
+    const auto& policies = AnimationPlaybackPolicies();
+    const auto found = std::ranges::find_if(
+        policies, [loop](const AnimationPlaybackPolicy& policy) { return policy.loop == loop; });
     return found != policies.end() ? *found : policies.front();
 }
 
-void AdvancePlayback(Model &model, const AnimationClip &clip, float deltaTime) {
+void AdvancePlayback(Model& model, const AnimationClip& clip, float deltaTime) {
     if (!model.isPlaying) {
         return;
     }
@@ -61,8 +61,7 @@ void AdvancePlayback(Model &model, const AnimationClip &clip, float deltaTime) {
     if (!std::isfinite(model.animationTime) || model.animationTime < 0.0f) {
         model.animationTime = 0.0f;
     }
-    const float safeDeltaTime =
-        std::isfinite(deltaTime) ? (std::max)(deltaTime, 0.0f) : 0.0f;
+    const float safeDeltaTime = std::isfinite(deltaTime) ? (std::max)(deltaTime, 0.0f) : 0.0f;
     model.animationTime += safeDeltaTime;
     if (!std::isfinite(model.animationTime)) {
         model.animationTime = model.isLoop ? 0.0f : clip.duration;
@@ -73,7 +72,7 @@ void AdvancePlayback(Model &model, const AnimationClip &clip, float deltaTime) {
 
 } // namespace
 
-void Animator::Play(Model &model, const std::string &animationName, bool loop) {
+void Animator::Play(Model& model, const std::string& animationName, bool loop) {
     auto it = model.animations.find(animationName);
     if (it == model.animations.end()) {
         return;
@@ -86,28 +85,23 @@ void Animator::Play(Model &model, const std::string &animationName, bool loop) {
     model.animationFinished = false;
 }
 
-bool Animator::IsFinished(const Model &model) {
+bool Animator::IsFinished(const Model& model) {
     return model.animationFinished;
 }
 
-void Animator::ApplyBindPose(Model &model) {
+void Animator::ApplyBindPose(Model& model) {
     const size_t boneCount = model.bones.size();
-
-    if (model.skeletonSpaceMatrices.size() != boneCount) {
-        model.skeletonSpaceMatrices.resize(boneCount);
-    }
-
-    if (model.finalBoneMatrices.size() != boneCount) {
-        model.finalBoneMatrices.resize(boneCount);
-    }
 
     std::vector<XMMATRIX> localMatrices;
     SkeletonPoseBuilder::BuildBindPoseLocals(model, localMatrices);
+    if (localMatrices.size() != boneCount) {
+        return;
+    }
     SkeletonPoseBuilder::UpdateSkeleton(model, localMatrices);
 }
 
-void Animator::Update(Model &model, float deltaTime) {
-    const auto applyBindPoseIfPresent = [](Model &target) {
+void Animator::Update(Model& model, float deltaTime) {
+    const auto applyBindPoseIfPresent = [](Model& target) {
         ResetRootAnimation(target);
         if (!target.bones.empty()) {
             Animator::ApplyBindPose(target);
@@ -125,7 +119,7 @@ void Animator::Update(Model &model, float deltaTime) {
         return;
     }
 
-    const AnimationClip &clip = clipIt->second;
+    const AnimationClip& clip = clipIt->second;
     if (!std::isfinite(clip.duration) || clip.duration <= 0.0f) {
         applyBindPoseIfPresent(model);
         return;
@@ -142,25 +136,22 @@ void Animator::Update(Model &model, float deltaTime) {
                 return;
             }
 
-            const NodeAnimation &rootAnim = rootIt->second;
-            XMFLOAT3 pos = rootAnim.translate.keyframes.empty()
-                               ? XMFLOAT3{0.0f, 0.0f, 0.0f}
-                               : AnimationSampler::SampleVec3(
-                                     rootAnim.translate, model.animationTime);
+            const NodeAnimation& rootAnim = rootIt->second;
+            XMFLOAT3 pos =
+                rootAnim.translate.keyframes.empty()
+                    ? XMFLOAT3{0.0f, 0.0f, 0.0f}
+                    : AnimationSampler::SampleVec3(rootAnim.translate, model.animationTime);
             XMFLOAT3 scl = rootAnim.scale.keyframes.empty()
                                ? XMFLOAT3{1.0f, 1.0f, 1.0f}
-                               : AnimationSampler::SampleVec3(
-                                     rootAnim.scale, model.animationTime);
+                               : AnimationSampler::SampleVec3(rootAnim.scale, model.animationTime);
             XMFLOAT4 rot = rootAnim.rotate.keyframes.empty()
                                ? XMFLOAT4{0.0f, 0.0f, 0.0f, 1.0f}
-                               : AnimationSampler::SampleQuat(
-                                     rootAnim.rotate, model.animationTime);
+                               : AnimationSampler::SampleQuat(rootAnim.rotate, model.animationTime);
 
-            XMMATRIX local = XMMatrixScaling(scl.x, scl.y, scl.z) *
-                             XMMatrixRotationQuaternion(
-                                 MathUtils::LoadNormalizedQuaternionOrIdentity(
-                                     rot)) *
-                             XMMatrixTranslation(pos.x, pos.y, pos.z);
+            XMMATRIX local =
+                XMMatrixScaling(scl.x, scl.y, scl.z) *
+                XMMatrixRotationQuaternion(MathUtils::LoadNormalizedQuaternionOrIdentity(rot)) *
+                XMMatrixTranslation(pos.x, pos.y, pos.z);
             XMStoreFloat4x4(&model.rootAnimationMatrix, local);
             model.hasRootAnimation = true;
         }
@@ -169,15 +160,11 @@ void Animator::Update(Model &model, float deltaTime) {
     }
 
     const size_t boneCount = model.bones.size();
-    if (model.skeletonSpaceMatrices.size() != boneCount) {
-        model.skeletonSpaceMatrices.resize(boneCount);
-    }
-    if (model.finalBoneMatrices.size() != boneCount) {
-        model.finalBoneMatrices.resize(boneCount);
-    }
 
     std::vector<XMMATRIX> localMatrices;
-    SkeletonPoseBuilder::BuildAnimatedLocals(model, clip, model.animationTime,
-                                             localMatrices);
+    SkeletonPoseBuilder::BuildAnimatedLocals(model, clip, model.animationTime, localMatrices);
+    if (localMatrices.size() != boneCount) {
+        return;
+    }
     SkeletonPoseBuilder::UpdateSkeleton(model, localMatrices);
 }

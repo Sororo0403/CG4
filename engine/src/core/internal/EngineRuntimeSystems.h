@@ -1,16 +1,15 @@
 #pragma once
 
-#include "core/EngineRuntime.h"
-
 #include "camera/CameraManager.h"
 #include "core/CpuProfiler.h"
+#include "core/EngineRuntime.h"
 #include "core/FrameTimer.h"
 #include "core/WinApp.h"
 #include "font/FontManager.h"
 #include "font/TextRenderer.h"
 #include "graphics/DepthPyramid.h"
-#include "graphics/FrameHistory.h"
 #include "graphics/DirectXCommon.h"
+#include "graphics/FrameHistory.h"
 #include "graphics/GpuProfiler.h"
 #include "graphics/LightingScene.h"
 #include "graphics/PipelineManager.h"

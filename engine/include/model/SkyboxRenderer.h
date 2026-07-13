@@ -1,5 +1,6 @@
 #pragma once
 #include "camera/Camera.h"
+
 #include <cstdint>
 #include <memory>
 
@@ -11,7 +12,7 @@ class SrvManager;
 /// キューブマップを使ったスカイボックスを描画する
 /// </summary>
 class SkyboxRenderer {
-  public:
+public:
     SkyboxRenderer();
     ~SkyboxRenderer();
 
@@ -21,8 +22,8 @@ class SkyboxRenderer {
     /// <param name="dxCommon">DirectX共通管理</param>
     /// <param name="srvManager">SRV管理</param>
     /// <param name="textureManager">テクスチャ管理</param>
-    void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
-                    TextureManager *textureManager);
+    void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager,
+                    TextureManager* textureManager);
 
     /// <summary>
     /// スカイボックス描画用GPUリソースを解放する
@@ -39,10 +40,10 @@ class SkyboxRenderer {
     /// <summary>
     /// 描画を実行する
     /// </summary>
-    void Draw(uint32_t textureId, const Camera &camera);
+    void Draw(uint32_t textureId, const Camera& camera);
     bool IsReady() const;
 
-  private:
+private:
     /// <summary>
     /// ルートシグネチャを生成する
     /// </summary>
@@ -63,17 +64,17 @@ class SkyboxRenderer {
     /// </summary>
     void CreateConstantBuffer();
 
-  private:
+private:
     struct ConstBufferData;
     struct ConstantFrame;
     struct State;
 
-    ConstantFrame *GetCurrentConstantFrame();
-    const ConstantFrame *GetCurrentConstantFrame() const;
+    ConstantFrame* GetCurrentConstantFrame();
+    const ConstantFrame* GetCurrentConstantFrame() const;
     bool HasConstantBuffers() const;
 
-    DirectXCommon *dxCommon_ = nullptr;
-    SrvManager *srvManager_ = nullptr;
-    TextureManager *textureManager_ = nullptr;
+    DirectXCommon* dxCommon_ = nullptr;
+    SrvManager* srvManager_ = nullptr;
+    TextureManager* textureManager_ = nullptr;
     std::unique_ptr<State> state_;
 };

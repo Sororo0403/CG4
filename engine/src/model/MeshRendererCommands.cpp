@@ -1,8 +1,7 @@
-#include "model/MeshRenderer.h"
-#include "internal/MeshRendererInternal.h"
-
 #include "graphics/DirectXCommon.h"
+#include "internal/MeshRendererInternal.h"
 #include "internal/RendererMaterialUtils.h"
+#include "model/MeshRenderer.h"
 #include "texture/TextureManager.h"
 
 using RendererMaterialUtils::PipelineVariantIndex;
@@ -14,9 +13,9 @@ using RendererMaterialUtils::ResolveRoughnessTextureId;
 
 namespace {
 
-D3D12_GPU_DESCRIPTOR_HANDLE GetTextureHandleOrFallback(
-    const TextureManager *textureManager, uint32_t textureId,
-    uint32_t fallbackTextureId) {
+D3D12_GPU_DESCRIPTOR_HANDLE GetTextureHandleOrFallback(const TextureManager* textureManager,
+                                                       uint32_t textureId,
+                                                       uint32_t fallbackTextureId) {
     if (textureManager == nullptr) {
         return {};
     }
@@ -28,15 +27,14 @@ D3D12_GPU_DESCRIPTOR_HANDLE GetTextureHandleOrFallback(
     return textureManager->GetGpuHandle(fallbackTextureId);
 }
 
-D3D12_GPU_DESCRIPTOR_HANDLE GetCubeTextureHandleOrFallback(
-    const TextureManager *textureManager, uint32_t textureId,
-    uint32_t fallbackTextureId) {
+D3D12_GPU_DESCRIPTOR_HANDLE GetCubeTextureHandleOrFallback(const TextureManager* textureManager,
+                                                           uint32_t textureId,
+                                                           uint32_t fallbackTextureId) {
     if (textureManager == nullptr) {
         return {};
     }
     if (textureManager->IsCubeTextureId(textureId)) {
-        const D3D12_GPU_DESCRIPTOR_HANDLE handle =
-            textureManager->GetGpuHandle(textureId);
+        const D3D12_GPU_DESCRIPTOR_HANDLE handle = textureManager->GetGpuHandle(textureId);
         if (handle.ptr != 0) {
             return handle;
         }
@@ -47,33 +45,29 @@ D3D12_GPU_DESCRIPTOR_HANDLE GetCubeTextureHandleOrFallback(
     return {};
 }
 
-D3D12_GPU_DESCRIPTOR_HANDLE GetWhiteTextureHandle(
-    const TextureManager *textureManager) {
+D3D12_GPU_DESCRIPTOR_HANDLE GetWhiteTextureHandle(const TextureManager* textureManager) {
     if (textureManager == nullptr) {
         return {};
     }
     return textureManager->GetGpuHandle(textureManager->GetWhiteTextureId());
 }
 
-D3D12_GPU_DESCRIPTOR_HANDLE GetDefaultNormalTextureHandle(
-    const TextureManager *textureManager) {
+D3D12_GPU_DESCRIPTOR_HANDLE GetDefaultNormalTextureHandle(const TextureManager* textureManager) {
     if (textureManager == nullptr) {
         return {};
     }
-    return textureManager->GetGpuHandle(
-        textureManager->GetDefaultNormalTextureId());
+    return textureManager->GetGpuHandle(textureManager->GetDefaultNormalTextureId());
 }
 
-D3D12_GPU_DESCRIPTOR_HANDLE ResolveShadowHandle(
-    const TextureManager *textureManager, D3D12_GPU_DESCRIPTOR_HANDLE handle) {
+D3D12_GPU_DESCRIPTOR_HANDLE ResolveShadowHandle(const TextureManager* textureManager,
+                                                D3D12_GPU_DESCRIPTOR_HANDLE handle) {
     return handle.ptr != 0 ? handle : GetWhiteTextureHandle(textureManager);
 }
 
 } // namespace
 
-void MeshRenderer::SetGraphicsRootSignatureCached(
-    ID3D12RootSignature *rootSignature) {
-    auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
+void MeshRenderer::SetGraphicsRootSignatureCached(ID3D12RootSignature* rootSignature) {
+    auto* cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
     if (cmd == nullptr || rootSignature == nullptr) {
         return;
     }
@@ -87,8 +81,8 @@ void MeshRenderer::SetGraphicsRootSignatureCached(
     state_->commandCache->rootParameterValues.fill(0);
 }
 
-void MeshRenderer::SetPipelineStateCached(ID3D12PipelineState *pipelineState) {
-    auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
+void MeshRenderer::SetPipelineStateCached(ID3D12PipelineState* pipelineState) {
+    auto* cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
     if (cmd == nullptr || pipelineState == nullptr) {
         return;
     }
@@ -99,11 +93,10 @@ void MeshRenderer::SetPipelineStateCached(ID3D12PipelineState *pipelineState) {
     state_->commandCache->pipelineState = pipelineState;
 }
 
-void MeshRenderer::SetGraphicsRootConstantBufferViewCached(
-    uint32_t rootIndex, D3D12_GPU_VIRTUAL_ADDRESS address) {
-    auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
-    if (cmd == nullptr ||
-        rootIndex >= state_->commandCache->rootParameterValues.size()) {
+void MeshRenderer::SetGraphicsRootConstantBufferViewCached(uint32_t rootIndex,
+                                                           D3D12_GPU_VIRTUAL_ADDRESS address) {
+    auto* cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
+    if (cmd == nullptr || rootIndex >= state_->commandCache->rootParameterValues.size()) {
         return;
     }
     if (state_->commandCache->rootParameterKinds[rootIndex] ==
@@ -117,11 +110,10 @@ void MeshRenderer::SetGraphicsRootConstantBufferViewCached(
     state_->commandCache->rootParameterValues[rootIndex] = address;
 }
 
-void MeshRenderer::SetGraphicsRootDescriptorTableCached(
-    uint32_t rootIndex, D3D12_GPU_DESCRIPTOR_HANDLE handle) {
-    auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
-    if (cmd == nullptr ||
-        rootIndex >= state_->commandCache->rootParameterValues.size()) {
+void MeshRenderer::SetGraphicsRootDescriptorTableCached(uint32_t rootIndex,
+                                                        D3D12_GPU_DESCRIPTOR_HANDLE handle) {
+    auto* cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
+    if (cmd == nullptr || rootIndex >= state_->commandCache->rootParameterValues.size()) {
         return;
     }
     if (state_->commandCache->rootParameterKinds[rootIndex] ==
@@ -135,10 +127,9 @@ void MeshRenderer::SetGraphicsRootDescriptorTableCached(
     state_->commandCache->rootParameterValues[rootIndex] = handle.ptr;
 }
 
-void MeshRenderer::IASetVertexBuffersCached(
-    uint32_t startSlot, uint32_t viewCount,
-    const D3D12_VERTEX_BUFFER_VIEW *views) {
-    auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
+void MeshRenderer::IASetVertexBuffersCached(uint32_t startSlot, uint32_t viewCount,
+                                            const D3D12_VERTEX_BUFFER_VIEW* views) {
+    auto* cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
     if (cmd == nullptr || views == nullptr || viewCount == 0u ||
         viewCount > state_->commandCache->vertexBufferViews.size()) {
         return;
@@ -164,14 +155,14 @@ void MeshRenderer::IASetVertexBuffersCached(
     }
 }
 
-void MeshRenderer::IASetIndexBufferCached(const D3D12_INDEX_BUFFER_VIEW &view) {
-    auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
+void MeshRenderer::IASetIndexBufferCached(const D3D12_INDEX_BUFFER_VIEW& view) {
+    auto* cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
     if (cmd == nullptr) {
         return;
     }
     if (state_->commandCache->indexBufferValid &&
-        MeshRendererCommandCache::SameIndexBufferView(
-            state_->commandCache->indexBufferView, view)) {
+        MeshRendererCommandCache::SameIndexBufferView(state_->commandCache->indexBufferView,
+                                                      view)) {
         return;
     }
     cmd->IASetIndexBuffer(&view);
@@ -179,9 +170,8 @@ void MeshRenderer::IASetIndexBufferCached(const D3D12_INDEX_BUFFER_VIEW &view) {
     state_->commandCache->indexBufferValid = true;
 }
 
-void MeshRenderer::IASetPrimitiveTopologyCached(
-    D3D12_PRIMITIVE_TOPOLOGY topology) {
-    auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
+void MeshRenderer::IASetPrimitiveTopologyCached(D3D12_PRIMITIVE_TOPOLOGY topology) {
+    auto* cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
     if (cmd == nullptr) {
         return;
     }
@@ -192,199 +182,166 @@ void MeshRenderer::IASetPrimitiveTopologyCached(
     state_->commandCache->primitiveTopology = topology;
 }
 
-void MeshRenderer::BindForwardMaterialDescriptors(
-    const Material &drawMaterial, uint32_t textureId,
-    uint32_t normalTextureId) {
-    const uint32_t environmentTextureId = ResolveCubeTextureId(
-        state_->textureManager, state_->environmentTextureId,
-        state_->textureManager->GetBlackCubeTextureId());
+void MeshRenderer::BindForwardMaterialDescriptors(const Material& drawMaterial, uint32_t textureId,
+                                                  uint32_t normalTextureId) {
+    const uint32_t environmentTextureId =
+        ResolveCubeTextureId(state_->textureManager, state_->environmentTextureId,
+                             state_->textureManager->GetBlackCubeTextureId());
     SetGraphicsRootDescriptorTableCached(
         3, GetTextureHandleOrFallback(
                state_->textureManager,
-               ResolveBaseColorTextureId(state_->textureManager, drawMaterial,
-                                         textureId),
+               ResolveBaseColorTextureId(state_->textureManager, drawMaterial, textureId),
                state_->textureManager->GetWhiteTextureId()));
     SetGraphicsRootDescriptorTableCached(
-        4, GetCubeTextureHandleOrFallback(
-               state_->textureManager, environmentTextureId,
-               state_->textureManager->GetBlackCubeTextureId()));
+        4, GetCubeTextureHandleOrFallback(state_->textureManager, environmentTextureId,
+                                          state_->textureManager->GetBlackCubeTextureId()));
     SetGraphicsRootDescriptorTableCached(
-        5, ResolveShadowHandle(state_->textureManager,
-                               state_->shadowMapGpuHandle));
+        5, ResolveShadowHandle(state_->textureManager, state_->shadowMapGpuHandle));
     SetGraphicsRootDescriptorTableCached(
         6, GetTextureHandleOrFallback(
                state_->textureManager,
-               ResolveNormalTextureId(state_->textureManager, drawMaterial,
-                                      normalTextureId),
+               ResolveNormalTextureId(state_->textureManager, drawMaterial, normalTextureId),
                state_->textureManager->GetDefaultNormalTextureId()));
     SetGraphicsRootDescriptorTableCached(
-        7, ResolveShadowHandle(state_->textureManager,
-                               state_->spotLightShadowMapGpuHandle));
+        7, ResolveShadowHandle(state_->textureManager, state_->spotLightShadowMapGpuHandle));
     SetGraphicsRootDescriptorTableCached(
-        8, GetTextureHandleOrFallback(
-               state_->textureManager,
-               ResolveRoughnessTextureId(state_->textureManager, drawMaterial),
-               state_->textureManager->GetWhiteTextureId()));
+        8,
+        GetTextureHandleOrFallback(state_->textureManager,
+                                   ResolveRoughnessTextureId(state_->textureManager, drawMaterial),
+                                   state_->textureManager->GetWhiteTextureId()));
     SetGraphicsRootDescriptorTableCached(
-        9, GetTextureHandleOrFallback(
-               state_->textureManager,
-               ResolveMetallicTextureId(state_->textureManager, drawMaterial),
-               state_->textureManager->GetWhiteTextureId()));
+        9,
+        GetTextureHandleOrFallback(state_->textureManager,
+                                   ResolveMetallicTextureId(state_->textureManager, drawMaterial),
+                                   state_->textureManager->GetWhiteTextureId()));
     SetGraphicsRootDescriptorTableCached(
-        10, state_->textureManager->GetGpuHandle(
-                state_->textureManager->GetWhiteTextureId()));
+        10, state_->textureManager->GetGpuHandle(state_->textureManager->GetWhiteTextureId()));
 }
 
 void MeshRenderer::BindForwardMaterialDescriptorHandles(
-    D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
-    D3D12_GPU_DESCRIPTOR_HANDLE normalTextureHandle) {
+    D3D12_GPU_DESCRIPTOR_HANDLE textureHandle, D3D12_GPU_DESCRIPTOR_HANDLE normalTextureHandle) {
     const D3D12_GPU_DESCRIPTOR_HANDLE baseColorHandle =
         textureHandle.ptr != 0
             ? textureHandle
-            : state_->textureManager->GetGpuHandle(
-                  state_->textureManager->GetWhiteTextureId());
+            : state_->textureManager->GetGpuHandle(state_->textureManager->GetWhiteTextureId());
     const D3D12_GPU_DESCRIPTOR_HANDLE normalHandle =
-        normalTextureHandle.ptr != 0
-            ? normalTextureHandle
-            : GetDefaultNormalTextureHandle(state_->textureManager);
-    const uint32_t environmentTextureId = ResolveCubeTextureId(
-        state_->textureManager, state_->environmentTextureId,
-        state_->textureManager->GetBlackCubeTextureId());
+        normalTextureHandle.ptr != 0 ? normalTextureHandle
+                                     : GetDefaultNormalTextureHandle(state_->textureManager);
+    const uint32_t environmentTextureId =
+        ResolveCubeTextureId(state_->textureManager, state_->environmentTextureId,
+                             state_->textureManager->GetBlackCubeTextureId());
     SetGraphicsRootDescriptorTableCached(3, baseColorHandle);
     SetGraphicsRootDescriptorTableCached(
-        4, GetCubeTextureHandleOrFallback(
-               state_->textureManager, environmentTextureId,
-               state_->textureManager->GetBlackCubeTextureId()));
+        4, GetCubeTextureHandleOrFallback(state_->textureManager, environmentTextureId,
+                                          state_->textureManager->GetBlackCubeTextureId()));
     SetGraphicsRootDescriptorTableCached(
-        5, ResolveShadowHandle(state_->textureManager,
-                               state_->shadowMapGpuHandle));
+        5, ResolveShadowHandle(state_->textureManager, state_->shadowMapGpuHandle));
     SetGraphicsRootDescriptorTableCached(6, normalHandle);
     SetGraphicsRootDescriptorTableCached(
-        7, ResolveShadowHandle(state_->textureManager,
-                               state_->spotLightShadowMapGpuHandle));
+        7, ResolveShadowHandle(state_->textureManager, state_->spotLightShadowMapGpuHandle));
     SetGraphicsRootDescriptorTableCached(
-        8, state_->textureManager->GetGpuHandle(
-               state_->textureManager->GetWhiteTextureId()));
+        8, state_->textureManager->GetGpuHandle(state_->textureManager->GetWhiteTextureId()));
     SetGraphicsRootDescriptorTableCached(
-        9, state_->textureManager->GetGpuHandle(
-               state_->textureManager->GetWhiteTextureId()));
+        9, state_->textureManager->GetGpuHandle(state_->textureManager->GetWhiteTextureId()));
     SetGraphicsRootDescriptorTableCached(
-        10, state_->textureManager->GetGpuHandle(
-                state_->textureManager->GetWhiteTextureId()));
+        10, state_->textureManager->GetGpuHandle(state_->textureManager->GetWhiteTextureId()));
 }
 
-void MeshRenderer::BindShadowMaterialDescriptor(const Material &drawMaterial,
-                                                uint32_t textureId) {
+void MeshRenderer::BindShadowMaterialDescriptor(const Material& drawMaterial, uint32_t textureId) {
     SetGraphicsRootDescriptorTableCached(
         3, state_->textureManager->GetGpuHandle(
-               ResolveBaseColorTextureId(state_->textureManager, drawMaterial,
-                                         textureId)));
+               ResolveBaseColorTextureId(state_->textureManager, drawMaterial, textureId)));
 }
 
-void MeshRenderer::SubmitForwardMeshDraw(
-    const Mesh &mesh, const Material &drawMaterial,
-    D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr,
-    D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr,
-    D3D12_GPU_VIRTUAL_ADDRESS materialCbAddr,
-    const D3D12_VERTEX_BUFFER_VIEW *vertexViews, uint32_t vertexViewCount,
-    uint32_t instanceCount, uint32_t textureId, uint32_t normalTextureId) {
-    auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
-    if (cmd == nullptr || vertexViews == nullptr || vertexViewCount == 0 ||
-        instanceCount == 0) {
+void MeshRenderer::SubmitForwardMeshDraw(const Mesh& mesh, const Material& drawMaterial,
+                                         const MeshDrawConstants& constants,
+                                         const MeshVertexViewSpan& vertices,
+                                         const ForwardTextureIds& textures) {
+    auto* cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
+    if (cmd == nullptr || vertices.views == nullptr || vertices.count == 0 ||
+        vertices.instanceCount == 0) {
         return;
     }
 
-    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
-    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
-    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
-    BindForwardMaterialDescriptors(drawMaterial, textureId, normalTextureId);
-    IASetVertexBuffersCached(0, vertexViewCount, vertexViews);
+    SetGraphicsRootConstantBufferViewCached(0, constants.object);
+    SetGraphicsRootConstantBufferViewCached(1, constants.scene);
+    SetGraphicsRootConstantBufferViewCached(2, constants.material);
+    BindForwardMaterialDescriptors(drawMaterial, textures.baseColor, textures.normal);
+    IASetVertexBuffersCached(0, vertices.count, vertices.views);
     IASetIndexBufferCached(mesh.ibView);
     IASetPrimitiveTopologyCached(mesh.primitiveTopology);
-    cmd->DrawIndexedInstanced(mesh.indexCount, instanceCount, 0, 0, 0);
+    cmd->DrawIndexedInstanced(mesh.indexCount, vertices.instanceCount, 0, 0, 0);
     ++state_->drawIndex;
 }
 
-void MeshRenderer::SubmitForwardMeshDrawWithHandles(
-    const Mesh &mesh, D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr,
-    D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr,
-    D3D12_GPU_VIRTUAL_ADDRESS materialCbAddr,
-    const D3D12_VERTEX_BUFFER_VIEW *vertexViews, uint32_t vertexViewCount,
-    uint32_t instanceCount, D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
-    D3D12_GPU_DESCRIPTOR_HANDLE normalTextureHandle) {
-    auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
-    if (cmd == nullptr || vertexViews == nullptr || vertexViewCount == 0 ||
-        instanceCount == 0) {
+void MeshRenderer::SubmitForwardMeshDrawWithHandles(const Mesh& mesh,
+                                                    const MeshDrawConstants& constants,
+                                                    const MeshVertexViewSpan& vertices,
+                                                    const ForwardTextureHandles& textures) {
+    auto* cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
+    if (cmd == nullptr || vertices.views == nullptr || vertices.count == 0 ||
+        vertices.instanceCount == 0) {
         return;
     }
 
-    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
-    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
-    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
-    BindForwardMaterialDescriptorHandles(textureHandle, normalTextureHandle);
-    IASetVertexBuffersCached(0, vertexViewCount, vertexViews);
+    SetGraphicsRootConstantBufferViewCached(0, constants.object);
+    SetGraphicsRootConstantBufferViewCached(1, constants.scene);
+    SetGraphicsRootConstantBufferViewCached(2, constants.material);
+    BindForwardMaterialDescriptorHandles(textures.baseColor, textures.normal);
+    IASetVertexBuffersCached(0, vertices.count, vertices.views);
     IASetIndexBufferCached(mesh.ibView);
     IASetPrimitiveTopologyCached(mesh.primitiveTopology);
-    cmd->DrawIndexedInstanced(mesh.indexCount, instanceCount, 0, 0, 0);
+    cmd->DrawIndexedInstanced(mesh.indexCount, vertices.instanceCount, 0, 0, 0);
     ++state_->drawIndex;
 }
 
-void MeshRenderer::SubmitShadowMeshDraw(
-    const Mesh &mesh, const Material &drawMaterial,
-    D3D12_GPU_VIRTUAL_ADDRESS objectCbAddr,
-    D3D12_GPU_VIRTUAL_ADDRESS sceneCbAddr,
-    D3D12_GPU_VIRTUAL_ADDRESS materialCbAddr,
-    const D3D12_VERTEX_BUFFER_VIEW *vertexViews, uint32_t vertexViewCount,
-    uint32_t instanceCount, uint32_t textureId) {
-    auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
-    if (cmd == nullptr || vertexViews == nullptr || vertexViewCount == 0 ||
-        instanceCount == 0) {
+void MeshRenderer::SubmitShadowMeshDraw(const Mesh& mesh, const Material& drawMaterial,
+                                        const MeshDrawConstants& constants,
+                                        const MeshVertexViewSpan& vertices, uint32_t textureId) {
+    auto* cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
+    if (cmd == nullptr || vertices.views == nullptr || vertices.count == 0 ||
+        vertices.instanceCount == 0) {
         return;
     }
 
-    SetGraphicsRootConstantBufferViewCached(0, objectCbAddr);
-    SetGraphicsRootConstantBufferViewCached(1, sceneCbAddr);
-    SetGraphicsRootConstantBufferViewCached(2, materialCbAddr);
+    SetGraphicsRootConstantBufferViewCached(0, constants.object);
+    SetGraphicsRootConstantBufferViewCached(1, constants.scene);
+    SetGraphicsRootConstantBufferViewCached(2, constants.material);
     BindShadowMaterialDescriptor(drawMaterial, textureId);
-    IASetVertexBuffersCached(0, vertexViewCount, vertexViews);
+    IASetVertexBuffersCached(0, vertices.count, vertices.views);
     IASetIndexBufferCached(mesh.ibView);
     IASetPrimitiveTopologyCached(mesh.primitiveTopology);
-    cmd->DrawIndexedInstanced(mesh.indexCount, instanceCount, 0, 0, 0);
+    cmd->DrawIndexedInstanced(mesh.indexCount, vertices.instanceCount, 0, 0, 0);
     ++state_->drawIndex;
 }
 
-bool MeshRenderer::SetPipelineForMaterial(const Material &material) {
+bool MeshRenderer::SetPipelineForMaterial(const Material& material) {
     return SetPipelineStateForMaterial(state_->pipelineStates, material);
 }
 
-bool MeshRenderer::SetPipelineForMaterial(
-    const PipelineStateArray &pipelineStates,
-    const Material &material) {
+bool MeshRenderer::SetPipelineForMaterial(const PipelineStateArray& pipelineStates,
+                                          const Material& material) {
     return SetPipelineStateForMaterial(pipelineStates, material);
 }
 
-bool MeshRenderer::SetInstancedPipelineForMaterial(const Material &material) {
-    return SetPipelineStateForMaterial(state_->instancedPipelineStates,
-                                       material);
+bool MeshRenderer::SetInstancedPipelineForMaterial(const Material& material) {
+    return SetPipelineStateForMaterial(state_->instancedPipelineStates, material);
 }
 
-bool MeshRenderer::SetInstancedPipelineForMaterial(
-    const PipelineStateArray &pipelineStates,
-    const Material &material) {
+bool MeshRenderer::SetInstancedPipelineForMaterial(const PipelineStateArray& pipelineStates,
+                                                   const Material& material) {
     return SetPipelineStateForMaterial(pipelineStates, material);
 }
 
-bool MeshRenderer::SetInstancedShadowPipelineForMaterial(
-    const PipelineStateArray &pipelineStates,
-    const Material &material) {
+bool MeshRenderer::SetInstancedShadowPipelineForMaterial(const PipelineStateArray& pipelineStates,
+                                                         const Material& material) {
     return SetPipelineStateForMaterial(pipelineStates, material);
 }
 
-bool MeshRenderer::SetPipelineStateForMaterial(
-    const PipelineStateArray &pipelineStates, const Material &material) {
-    auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
-    ID3D12PipelineState *pipelineState =
-        pipelineStates[PipelineVariantIndex(material)].Get();
+bool MeshRenderer::SetPipelineStateForMaterial(const PipelineStateArray& pipelineStates,
+                                               const Material& material) {
+    auto* cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
+    ID3D12PipelineState* pipelineState = pipelineStates[PipelineVariantIndex(material)].Get();
     if (cmd == nullptr || pipelineState == nullptr) {
         return false;
     }

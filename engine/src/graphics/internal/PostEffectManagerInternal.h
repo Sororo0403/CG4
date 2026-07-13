@@ -13,7 +13,7 @@ struct PostEffectManager::Layer {
 };
 
 struct PostEffectManager::State {
-    PostProcessSystem *system = nullptr;
+    PostProcessSystem* system = nullptr;
     PostProcessProfile baseProfile{};
     PostProcessProfile composedProfile{};
     std::vector<Layer> layers;

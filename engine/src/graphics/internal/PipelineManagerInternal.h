@@ -6,8 +6,6 @@
 #include <wrl.h>
 
 struct PipelineManager::State {
-    std::unordered_map<std::string, Microsoft::WRL::ComPtr<IDxcBlob>>
-        shaderCache;
-    std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3D12PipelineState>>
-        graphicsPipelines;
+    std::unordered_map<std::string, Microsoft::WRL::ComPtr<IDxcBlob>> shaderCache;
+    std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3D12PipelineState>> graphicsPipelines;
 };

@@ -1,16 +1,18 @@
 #include "sprite/SpriteRenderer.h"
 
-#include "internal/SpriteRendererInternal.h"
 #include "core/Numeric.h"
 #include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/SrvManager.h"
+#include "internal/SpriteRendererInternal.h"
 #include "sprite/Sprite.h"
 #include "texture/TextureManager.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <exception>
+#include <new>
 
 using namespace DirectX;
 
@@ -42,9 +44,8 @@ SpriteDrawPlanKind ResolveSpriteDrawPlanKind(SpriteBlendMode blendMode) {
         {SpriteBlendMode::PremultipliedMask, SpriteDrawPlanKind::PremultipliedMask},
     }};
 
-    const auto it = std::find_if(
-        kPlans.begin(), kPlans.end(),
-        [blendMode](const SpriteBlendPlanMap& plan) {
+    const auto it =
+        std::find_if(kPlans.begin(), kPlans.end(), [blendMode](const SpriteBlendPlanMap& plan) {
             return plan.blendMode == blendMode;
         });
     return it != kPlans.end() ? it->planKind : SpriteDrawPlanKind::Alpha;
@@ -63,8 +64,7 @@ XMFLOAT4 SanitizeColor(const XMFLOAT4& value) {
     };
 }
 
-uint32_t ResolveSpriteTextureId(const TextureManager* textureManager,
-                                uint32_t textureId) {
+uint32_t ResolveSpriteTextureId(const TextureManager* textureManager, uint32_t textureId) {
     if (textureManager == nullptr) {
         return kInvalidResourceId;
     }
@@ -121,7 +121,11 @@ void SpriteRenderer::Draw(const Sprite& sprite) {
             SpriteVertex{{r, t, 0.0f}, {u1, v0}, color},
             SpriteVertex{{r, b, 0.0f}, {u1, v1}, color},
         };
-        state_->queuedDraws.push_back(draw);
+        try {
+            state_->queuedDraws.push_back(draw);
+        } catch (const std::exception&) {
+            return;
+        }
         ++state_->drawCursor;
     };
 
@@ -245,11 +249,17 @@ void SpriteRenderer::FlushQueuedDraws() {
         }
 
         state_->batchVertices.clear();
-        state_->batchVertices.reserve((runEnd - runStart) * kVerticesPerSprite);
-        for (size_t index = runStart; index < runEnd; ++index) {
-            const auto& vertices = state_->queuedDraws[index].vertices;
-            state_->batchVertices.insert(state_->batchVertices.end(), vertices.begin(),
-                                         vertices.end());
+        try {
+            state_->batchVertices.reserve((runEnd - runStart) * kVerticesPerSprite);
+            for (size_t index = runStart; index < runEnd; ++index) {
+                const auto& vertices = state_->queuedDraws[index].vertices;
+                state_->batchVertices.insert(state_->batchVertices.end(), vertices.begin(),
+                                             vertices.end());
+            }
+        } catch (const std::exception&) {
+            state_->batchVertices.clear();
+            runStart = runEnd;
+            continue;
         }
         const UploadAllocation allocation = state_->uploadBuffer.WriteArray(
             state_->batchVertices.data(), state_->batchVertices.size(), alignof(SpriteVertex));

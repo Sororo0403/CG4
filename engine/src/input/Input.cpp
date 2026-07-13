@@ -1,13 +1,16 @@
 #include "input/Input.h"
 
-#include "internal/InputInternal.h"
 #include "input/InputReplayLimits.h"
+#include "internal/InputInternal.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <exception>
 #include <filesystem>
+#include <new>
 #include <string>
+#include <utility>
 
 #pragma comment(lib, "xinput.lib")
 
@@ -43,8 +46,12 @@ std::wstring GetDefaultReplayDirectory() {
         return L"replays";
     }
 
-    const std::filesystem::path executablePath(std::wstring(pathBuffer.data(), length));
-    return (executablePath.parent_path() / L"replays").wstring();
+    try {
+        const std::filesystem::path executablePath(std::wstring(pathBuffer.data(), length));
+        return (executablePath.parent_path() / L"replays").wstring();
+    } catch (const std::exception&) {
+        return L"replays";
+    }
 }
 
 } // namespace
@@ -210,8 +217,11 @@ void Input::Update(float deltaTime) {
 
     if (state_->replayMode == ReplayMode::Record &&
         state_->recordedFrames.size() < InputReplayLimits::kMaxFrames) {
-        state_->recordedFrames.push_back(CaptureFrame());
-        state_->recordingDirty = true;
+        try {
+            state_->recordedFrames.push_back(CaptureFrame());
+            state_->recordingDirty = true;
+        } catch (const std::exception&) {
+        }
     }
 }
 
@@ -289,35 +299,35 @@ void Input::UpdateGamepad() {
 }
 
 bool Input::IsKeyPress(int dik) const {
-    if (dik < 0 || dik >= static_cast<int>(state_->keyNow.size())) {
+    if (dik < 0 || std::cmp_greater_equal(dik, state_->keyNow.size())) {
         return false;
     }
     return (state_->keyNow[dik] & kPressMask) != 0;
 }
 
 bool Input::IsKeyTrigger(int dik) const {
-    if (dik < 0 || dik >= static_cast<int>(state_->keyNow.size())) {
+    if (dik < 0 || std::cmp_greater_equal(dik, state_->keyNow.size())) {
         return false;
     }
     return (state_->keyNow[dik] & kPressMask) && !(state_->keyPrev[dik] & kPressMask);
 }
 
 bool Input::IsKeyRelease(int dik) const {
-    if (dik < 0 || dik >= static_cast<int>(state_->keyNow.size())) {
+    if (dik < 0 || std::cmp_greater_equal(dik, state_->keyNow.size())) {
         return false;
     }
     return !(state_->keyNow[dik] & kPressMask) && (state_->keyPrev[dik] & kPressMask);
 }
 
 bool Input::IsMousePress(int button) const {
-    if (button < 0 || button >= static_cast<int>(_countof(state_->mouseState.rgbButtons))) {
+    if (button < 0 || std::cmp_greater_equal(button, _countof(state_->mouseState.rgbButtons))) {
         return false;
     }
     return (state_->mouseState.rgbButtons[button] & 0x80) != 0;
 }
 
 bool Input::IsMouseTrigger(int button) const {
-    if (button < 0 || button >= static_cast<int>(_countof(state_->mouseState.rgbButtons))) {
+    if (button < 0 || std::cmp_greater_equal(button, _countof(state_->mouseState.rgbButtons))) {
         return false;
     }
     return (state_->mouseState.rgbButtons[button] & 0x80) &&
@@ -325,7 +335,7 @@ bool Input::IsMouseTrigger(int button) const {
 }
 
 bool Input::IsMouseRelease(int button) const {
-    if (button < 0 || button >= static_cast<int>(_countof(state_->mouseState.rgbButtons))) {
+    if (button < 0 || std::cmp_greater_equal(button, _countof(state_->mouseState.rgbButtons))) {
         return false;
     }
     return !(state_->mouseState.rgbButtons[button] & 0x80) &&

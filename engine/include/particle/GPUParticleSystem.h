@@ -2,10 +2,11 @@
 #include "camera/Camera.h"
 #include "core/ResourceHandle.h"
 #include "particle/ParticleEmitterSettings.h"
-#include <d3d12.h>
+
 #include <DirectXMath.h>
 #include <cstddef>
 #include <cstdint>
+#include <d3d12.h>
 #include <deque>
 #include <memory>
 #include <string>
@@ -43,7 +44,7 @@ struct GPUParticleExplicitSpawn {
 /// 計算シェーダーで更新し、構造化バッファを使ってインスタンス描画するGPUパーティクル。
 /// </summary>
 class GPUParticleSystem {
-  public:
+public:
     /// <summary>
     /// 共有しているGPUパーティクル描画キャッシュを解放する
     /// </summary>
@@ -58,9 +59,8 @@ class GPUParticleSystem {
     /// <summary>
     /// GPUパーティクルの各種バッファ、SRV/UAV、描画設定を作成する
     /// </summary>
-    bool Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
-                    TextureManager *textureManager, uint32_t textureId,
-                    uint32_t maxParticles = 1024);
+    bool Initialize(DirectXCommon* dxCommon, SrvManager* srvManager, TextureManager* textureManager,
+                    uint32_t textureId, uint32_t maxParticles = 1024);
 
     /// <summary>
     /// GPUパーティクル用リソースを解放する
@@ -80,7 +80,7 @@ class GPUParticleSystem {
     /// <summary>
     /// カメラに向いたビルボードとして生存中のパーティクルを描画する
     /// </summary>
-    void Draw(const Camera &camera);
+    void Draw(const Camera& camera);
 
     /// <summary>
     /// 保留中のGPU更新を描画とは別に実行する
@@ -90,41 +90,43 @@ class GPUParticleSystem {
     /// <summary>
     /// パーティクル発生設定を差し替える
     /// </summary>
-    void SetEmitterSettings(const ParticleEmitterSettings &settings);
+    void SetEmitterSettings(const ParticleEmitterSettings& settings);
 
     /// <summary>
     /// 現在のパーティクル発生設定を取得する
     /// </summary>
-    const ParticleEmitterSettings &GetEmitterSettings() const {
+    const ParticleEmitterSettings& GetEmitterSettings() const {
         return emitterSettings_;
     }
 
     /// <summary>
     /// 描画に使うテクスチャIDを切り替える
     /// </summary>
-    void SetTexture(uint32_t textureId) { textureId_ = textureId; }
+    void SetTexture(uint32_t textureId) {
+        textureId_ = textureId;
+    }
 
     /// <summary>
     /// 描画用PixelShaderとマテリアル定数を設定する
     /// </summary>
-    void SetMaterialSettings(const GPUParticleMaterialSettings &settings);
+    void SetMaterialSettings(const GPUParticleMaterialSettings& settings);
 
     /// <summary>
     /// TextureManager経由でテクスチャを読み込み、描画テクスチャを切り替える
     /// </summary>
-    void SetTextureFromFile(const std::wstring &filePath);
+    void SetTextureFromFile(const std::wstring& filePath);
 
     /// <summary>
     /// 指定した設定で一度だけ粒子を発生させる
     /// </summary>
-    void EmitOnce(const ParticleEmitterSettings &settings);
+    void EmitOnce(const ParticleEmitterSettings& settings);
 
     /// <summary>
     /// 位置・速度・色を明示した粒子群を一度だけ発生させる
     /// </summary>
-    size_t EmitParticles(const std::vector<GPUParticleExplicitSpawn> &particles);
+    size_t EmitParticles(const std::vector<GPUParticleExplicitSpawn>& particles);
 
-  private:
+private:
     class InitializationGuard;
     struct ConstantFrame;
     struct ExplicitSpawnFrame;
@@ -156,10 +158,8 @@ class GPUParticleSystem {
         DirectX::XMFLOAT4 basisRight{1.0f, 0.0f, 0.0f, 0.0f};
         DirectX::XMFLOAT4 basisUp{0.0f, 1.0f, 0.0f, 0.0f};
         DirectX::XMFLOAT4 basisForward{0.0f, 0.0f, 1.0f, 0.0f};
-        DirectX::XMFLOAT4 directionAndDirectionalVelocity{0.0f, 1.0f, 0.0f,
-                                                          0.0f};
-        DirectX::XMFLOAT4 velocityBiasAndRadialVelocity{0.0f, 0.0f, 0.0f,
-                                                        1.0f};
+        DirectX::XMFLOAT4 directionAndDirectionalVelocity{0.0f, 1.0f, 0.0f, 0.0f};
+        DirectX::XMFLOAT4 velocityBiasAndRadialVelocity{0.0f, 0.0f, 0.0f, 1.0f};
         DirectX::XMFLOAT4 lifeAndFade{0.5f, 0.2f, 0.0f, 0.2f};
         DirectX::XMFLOAT4 scale{0.2f, 0.0f, 0.1f, 0.0f};
         DirectX::XMFLOAT4 accelerationAndTurbulence{};
@@ -192,13 +192,19 @@ class GPUParticleSystem {
     /// <summary>
     /// パーティクルバッファを生成して初期データを書き込む
     /// </summary>
-    void CreateParticleBuffer(const std::vector<ParticleForGPU> &particles);
+    void CreateParticleBuffer(const std::vector<ParticleForGPU>& particles);
 
     /// <summary>
     /// 空きリスト用バッファを生成する
     /// </summary>
     void CreateFreeListBuffers();
+    bool CreateFreeListResource(ID3D12Device* device, ID3D12GraphicsCommandList* commandList,
+                                UINT bufferSize);
+    bool CreateFreeListIndexResource(ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
     void CreateActiveDrawBuffers();
+    bool CreateActiveIndexBuffer(ID3D12Device* device, UINT bufferSize);
+    bool CreateActiveCountBuffer(ID3D12Device* device);
+    bool CreateDrawArgsBuffer(ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
 
     /// <summary>
     /// 更新・描画用の定数バッファを生成する
@@ -210,54 +216,44 @@ class GPUParticleSystem {
     /// </summary>
     void DispatchUpdate();
     bool HasUpdateDispatchResources() const;
-    bool BindDescriptorHeap(ID3D12GraphicsCommandList *&commandList);
+    bool BindDescriptorHeap(ID3D12GraphicsCommandList*& commandList) const;
     bool RegisterUpdateDispatchRollback(
-        D3D12_RESOURCE_STATES previousActiveIndexState,
-        D3D12_RESOURCE_STATES previousDrawArgsState,
+        D3D12_RESOURCE_STATES previousActiveIndexState, D3D12_RESOURCE_STATES previousDrawArgsState,
         bool previousUpdatePending, bool previousClearPending,
-        std::deque<ParticleEmitterSettings> previousPendingEmitSettings,
-        std::vector<GPUParticleExplicitSpawn> previousPendingExplicitParticles);
-    void TransitionUpdateResourcesToUav(ID3D12GraphicsCommandList *commandList);
-    void ClearUpdateCounters(ID3D12GraphicsCommandList *commandList);
-    void RecordUpdateUavBarrier(ID3D12GraphicsCommandList *commandList);
-    void RecordQueuedEmitterDispatches(
-        ID3D12GraphicsCommandList *commandList,
-        const std::deque<ParticleEmitterSettings> &emitSettings);
-    bool RecordExplicitParticleDispatches(
-        ID3D12GraphicsCommandList *commandList,
-        std::vector<GPUParticleExplicitSpawn> explicitParticles);
-    void TransitionUpdateResourcesForDraw(ID3D12GraphicsCommandList *commandList);
-    void RecordUpdateDispatch(const EmitterForGPU &emitter,
-                              uint32_t dispatchParticleCount = 0u);
+        const std::deque<ParticleEmitterSettings>& previousPendingEmitSettings,
+        const std::vector<GPUParticleExplicitSpawn>& previousPendingExplicitParticles);
+    void TransitionUpdateResourcesToUav(ID3D12GraphicsCommandList* commandList);
+    void ClearUpdateCounters(ID3D12GraphicsCommandList* commandList);
+    void RecordUpdateUavBarrier(ID3D12GraphicsCommandList* commandList);
+    void RecordQueuedEmitterDispatches(ID3D12GraphicsCommandList* commandList,
+                                       const std::deque<ParticleEmitterSettings>& emitSettings);
+    bool RecordExplicitParticleDispatches(ID3D12GraphicsCommandList* commandList,
+                                          std::vector<GPUParticleExplicitSpawn> explicitParticles);
+    void TransitionUpdateResourcesForDraw(ID3D12GraphicsCommandList* commandList);
+    void RecordUpdateDispatch(const EmitterForGPU& emitter, uint32_t dispatchParticleCount = 0u);
     void RecordExplicitSpawnDispatch(uint32_t spawnCount);
     bool EnsureExplicitSpawnCapacity(uint32_t capacity);
-    bool EnsureExplicitSpawnFrameCapacity(ExplicitSpawnFrame &frame,
-                                          uint32_t capacity);
-    bool UploadExplicitParticles(
-        const std::vector<GPUParticleExplicitSpawn> &particles,
-        uint32_t &uploadedCount);
+    bool EnsureExplicitSpawnFrameCapacity(ExplicitSpawnFrame& frame, uint32_t capacity);
+    bool UploadExplicitParticles(const std::vector<GPUParticleExplicitSpawn>& particles,
+                                 uint32_t& uploadedCount);
 
-    EmitterForGPU BuildEmitterForGPU(const ParticleEmitterSettings &settings,
-                                     uint32_t emit) const;
-    ConstantFrame *GetCurrentConstantFrame();
-    const ConstantFrame *GetCurrentConstantFrame() const;
+    EmitterForGPU BuildEmitterForGPU(const ParticleEmitterSettings& settings, uint32_t emit) const;
+    ConstantFrame* GetCurrentConstantFrame();
+    const ConstantFrame* GetCurrentConstantFrame() const;
     bool HasConstantBuffers() const;
-    bool ConfigureInitialState(
-        uint32_t textureId, uint32_t maxParticles,
-        std::deque<ParticleEmitterSettings> pendingEmitSettings);
+    bool ConfigureInitialState(uint32_t textureId, uint32_t maxParticles,
+                               std::deque<ParticleEmitterSettings> pendingEmitSettings);
     std::vector<ParticleForGPU> CreateInitialParticleData() const;
-    bool CreateInitializationGpuResources(
-        const std::vector<ParticleForGPU> &particles);
+    bool CreateInitializationGpuResources(const std::vector<ParticleForGPU>& particles);
     bool HasRequiredGpuResources() const;
     void QueueInitialUpdateIfNeeded();
     bool HasDrawResources() const;
     bool ShouldSkipDraw() const;
-    ConstantFrame *PrepareDrawFrame(ID3D12GraphicsCommandList *&commandList);
-    void UpdateDrawConstants(const Camera &camera, ConstantFrame &constantFrame);
-    bool ResolveDrawTextureHandles(D3D12_GPU_DESCRIPTOR_HANDLE &baseTextureHandle,
-                                   D3D12_GPU_DESCRIPTOR_HANDLE &noiseTextureHandle) const;
-    void RecordDrawCommands(ID3D12GraphicsCommandList *commandList,
-                            ConstantFrame &constantFrame,
+    ConstantFrame* PrepareDrawFrame(ID3D12GraphicsCommandList*& commandList);
+    void UpdateDrawConstants(const Camera& camera, ConstantFrame& constantFrame) const;
+    bool ResolveDrawTextureHandles(D3D12_GPU_DESCRIPTOR_HANDLE& baseTextureHandle,
+                                   D3D12_GPU_DESCRIPTOR_HANDLE& noiseTextureHandle) const;
+    void RecordDrawCommands(ID3D12GraphicsCommandList* commandList, ConstantFrame& constantFrame,
                             D3D12_GPU_DESCRIPTOR_HANDLE baseTextureHandle,
                             D3D12_GPU_DESCRIPTOR_HANDLE noiseTextureHandle);
 
@@ -267,9 +263,9 @@ class GPUParticleSystem {
     bool ReleaseResources();
     bool ReleaseResources(bool allowFrameAbort);
 
-    DirectXCommon *dxCommon_ = nullptr;
-    SrvManager *srvManager_ = nullptr;
-    TextureManager *textureManager_ = nullptr;
+    DirectXCommon* dxCommon_ = nullptr;
+    SrvManager* srvManager_ = nullptr;
+    TextureManager* textureManager_ = nullptr;
     uint32_t textureId_ = 0;
     uint32_t maxParticles_ = 0;
     float totalTime_ = 0.0f;

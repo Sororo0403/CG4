@@ -15,11 +15,8 @@ bool DirectXCommon::HasFrameResources() const {
         return false;
     }
 
-    return std::all_of(std::begin(state_->backBuffers),
-                       std::end(state_->backBuffers),
-                       [](const auto &backBuffer) {
-                           return backBuffer != nullptr;
-                       });
+    return std::all_of(std::begin(state_->backBuffers), std::end(state_->backBuffers),
+                       [](const auto& backBuffer) { return backBuffer != nullptr; });
 }
 
 void DirectXCommon::CreateFence() {
@@ -27,8 +24,7 @@ void DirectXCommon::CreateFence() {
         return;
     }
     if (LogIfFailed(
-            state_->device->CreateFence(0, D3D12_FENCE_FLAG_NONE,
-                                 IID_PPV_ARGS(&state_->fence)),
+            state_->device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&state_->fence)),
             "CreateFence failed") ||
         !state_->fence) {
         state_->fence.Reset();
@@ -44,8 +40,7 @@ void DirectXCommon::CreateFence() {
 }
 
 void DirectXCommon::WaitForFrame(UINT frameIndex) {
-    if (!state_->fence || !state_->fenceEvent ||
-        frameIndex >= kSwapChainBufferCount) {
+    if (!state_->fence || !state_->fenceEvent || frameIndex >= kSwapChainBufferCount) {
         return;
     }
 
@@ -54,14 +49,13 @@ void DirectXCommon::WaitForFrame(UINT frameIndex) {
         return;
     }
 
-    if (LogIfFailed(state_->fence->SetEventOnCompletion(
-                        fenceValue, state_->fenceEvent.Get()),
+    if (LogIfFailed(state_->fence->SetEventOnCompletion(fenceValue, state_->fenceEvent.Get()),
                     "state_->fence->SetEventOnCompletion failed")) {
         return;
     }
     WaitForSingleObject(state_->fenceEvent.Get(), INFINITE);
 }
 
-void DirectXCommon::TrackGpuPhase(const char *phase) {
+void DirectXCommon::TrackGpuPhase(const char* phase) {
     state_->diagnostics->TrackPhase(phase);
 }

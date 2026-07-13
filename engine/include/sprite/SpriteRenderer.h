@@ -1,5 +1,6 @@
 #pragma once
 #include "sprite/Sprite.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -9,7 +10,7 @@ class TextureManager;
 class SrvManager;
 
 class SpriteRenderer {
-  public:
+public:
     SpriteRenderer();
     ~SpriteRenderer();
 
@@ -21,8 +22,8 @@ class SpriteRenderer {
     /// <param name="srvManager">SrvManagerインスタンス</param>
     /// <param name="width">クライアント領域の幅</param>
     /// <param name="height">クライアント領域の高さ</param>
-    void Initialize(DirectXCommon *dxCommon, TextureManager *textureManager,
-                    SrvManager *srvManager, int width, int height);
+    void Initialize(DirectXCommon* dxCommon, TextureManager* textureManager, SrvManager* srvManager,
+                    int width, int height);
     bool Finalize();
     bool Finalize(bool allowFrameAbort);
 
@@ -30,7 +31,7 @@ class SpriteRenderer {
     /// スプライト1枚分の頂点を一時バッファへ書き込んで描画する
     /// </summary>
     /// <param name="sprite">描画するスプライト</param>
-    void Draw(const Sprite &sprite);
+    void Draw(const Sprite& sprite);
 
     /// <summary>
     /// フレーム開始時に一時描画領域を先頭へ戻す
@@ -56,18 +57,18 @@ class SpriteRenderer {
     size_t GetUploadTotalBytes() const;
     size_t GetUploadFrameOffset() const;
 
-  private:
+private:
     enum class PipelineKind : uint32_t {
         Alpha = 0,
         Modulate = 1,
         PremultipliedMask = 2,
-        Count,
+        Count = 3,
     };
 
     enum class RenderTargetKind : uint32_t {
         SceneColor = 0,
         BackBuffer = 1,
-        Count,
+        Count = 2,
     };
 
     static constexpr uint32_t kVerticesPerSprite = 6;
@@ -96,9 +97,9 @@ class SpriteRenderer {
     /// </summary>
     void FlushQueuedDraws();
 
-  private:
-    DirectXCommon *dxCommon_ = nullptr;
-    TextureManager *textureManager_ = nullptr;
-    SrvManager *srvManager_ = nullptr;
+private:
+    DirectXCommon* dxCommon_ = nullptr;
+    TextureManager* textureManager_ = nullptr;
+    SrvManager* srvManager_ = nullptr;
     std::unique_ptr<State> state_;
 };

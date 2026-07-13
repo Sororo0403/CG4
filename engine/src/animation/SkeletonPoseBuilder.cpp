@@ -1,15 +1,19 @@
 #include "animation/SkeletonPoseBuilder.h"
+
 #include "animation/AnimationSampler.h"
 #include "core/MathUtils.h"
+
 #include <DirectXMath.h>
 #include <cmath>
+#include <exception>
+#include <new>
 
 using namespace DirectX;
 
 namespace {
 
-bool ResolveReadyParentIndex(int parentIndex, size_t childIndex,
-                             size_t boneCount, size_t &resolvedIndex) {
+bool ResolveReadyParentIndex(int parentIndex, size_t childIndex, size_t boneCount,
+                             size_t& resolvedIndex) {
     if (parentIndex < 0) {
         return false;
     }
@@ -23,30 +27,26 @@ bool ResolveReadyParentIndex(int parentIndex, size_t childIndex,
     return true;
 }
 
-XMMATRIX MakeAnimatedLocalMatrix(const BoneInfo &bone,
-                                 const AnimationClip &clip, float time) {
+XMMATRIX MakeAnimatedLocalMatrix(const BoneInfo& bone, const AnimationClip& clip, float time) {
     auto it = clip.nodeAnimations.find(bone.name);
     if (it == clip.nodeAnimations.end()) {
         return XMLoadFloat4x4(&bone.localBindMatrix);
     }
 
-    const NodeAnimation &anim = it->second;
+    const NodeAnimation& anim = it->second;
 
     XMFLOAT3 pos = anim.translate.keyframes.empty()
                        ? XMFLOAT3{0.0f, 0.0f, 0.0f}
                        : AnimationSampler::SampleVec3(anim.translate, time);
 
-    XMFLOAT3 scl = anim.scale.keyframes.empty()
-                       ? XMFLOAT3{1.0f, 1.0f, 1.0f}
-                       : AnimationSampler::SampleVec3(anim.scale, time);
+    XMFLOAT3 scl = anim.scale.keyframes.empty() ? XMFLOAT3{1.0f, 1.0f, 1.0f}
+                                                : AnimationSampler::SampleVec3(anim.scale, time);
 
-    XMFLOAT4 rot = anim.rotate.keyframes.empty()
-                       ? XMFLOAT4{0.0f, 0.0f, 0.0f, 1.0f}
-                       : AnimationSampler::SampleQuat(anim.rotate, time);
+    XMFLOAT4 rot = anim.rotate.keyframes.empty() ? XMFLOAT4{0.0f, 0.0f, 0.0f, 1.0f}
+                                                 : AnimationSampler::SampleQuat(anim.rotate, time);
 
     XMVECTOR q = MathUtils::LoadNormalizedQuaternionOrIdentity(rot);
-    XMMATRIX animatedLocal = XMMatrixScaling(scl.x, scl.y, scl.z) *
-                             XMMatrixRotationQuaternion(q) *
+    XMMATRIX animatedLocal = XMMatrixScaling(scl.x, scl.y, scl.z) * XMMatrixRotationQuaternion(q) *
                              XMMatrixTranslation(pos.x, pos.y, pos.z);
 
     XMMATRIX adjustment = XMLoadFloat4x4(&bone.parentAdjustmentMatrix);
@@ -55,53 +55,67 @@ XMMATRIX MakeAnimatedLocalMatrix(const BoneInfo &bone,
 
 } // namespace
 
-void SkeletonPoseBuilder::BuildBindPoseLocals(
-    const Model &model, std::vector<XMMATRIX> &localMatrices) {
+void SkeletonPoseBuilder::BuildBindPoseLocals(const Model& model,
+                                              std::vector<XMMATRIX>& localMatrices) {
     const size_t boneCount = model.bones.size();
-    localMatrices.resize(boneCount);
+    try {
+        localMatrices.resize(boneCount);
+    } catch (const std::exception&) {
+        localMatrices.clear();
+        return;
+    }
     for (size_t i = 0; i < boneCount; i++) {
         localMatrices[i] = XMLoadFloat4x4(&model.bones[i].localBindMatrix);
     }
 }
 
-void SkeletonPoseBuilder::BuildAnimatedLocals(
-    const Model &model, const AnimationClip &clip, float time,
-    std::vector<XMMATRIX> &localMatrices) {
+void SkeletonPoseBuilder::BuildAnimatedLocals(const Model& model, const AnimationClip& clip,
+                                              float time, std::vector<XMMATRIX>& localMatrices) {
     const size_t boneCount = model.bones.size();
-    localMatrices.resize(boneCount);
+    try {
+        localMatrices.resize(boneCount);
+    } catch (const std::exception&) {
+        localMatrices.clear();
+        return;
+    }
     for (size_t i = 0; i < boneCount; i++) {
         localMatrices[i] = MakeAnimatedLocalMatrix(model.bones[i], clip, time);
     }
 }
 
-void SkeletonPoseBuilder::UpdateSkeleton(
-    Model &model, const std::vector<XMMATRIX> &localMatrices) {
+void SkeletonPoseBuilder::UpdateSkeleton(Model& model, const std::vector<XMMATRIX>& localMatrices) {
     const size_t boneCount = model.bones.size();
-    model.skeletonSpaceMatrices.resize(boneCount);
-    model.finalBoneMatrices.resize(boneCount);
-
-    std::vector<XMMATRIX> globalMatrices(boneCount);
+    std::vector<XMFLOAT4X4> skeletonSpaceMatrices;
+    std::vector<XMFLOAT4X4> finalBoneMatrices;
+    std::vector<XMMATRIX> globalMatrices;
+    try {
+        skeletonSpaceMatrices.resize(boneCount);
+        finalBoneMatrices.resize(boneCount);
+        globalMatrices.resize(boneCount);
+    } catch (const std::exception&) {
+        return;
+    }
 
     for (size_t i = 0; i < boneCount; i++) {
-        const XMMATRIX local =
-            i < localMatrices.size()
-                ? localMatrices[i]
-                : XMLoadFloat4x4(&model.bones[i].localBindMatrix);
+        const XMMATRIX local = i < localMatrices.size()
+                                   ? localMatrices[i]
+                                   : XMLoadFloat4x4(&model.bones[i].localBindMatrix);
 
         size_t parent = 0;
-        if (ResolveReadyParentIndex(model.bones[i].parentIndex, i, boneCount,
-                                    parent)) {
+        if (ResolveReadyParentIndex(model.bones[i].parentIndex, i, boneCount, parent)) {
             globalMatrices[i] = local * globalMatrices[parent];
         } else {
             globalMatrices[i] = local;
         }
 
-        XMStoreFloat4x4(&model.skeletonSpaceMatrices[i], globalMatrices[i]);
+        XMStoreFloat4x4(&skeletonSpaceMatrices[i], globalMatrices[i]);
     }
 
     for (size_t i = 0; i < boneCount; i++) {
         XMMATRIX offset = XMLoadFloat4x4(&model.bones[i].offsetMatrix);
         XMMATRIX final = offset * globalMatrices[i];
-        XMStoreFloat4x4(&model.finalBoneMatrices[i], final);
+        XMStoreFloat4x4(&finalBoneMatrices[i], final);
     }
+    model.skeletonSpaceMatrices = std::move(skeletonSpaceMatrices);
+    model.finalBoneMatrices = std::move(finalBoneMatrices);
 }

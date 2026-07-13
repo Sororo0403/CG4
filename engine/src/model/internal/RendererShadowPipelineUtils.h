@@ -1,7 +1,7 @@
 #pragma once
 
-#include "graphics/DxHelpers.h"
 #include "../../graphics/internal/RootSignatureUtils.h"
+#include "graphics/DxHelpers.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -12,8 +12,8 @@ namespace RendererShadowPipelineUtils {
 
 template <size_t N>
 inline void CreateTexturedShadowRootSignature(
-    ID3D12Device *device, const uint32_t (&constantBufferRegisters)[N],
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> &rootSignatureOut) {
+    ID3D12Device* device, const uint32_t (&constantBufferRegisters)[N],
+    Microsoft::WRL::ComPtr<ID3D12RootSignature>& rootSignatureOut) {
     if (device == nullptr) {
         return;
     }
@@ -38,11 +38,11 @@ inline void CreateTexturedShadowRootSignature(
     RootSignatureUtils::CreateRootSignature(device, desc, rootSignatureOut);
 }
 
-inline void CreateDepthPipelineState(
-    ID3D12Device *device, ID3D12RootSignature *rootSignature,
-    D3D12_SHADER_BYTECODE vertexShader, D3D12_SHADER_BYTECODE pixelShader,
-    D3D12_INPUT_LAYOUT_DESC inputLayout, D3D12_CULL_MODE cullMode,
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> &psoOut) {
+inline void CreateDepthPipelineState(ID3D12Device* device, ID3D12RootSignature* rootSignature,
+                                     D3D12_SHADER_BYTECODE vertexShader,
+                                     D3D12_SHADER_BYTECODE pixelShader,
+                                     D3D12_INPUT_LAYOUT_DESC inputLayout, D3D12_CULL_MODE cullMode,
+                                     Microsoft::WRL::ComPtr<ID3D12PipelineState>& psoOut) {
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
     pso.pRootSignature = rootSignature;
     pso.VS = vertexShader;
@@ -59,15 +59,13 @@ inline void CreateDepthPipelineState(
     pso.RasterizerState.SlopeScaledDepthBias = 1.5f;
     pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 
-    D3D12_DEPTH_STENCIL_DESC depth =
-        CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    D3D12_DEPTH_STENCIL_DESC depth = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     depth.DepthEnable = TRUE;
     depth.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
     depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
     pso.DepthStencilState = depth;
 
-    if (FAILED(device->CreateGraphicsPipelineState(
-            &pso, IID_PPV_ARGS(&psoOut)))) {
+    if (FAILED(device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&psoOut)))) {
         psoOut.Reset();
     }
 }

@@ -1,6 +1,7 @@
 #include "internal/AssimpMeshLoaderUtils.h"
 #include "model/AssimpMeshLoader.h"
 
+#include <exception>
 #include <limits>
 #include <string>
 #include <unordered_map>
@@ -55,48 +56,58 @@ void AssimpMeshLoader::BuildBoneHierarchy(const aiScene* scene, Model& model) {
     }
 
     std::unordered_map<std::string, const aiNode*> nodes;
-    if (!BuildNodeMap(scene->mRootNode, nodes)) {
+    try {
+        if (!BuildNodeMap(scene->mRootNode, nodes)) {
+            return;
+        }
+    } catch (const std::exception&) {
         return;
     }
 
-    for (size_t i = 0; i < model.bones.size(); i++) {
-        const std::string& boneName = model.bones[i].name;
+    std::vector<BoneInfo> originalBones;
+    try {
+        originalBones = model.bones;
+        for (size_t i = 0; i < model.bones.size(); i++) {
+            const std::string& boneName = model.bones[i].name;
 
-        const auto nodeIt = nodes.find(boneName);
-        const aiNode* node = nodeIt != nodes.end() ? nodeIt->second : nullptr;
-        if (!node) {
-            model.bones[i].parentIndex = -1;
-            model.bones[i].localBindMatrix = ToMatrix(aiMatrix4x4());
-            model.bones[i].parentAdjustmentMatrix = ToMatrix(aiMatrix4x4());
-            continue;
-        }
-
-        aiMatrix4x4 adjustment{};
-        int parentIndex = -1;
-        const aiNode* parent = node->mParent;
-        size_t parentDepth = 0;
-
-        while (parent) {
-            if (++parentDepth > kMaxAssimpNodeTraversal) {
-                parentIndex = -1;
-                break;
-            }
-            auto it = model.boneMap.find(parent->mName.C_Str());
-            if (it != model.boneMap.end()) {
-                parentIndex = static_cast<int>(it->second);
-                break;
+            const auto nodeIt = nodes.find(boneName);
+            const aiNode* node = nodeIt != nodes.end() ? nodeIt->second : nullptr;
+            if (!node) {
+                model.bones[i].parentIndex = -1;
+                model.bones[i].localBindMatrix = ToMatrix(aiMatrix4x4());
+                model.bones[i].parentAdjustmentMatrix = ToMatrix(aiMatrix4x4());
+                continue;
             }
 
-            adjustment *= parent->mTransformation;
-            parent = parent->mParent;
+            aiMatrix4x4 adjustment{};
+            int parentIndex = -1;
+            const aiNode* parent = node->mParent;
+            size_t parentDepth = 0;
+
+            while (parent) {
+                if (++parentDepth > kMaxAssimpNodeTraversal) {
+                    parentIndex = -1;
+                    break;
+                }
+                auto it = model.boneMap.find(parent->mName.C_Str());
+                if (it != model.boneMap.end()) {
+                    parentIndex = static_cast<int>(it->second);
+                    break;
+                }
+
+                adjustment *= parent->mTransformation;
+                parent = parent->mParent;
+            }
+
+            model.bones[i].parentIndex = parentIndex;
+            model.bones[i].parentAdjustmentMatrix = ToMatrix(adjustment);
+            model.bones[i].localBindMatrix = ToMatrix(node->mTransformation * adjustment);
         }
 
-        model.bones[i].parentIndex = parentIndex;
-        model.bones[i].parentAdjustmentMatrix = ToMatrix(adjustment);
-        model.bones[i].localBindMatrix = ToMatrix(node->mTransformation * adjustment);
+        ReorderBonesParentFirst(model);
+    } catch (const std::exception&) {
+        model.bones = std::move(originalBones);
     }
-
-    ReorderBonesParentFirst(model);
 }
 
 void AssimpMeshLoader::ReorderBonesParentFirst(Model& model) {

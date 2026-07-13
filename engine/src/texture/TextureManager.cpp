@@ -1,15 +1,16 @@
 #include "texture/TextureManager.h"
 
-#include "internal/TextureManagerDecoding.h"
-#include "internal/TextureManagerInternal.h"
 #include "core/PathUtils.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/GpuResourceLifetime.h"
 #include "graphics/SrvManager.h"
+#include "internal/TextureManagerDecoding.h"
+#include "internal/TextureManagerInternal.h"
 #include "texture/Texture.h"
 
 #include <algorithm>
 #include <array>
+#include <exception>
 #include <filesystem>
 #include <iterator>
 #include <numeric>
@@ -58,14 +59,11 @@ TextureManagerDecoding::TextureColorSpacePolicy DecodeColorSpacePolicy(int polic
         {2, TextureManagerDecoding::TextureColorSpacePolicy::Linear},
     }};
 
-    const auto it = std::find_if(
-        kPolicies.begin(), kPolicies.end(),
-        [policy](const ColorSpacePolicyMap &entry) {
-            return entry.value == policy;
-        });
-    return it != kPolicies.end()
-               ? it->policy
-               : TextureManagerDecoding::TextureColorSpacePolicy::Auto;
+    const auto it =
+        std::find_if(kPolicies.begin(), kPolicies.end(),
+                     [policy](const ColorSpacePolicyMap& entry) { return entry.value == policy; });
+    return it != kPolicies.end() ? it->policy
+                                 : TextureManagerDecoding::TextureColorSpacePolicy::Auto;
 }
 
 std::wstring MakeTextureCacheKey(const std::wstring& pathKey, int colorSpacePolicy) {
@@ -78,12 +76,15 @@ std::wstring MakeTextureCacheKey(const std::wstring& pathKey, int colorSpacePoli
         {2, L"|linear"},
     }};
 
-    const auto it = std::find_if(
-        kSuffixes.begin(), kSuffixes.end(),
-        [colorSpacePolicy](const CacheKeySuffix &entry) {
-            return entry.policy == colorSpacePolicy;
-        });
-    return it != kSuffixes.end() ? pathKey + std::wstring(it->suffix) : pathKey;
+    const auto it = std::find_if(kSuffixes.begin(), kSuffixes.end(),
+                                 [colorSpacePolicy](const CacheKeySuffix& entry) {
+                                     return entry.policy == colorSpacePolicy;
+                                 });
+    try {
+        return it != kSuffixes.end() ? pathKey + std::wstring(it->suffix) : pathKey;
+    } catch (const std::exception&) {
+        return {};
+    }
 }
 
 } // namespace
@@ -123,21 +124,28 @@ void TextureManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager)
     srvManager_ = srvManager;
     TextureManagerInitializationGuard initializeGuard(*this);
 
-    ResetStateForInitialize();
+    if (!ResetStateForInitialize()) {
+        return;
+    }
     if (!CreateDefaultTextures()) {
         return;
     }
     initializeGuard.Commit();
 }
 
-void TextureManager::ResetStateForInitialize() {
+bool TextureManager::ResetStateForInitialize() {
     state_->textures.clear();
     state_->uploadBuffers.clear();
     state_->frameUploadBuffers.clear();
-    state_->frameUploadBuffers.resize(dxCommon_->GetSwapChainBufferCount());
+    try {
+        state_->frameUploadBuffers.resize(dxCommon_->GetSwapChainBufferCount());
+    } catch (const std::exception&) {
+        return false;
+    }
     state_->filePathToTextureId.clear();
     state_->asyncState->Reset();
     state_->lastDynamicUploadFrameIndex = UINT_MAX;
+    return true;
 }
 
 bool TextureManager::CreateDefaultTextures() {
@@ -249,9 +257,8 @@ bool TextureManager::Finalize() {
 
 bool TextureManager::Finalize(bool allowFrameAbort) {
     const bool hasFrameUploadBuffers =
-        std::any_of(state_->frameUploadBuffers.begin(),
-                    state_->frameUploadBuffers.end(),
-                    [](const auto &buffers) { return !buffers.empty(); });
+        std::any_of(state_->frameUploadBuffers.begin(), state_->frameUploadBuffers.end(),
+                    [](const auto& buffers) { return !buffers.empty(); });
     const bool hasGpuResources =
         !state_->textures.empty() || !state_->uploadBuffers.empty() || hasFrameUploadBuffers;
     if (!CanReleaseGpuResources(dxCommon_, hasGpuResources, allowFrameAbort)) {
@@ -296,16 +303,32 @@ uint32_t TextureManager::LoadLinear(const std::wstring& filePath) {
     return LoadWithColorSpace(filePath, 2);
 }
 
-uint32_t TextureManager::LoadWithColorSpace(const std::wstring& filePath,
-                                            int colorSpacePolicy) {
-    const std::filesystem::path resolvedPath = PathUtils::ResolveAssetPath(filePath);
+uint32_t TextureManager::LoadWithColorSpace(const std::wstring& filePath, int colorSpacePolicy) {
+    std::filesystem::path resolvedPath;
+    try {
+        resolvedPath = PathUtils::ResolveAssetPath(filePath);
+    } catch (const std::exception&) {
+        return GetWhiteFallbackTextureId();
+    }
     std::error_code ec;
-    if (!std::filesystem::exists(resolvedPath, ec)) {
+    try {
+        if (!std::filesystem::exists(resolvedPath, ec)) {
+            return GetWhiteFallbackTextureId();
+        }
+    } catch (const std::exception&) {
         return GetWhiteFallbackTextureId();
     }
 
-    const std::wstring pathKey = PathUtils::NormalizePathKey(resolvedPath);
+    std::wstring pathKey;
+    try {
+        pathKey = PathUtils::NormalizePathKey(resolvedPath);
+    } catch (const std::exception&) {
+        return GetWhiteFallbackTextureId();
+    }
     const std::wstring cacheKey = MakeTextureCacheKey(pathKey, colorSpacePolicy);
+    if (cacheKey.empty()) {
+        return GetWhiteFallbackTextureId();
+    }
 
     auto it = state_->filePathToTextureId.find(cacheKey);
     if (it != state_->filePathToTextureId.end()) {
@@ -318,15 +341,17 @@ uint32_t TextureManager::LoadWithColorSpace(const std::wstring& filePath,
     ScratchImage scratch;
     TexMetadata metadata{};
 
-    if (!TextureManagerDecoding::DecodeFileForLoad(
-            resolvedPath, scratch, metadata,
-            DecodeColorSpacePolicy(colorSpacePolicy))) {
+    if (!TextureManagerDecoding::DecodeFileForLoad(resolvedPath, scratch, metadata,
+                                                   DecodeColorSpacePolicy(colorSpacePolicy))) {
         return GetWhiteFallbackTextureId();
     }
 
     uint32_t id = CreateTexture(scratch.GetImages(), scratch.GetImageCount(), metadata);
     if (IsValidTextureId(id) && id != state_->whiteTextureId) {
-        state_->filePathToTextureId[cacheKey] = id;
+        try {
+            state_->filePathToTextureId[cacheKey] = id;
+        } catch (const std::exception&) {
+        }
     }
 
     return id;
@@ -334,12 +359,13 @@ uint32_t TextureManager::LoadWithColorSpace(const std::wstring& filePath,
 
 std::vector<uint32_t> TextureManager::LoadBatch(const std::vector<std::wstring>& filePaths) {
     std::vector<uint32_t> textureIds;
-    textureIds.reserve(filePaths.size());
-    std::transform(filePaths.begin(), filePaths.end(),
-                   std::back_inserter(textureIds),
-                   [this](const std::wstring &filePath) {
-                       return Load(filePath);
-                   });
+    try {
+        textureIds.reserve(filePaths.size());
+        std::transform(filePaths.begin(), filePaths.end(), std::back_inserter(textureIds),
+                       [this](const std::wstring& filePath) { return Load(filePath); });
+    } catch (const std::exception&) {
+        textureIds.clear();
+    }
     return textureIds;
 }
 
@@ -355,8 +381,8 @@ uint32_t TextureManager::LoadFromMemoryLinear(const uint8_t* data, size_t size) 
     return LoadFromMemoryWithColorSpace(data, size, 2);
 }
 
-uint32_t TextureManager::LoadFromMemoryWithColorSpace(
-    const uint8_t* data, size_t size, int colorSpacePolicy) {
+uint32_t TextureManager::LoadFromMemoryWithColorSpace(const uint8_t* data, size_t size,
+                                                      int colorSpacePolicy) {
     if (!data || size == 0) {
         return GetWhiteFallbackTextureId();
     }
@@ -364,9 +390,8 @@ uint32_t TextureManager::LoadFromMemoryWithColorSpace(
     ScratchImage scratch;
     TexMetadata metadata{};
 
-    if (!TextureManagerDecoding::DecodeMemoryForLoad(
-            data, size, scratch, metadata,
-            DecodeColorSpacePolicy(colorSpacePolicy))) {
+    if (!TextureManagerDecoding::DecodeMemoryForLoad(data, size, scratch, metadata,
+                                                     DecodeColorSpacePolicy(colorSpacePolicy))) {
         return GetWhiteFallbackTextureId();
     }
 
@@ -419,9 +444,9 @@ uint32_t TextureManager::GetHeight(uint32_t id) const {
 }
 
 size_t TextureManager::GetTextureCount() const {
-    return static_cast<size_t>(std::count_if(
-        state_->textures.begin(), state_->textures.end(),
-        [](const Entry &entry) { return entry.texture.resource != nullptr; }));
+    return static_cast<size_t>(
+        std::count_if(state_->textures.begin(), state_->textures.end(),
+                      [](const Entry& entry) { return entry.texture.resource != nullptr; }));
 }
 
 uint64_t TextureManager::GetTextureGpuBytes() const {
@@ -429,33 +454,29 @@ uint64_t TextureManager::GetTextureGpuBytes() const {
         return 0;
     }
 
-    return std::accumulate(
-        state_->textures.begin(), state_->textures.end(), uint64_t{0},
-        [this](uint64_t bytes, const Entry &entry) {
-            ID3D12Resource *resource = entry.texture.resource.Get();
-            if (resource == nullptr) {
-                return bytes;
-            }
-            const D3D12_RESOURCE_DESC desc = resource->GetDesc();
-            const D3D12_RESOURCE_ALLOCATION_INFO info =
-                dxCommon_->GetDevice()->GetResourceAllocationInfo(0, 1, &desc);
-            return bytes + info.SizeInBytes;
-        });
+    return std::accumulate(state_->textures.begin(), state_->textures.end(), uint64_t{0},
+                           [this](uint64_t bytes, const Entry& entry) {
+                               ID3D12Resource* resource = entry.texture.resource.Get();
+                               if (resource == nullptr) {
+                                   return bytes;
+                               }
+                               const D3D12_RESOURCE_DESC desc = resource->GetDesc();
+                               const D3D12_RESOURCE_ALLOCATION_INFO info =
+                                   dxCommon_->GetDevice()->GetResourceAllocationInfo(0, 1, &desc);
+                               return bytes + info.SizeInBytes;
+                           });
 }
 
 uint64_t TextureManager::GetUploadBytes() const {
     const uint64_t uploadBytes = std::accumulate(
         state_->uploadBuffers.begin(), state_->uploadBuffers.end(), uint64_t{0},
-        [](uint64_t bytes, const auto &buffer) {
-            return bytes + BufferByteWidth(buffer.Get());
-        });
-    return std::accumulate(
-        state_->frameUploadBuffers.begin(), state_->frameUploadBuffers.end(),
-        uploadBytes, [](uint64_t bytes, const auto &buffers) {
-            return std::accumulate(
-                buffers.begin(), buffers.end(), bytes,
-                [](uint64_t total, const auto &buffer) {
-                    return total + BufferByteWidth(buffer.Get());
-                });
-        });
+        [](uint64_t bytes, const auto& buffer) { return bytes + BufferByteWidth(buffer.Get()); });
+    return std::accumulate(state_->frameUploadBuffers.begin(), state_->frameUploadBuffers.end(),
+                           uploadBytes, [](uint64_t bytes, const auto& buffers) {
+                               return std::accumulate(buffers.begin(), buffers.end(), bytes,
+                                                      [](uint64_t total, const auto& buffer) {
+                                                          return total +
+                                                                 BufferByteWidth(buffer.Get());
+                                                      });
+                           });
 }

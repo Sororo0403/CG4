@@ -1,32 +1,15 @@
-#include "../graphics/internal/GpuResourceScopes.h"
-#include "../graphics/internal/RootSignatureUtils.h"
-#include "internal/ModelRendererInternal.h"
-#include "core/ResourceHandle.h"
 #include "graphics/DirectXCommon.h"
 #include "graphics/DxHelpers.h"
-#include "graphics/GpuResourceHelpers.h"
-#include "graphics/ShaderCompiler.h"
-#include "graphics/ShaderPaths.h"
 #include "graphics/SrvManager.h"
-#include "model/MaterialManager.h"
-#include "model/MeshManager.h"
+#include "internal/ModelRendererInternal.h"
 #include "model/ModelRenderer.h"
-#include "model/RendererMath.h"
-#include "model/Vertex.h"
-#include "texture/TextureManager.h"
 
 #include <algorithm>
-#include <array>
-#include <cmath>
 #include <cstring>
-#include <limits>
+#include <exception>
 #include <vector>
 
 using namespace DirectX;
-using GpuResourceHelpers::CreateCommittedResourceChecked;
-using GpuResourceHelpers::MapResourceChecked;
-using GraphicsResourceScopes::ScopedSrvAllocations;
-using Microsoft::WRL::ComPtr;
 
 namespace {
 
@@ -106,11 +89,15 @@ void ModelRenderer::PrepareSkinning(const std::vector<const Model*>& models) {
 
 void ModelRenderer::DispatchSkinningBatch(const Model& model) {
     std::vector<const ModelSubMesh*> jobs;
-    jobs.reserve(model.subMeshes.size());
-    for (const auto& subMesh : model.subMeshes) {
-        if (NeedsSkinningDispatch(subMesh)) {
-            jobs.push_back(&subMesh);
+    try {
+        jobs.reserve(model.subMeshes.size());
+        for (const auto& subMesh : model.subMeshes) {
+            if (NeedsSkinningDispatch(subMesh)) {
+                jobs.push_back(&subMesh);
+            }
         }
+    } catch (const std::exception&) {
+        return;
     }
 
     DispatchSkinningJobs(jobs);
@@ -118,16 +105,20 @@ void ModelRenderer::DispatchSkinningBatch(const Model& model) {
 
 void ModelRenderer::DispatchSkinningBatch(const std::vector<const Model*>& models) {
     std::vector<const ModelSubMesh*> jobs;
-    for (const Model* model : models) {
-        if (!model) {
-            continue;
-        }
-        jobs.reserve(jobs.size() + model->subMeshes.size());
-        for (const auto& subMesh : model->subMeshes) {
-            if (NeedsSkinningDispatch(subMesh)) {
-                jobs.push_back(&subMesh);
+    try {
+        for (const Model* model : models) {
+            if (!model) {
+                continue;
+            }
+            jobs.reserve(jobs.size() + model->subMeshes.size());
+            for (const auto& subMesh : model->subMeshes) {
+                if (NeedsSkinningDispatch(subMesh)) {
+                    jobs.push_back(&subMesh);
+                }
             }
         }
+    } catch (const std::exception&) {
+        return;
     }
 
     DispatchSkinningJobs(jobs);

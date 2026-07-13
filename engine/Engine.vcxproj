@@ -80,6 +80,12 @@
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
+    <PostBuildEvent>
+      <Command>if not exist "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\" mkdir "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"
+if exist "$(MSBuildThisFileDirectory)externals\assimp\bin\assimp-vc145-mt.dll" copy /Y "$(MSBuildThisFileDirectory)externals\assimp\bin\assimp-vc145-mt.dll" "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"
+if exist "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxcompiler.dll" copy /Y "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxcompiler.dll" "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"
+if exist "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxil.dll" copy /Y "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxil.dll" "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -95,6 +101,12 @@
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
+    <PostBuildEvent>
+      <Command>if not exist "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\" mkdir "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"
+if exist "$(MSBuildThisFileDirectory)externals\assimp\bin\assimp-vc145-mt.dll" copy /Y "$(MSBuildThisFileDirectory)externals\assimp\bin\assimp-vc145-mt.dll" "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"
+if exist "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxcompiler.dll" copy /Y "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxcompiler.dll" "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"
+if exist "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxil.dll" copy /Y "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxil.dll" "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\DxUtils.cpp" />
@@ -107,6 +119,7 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\RenderGraph.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\RenderScene.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PipelineManager.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\ShaderCompiler.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PostEffectManager.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PostProcessSystemBloom.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\PostProcessSystem.cpp" />
@@ -209,9 +222,13 @@
   <ItemGroup>
     <ProjectReference Include="$(MSBuildThisFileDirectory)externals\DirectXTex\DirectXTex_Desktop_2022.vcxproj">
       <Project>{371b9fa9-4c90-4ac6-a123-aced756d6c77}</Project>
+      <SetPlatform>Platform=$(Platform)</SetPlatform>
+      <Properties>Configuration=$(Configuration);Platform=$(Platform)</Properties>
     </ProjectReference>
     <ProjectReference Include="$(MSBuildThisFileDirectory)externals\imgui\imgui.vcxproj" Condition="'$(Configuration)'=='Debug'">
       <Project>{f6ba9c36-46d4-4c55-9c90-d016c833a837}</Project>
+      <SetPlatform>Platform=$(Platform)</SetPlatform>
+      <Properties>Configuration=$(Configuration);Platform=$(Platform)</Properties>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
@@ -552,6 +569,7 @@
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)externals\assimp\bin\assimp-vc145-mt.dll" />
     <None Include="$(MSBuildThisFileDirectory)resources\shaders\postprocess\BloomPS.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>

@@ -6,7 +6,7 @@
 
 struct GpuProfiler::FrameQueryData {
     Microsoft::WRL::ComPtr<ID3D12Resource> readback;
-    std::array<const char *, GpuProfiler::kMaxEvents> names{};
+    std::array<const char*, GpuProfiler::kMaxEvents> names{};
     uint32_t eventCount = 0;
     bool resolved = false;
 };
@@ -14,8 +14,7 @@ struct GpuProfiler::FrameQueryData {
 struct GpuProfiler::State {
     static constexpr uint32_t kSwapFrameCount = 2u;
     static constexpr uint32_t kTimestampsPerEvent = 2u;
-    static constexpr uint32_t kMaxTimestamps =
-        GpuProfiler::kMaxEvents * kTimestampsPerEvent;
+    static constexpr uint32_t kMaxTimestamps = GpuProfiler::kMaxEvents * kTimestampsPerEvent;
 
     Microsoft::WRL::ComPtr<ID3D12QueryHeap> queryHeap;
     std::array<FrameQueryData, kSwapFrameCount> frames{};
