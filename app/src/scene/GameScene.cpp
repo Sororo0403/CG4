@@ -17,6 +17,14 @@ namespace {
 
 constexpr float kMoveSpeed = 2.2f;
 constexpr float kParticleEmitInterval = 1.0f / 18.0f;
+constexpr float kWeaponHandleLength = 0.52f;
+constexpr float kWeaponGuardWidth = 0.38f;
+constexpr float kWeaponGuardThickness = 0.055f;
+constexpr float kWeaponGuardDepth = 0.055f;
+constexpr float kWeaponBladeWidth = 0.08f;
+constexpr float kWeaponBladeLength = 0.72f;
+constexpr float kWeaponBladeDepth = 0.035f;
+constexpr float kWeaponJointOverlap = 0.006f;
 
 Material MakeMaterial(const XMFLOAT4 &color, float metallic = 0.0f,
                       float roughness = 0.55f) {
@@ -82,13 +90,6 @@ XMFLOAT3 NormalizeOr(const XMFLOAT3 &v, const XMFLOAT3 &fallback) {
     XMFLOAT3 result{};
     XMStoreFloat3(&result, XMVector3Normalize(vector));
     return result;
-}
-
-float Distance(const XMFLOAT3 &a, const XMFLOAT3 &b) {
-    const float x = b.x - a.x;
-    const float y = b.y - a.y;
-    const float z = b.z - a.z;
-    return std::sqrt(x * x + y * y + z * z);
 }
 
 bool ContainsAny(const std::string &text,
@@ -178,24 +179,13 @@ XMFLOAT4 AlignYAxisTo(const XMFLOAT3 &direction) {
     return result;
 }
 
-XMFLOAT4 AlignXAxisTo(const XMFLOAT3 &direction) {
-    XMVECTOR to = XMVector3Normalize(XMLoadFloat3(&direction));
-    XMVECTOR from = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
-    const float dot = std::clamp(XMVectorGetX(XMVector3Dot(from, to)), -1.0f,
-                                 1.0f);
-
-    if (dot > 0.9995f) {
-        return {0.0f, 0.0f, 0.0f, 1.0f};
-    }
-
-    const XMVECTOR quat =
-        dot < -0.9995f
-            ? XMQuaternionRotationAxis(XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f), XM_PI)
-            : XMQuaternionRotationAxis(XMVector3Normalize(XMVector3Cross(from, to)),
-                                       std::acos(dot));
-
+XMFLOAT4 QuaternionFromAxes(const XMFLOAT3& xAxis, const XMFLOAT3& yAxis,
+                            const XMFLOAT3& zAxis) {
+    const XMMATRIX rotation = XMMatrixSet(
+        xAxis.x, xAxis.y, xAxis.z, 0.0f, yAxis.x, yAxis.y, yAxis.z, 0.0f,
+        zAxis.x, zAxis.y, zAxis.z, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
     XMFLOAT4 result{};
-    XMStoreFloat4(&result, quat);
+    XMStoreFloat4(&result, XMQuaternionRotationMatrix(rotation));
     return result;
 }
 
@@ -243,6 +233,8 @@ void GameScene::InitializeModels() {
         ctx_->rendering.model->Load(L"app/resources/models/human/walk.gltf");
     sneakModelId_ = ctx_->rendering.model->Load(
         L"app/resources/models/human/sneakWalk.gltf");
+    brainStemModelId_ = ctx_->rendering.model->Load(
+        L"app/resources/models/brainStem/BrainStem.glb");
 
     Material groundMaterial =
         MakeMaterial({0.28f, 0.34f, 0.32f, 1.0f}, 0.0f, 0.82f);
@@ -268,11 +260,13 @@ void GameScene::InitializeModels() {
         MakeDebugMaterial({1.0f, 0.88f, 0.18f, 0.94f});
 
     weaponHandleModelId_ = ctx_->rendering.model->CreateCylinder(
-        whiteTextureId_, gripMaterial, 16u, 0.035f, 0.035f, 0.52f);
+        whiteTextureId_, gripMaterial, 16u, 0.035f, 0.035f, kWeaponHandleLength);
     weaponGuardModelId_ = ctx_->rendering.model->CreateBox(
-        whiteTextureId_, guardMaterial, 0.38f, 0.055f, 0.055f);
+        whiteTextureId_, guardMaterial, kWeaponGuardWidth, kWeaponGuardThickness,
+        kWeaponGuardDepth);
     weaponBladeModelId_ = ctx_->rendering.model->CreateBox(
-        whiteTextureId_, bladeMaterial, 0.08f, 0.72f, 0.035f);
+        whiteTextureId_, bladeMaterial, kWeaponBladeWidth, kWeaponBladeLength,
+        kWeaponBladeDepth);
     boneJointModelId_ = ctx_->rendering.model->CreateSphere(
         whiteTextureId_, boneMaterial, 12u, 6u, 1.0f);
     boneCenterModelId_ = ctx_->rendering.model->CreateCylinder(
@@ -373,7 +367,7 @@ void GameScene::UpdateMovement(float deltaTime) {
     }
 
     const float lenSq = LengthSq(moveX, moveZ);
-    walkTimeScale_ = lenSq > 0.04f ? 1.0f : 0.35f;
+    walkTimeScale_ = lenSq > 0.04f ? 1.0f : 0.0f;
 
     if (manualSneakBlend_ >= 0.0f) {
         sneakBlend_ = std::clamp(manualSneakBlend_, 0.0f, 1.0f);
@@ -408,7 +402,7 @@ void GameScene::UpdateDebugControls() {
         return;
     }
 
-    Input *input = ctx_->systems.input;
+    const Input *input = ctx_->systems.input;
     if (input->IsKeyTrigger(DIK_F1)) {
         debugRigEnabled_ = !debugRigEnabled_;
     }
@@ -566,10 +560,6 @@ void GameScene::Draw() {
     DrawWeapon();
 }
 
-void GameScene::DrawForeground3D() {
-    // Bone debug is drawn in DrawPostProcessOverlay as screen-space lines.
-}
-
 void GameScene::DrawTransparent() {
     if (handParticlesReady_) {
         handParticles_.Draw(camera_);
@@ -619,23 +609,32 @@ void GameScene::DrawWeapon() {
     bladeDir = NormalizeOr(bladeDir, {0.0f, 0.0f, 1.0f});
     const XMFLOAT3 guardDir =
         NormalizeOr(Cross(bladeDir, armDir), {1.0f, 0.0f, 0.0f});
+    const XMFLOAT3 guardDepthDir =
+        NormalizeOr(Cross(guardDir, bladeDir), armDir);
 
     const XMFLOAT4 bladeRotation = AlignYAxisTo(bladeDir);
-    const XMFLOAT4 guardRotation = AlignXAxisTo(guardDir);
-    const XMFLOAT3 hilt = Add(rightHandWorld_, Scale(armDir, 0.035f));
+    const XMFLOAT4 guardRotation =
+        QuaternionFromAxes(guardDir, bladeDir, guardDepthDir);
+    const XMFLOAT3 gripCenter = Add(rightHandWorld_, Scale(armDir, 0.035f));
+    const XMFLOAT3 guardCenter =
+        Add(gripCenter, Scale(bladeDir, kWeaponHandleLength * 0.5f));
+    const float halfGuardThickness = kWeaponGuardThickness * 0.5f;
 
     Transform handle{};
-    handle.position = Add(hilt, Scale(bladeDir, -0.10f));
+    handle.position =
+        Add(gripCenter, Scale(bladeDir, -kWeaponHandleLength * 0.5f));
     handle.rotation = bladeRotation;
     handle.scale = {1.0f, 1.0f, 1.0f};
 
     Transform guard{};
-    guard.position = Add(hilt, Scale(bladeDir, 0.14f));
+    guard.position =
+        Add(guardCenter, Scale(bladeDir, -halfGuardThickness));
     guard.rotation = guardRotation;
     guard.scale = {1.0f, 1.0f, 1.0f};
 
     Transform blade{};
-    blade.position = Add(hilt, Scale(bladeDir, 0.54f));
+    blade.position = Add(
+        guardCenter, Scale(bladeDir, halfGuardThickness - kWeaponJointOverlap));
     blade.rotation = bladeRotation;
     blade.scale = {1.0f, 1.0f, 1.0f};
 
@@ -644,101 +643,24 @@ void GameScene::DrawWeapon() {
     ctx_->rendering.model->Draw(weaponBladeModelId_, blade, camera_);
 }
 
-void GameScene::DrawBoneRig() {
-    if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
-        humanModelId_ == kInvalidResourceId ||
-        boneJointModelId_ == kInvalidResourceId) {
-        return;
-    }
-
-    const Model *model = ctx_->rendering.model->GetModel(humanModelId_);
-    if (model == nullptr) {
-        return;
-    }
-
-    for (uint32_t i = 0; i < static_cast<uint32_t>(model->bones.size()); ++i) {
-        const BoneInfo &bone = model->bones[i];
-        if (debugMajorBonesOnly_ && !IsMajorDebugBone(bone.name) &&
-            static_cast<int>(i) != selectedBoneIndex_) {
-            continue;
-        }
-        const XMFLOAT3 child = BoneWorldPosition(i);
-
-        const float jointScale =
-            static_cast<int>(i) == selectedBoneIndex_ ? 0.055f : 0.026f;
-        Transform joint =
-            MakeTransformAt(child, {jointScale, jointScale, jointScale});
-        ctx_->rendering.model->Draw(
-            static_cast<int>(i) == selectedBoneIndex_ ? boneSelectedModelId_
-                                                      : boneJointModelId_,
-            joint, camera_);
-
-        if (bone.parentIndex < 0 ||
-            bone.parentIndex >= static_cast<int>(model->bones.size())) {
-            continue;
-        }
-
-        const XMFLOAT3 parent =
-            BoneWorldPosition(static_cast<uint32_t>(bone.parentIndex));
-        if (Distance(parent, child) <= 0.0005f) {
-            continue;
-        }
-
-        const uint32_t segmentModel = BoneSegmentModelId(bone.name);
-        if (segmentModel == kInvalidResourceId) {
-            continue;
-        }
-        ctx_->rendering.model->Draw(segmentModel,
-                                    MakeBoneSegmentTransform(parent, child),
-                                    camera_);
-    }
-}
-
-void GameScene::DrawBindPoseRig() {
-    if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
-        humanModelId_ == kInvalidResourceId ||
-        boneBindModelId_ == kInvalidResourceId) {
-        return;
-    }
-
-    const Model *model = ctx_->rendering.model->GetModel(humanModelId_);
-    if (model == nullptr) {
-        return;
-    }
-
-    for (uint32_t i = 0; i < static_cast<uint32_t>(model->bones.size()); ++i) {
-        const BoneInfo &bone = model->bones[i];
-        if (debugMajorBonesOnly_ && !IsMajorDebugBone(bone.name) &&
-            static_cast<int>(i) != selectedBoneIndex_) {
-            continue;
-        }
-        if (bone.parentIndex < 0 ||
-            bone.parentIndex >= static_cast<int>(model->bones.size())) {
-            continue;
-        }
-
-        const XMFLOAT3 parent =
-            BindBoneWorldPosition(static_cast<uint32_t>(bone.parentIndex));
-        const XMFLOAT3 child = BindBoneWorldPosition(i);
-        if (Distance(parent, child) <= 0.0005f) {
-            continue;
-        }
-        ctx_->rendering.model->Draw(boneBindModelId_,
-                                    MakeBoneSegmentTransform(parent, child),
-                                    camera_);
-    }
-}
-
 void GameScene::DrawSceneProps() {
-    if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
-        groundModelId_ == kInvalidResourceId) {
+    if (ctx_ == nullptr || ctx_->rendering.model == nullptr) {
         return;
     }
 
-    Transform ground{};
-    ground.position = {0.0f, -0.04f, 0.0f};
-    ground.scale = {1.0f, 1.0f, 1.0f};
-    ctx_->rendering.model->Draw(groundModelId_, ground, camera_);
+    if (groundModelId_ != kInvalidResourceId) {
+        Transform ground{};
+        ground.position = {0.0f, -0.04f, 0.0f};
+        ground.scale = {1.0f, 1.0f, 1.0f};
+        ctx_->rendering.model->Draw(groundModelId_, ground, camera_);
+    }
+
+    if (brainStemModelId_ != kInvalidResourceId) {
+        Transform brainStem{};
+        brainStem.position = {1.65f, 0.0f, 0.15f};
+        brainStem.scale = {0.75f, 0.75f, 0.75f};
+        ctx_->rendering.model->Draw(brainStemModelId_, brainStem, camera_);
+    }
 }
 
 void GameScene::DrawBoneDebugOverlay() {
@@ -916,30 +838,88 @@ void GameScene::DrawBoneLabels() {
         return;
     }
 
-    ImDrawList *drawList = ImGui::GetForegroundDrawList();
-    if (drawList == nullptr) {
+    if (ImGui::GetForegroundDrawList() == nullptr) {
         return;
     }
 
-    for (uint32_t i = 0; i < static_cast<uint32_t>(model->bones.size()); ++i) {
-        const BoneInfo &bone = model->bones[i];
-        const bool selected = static_cast<int>(i) == selectedBoneIndex_;
-        if (!selected && !IsMajorDebugBone(bone.name)) {
+    const int hoveredBoneIndex = FindHoveredBone(*model);
+    if (hoveredBoneIndex >= 0 && hoveredBoneIndex != selectedBoneIndex_) {
+        DrawBoneLabel(*model, static_cast<uint32_t>(hoveredBoneIndex), false);
+    }
+    if (selectedBoneIndex_ >= 0 &&
+        selectedBoneIndex_ < static_cast<int>(model->bones.size())) {
+        DrawBoneLabel(*model, static_cast<uint32_t>(selectedBoneIndex_), true);
+    }
+#endif
+}
+
+int GameScene::FindHoveredBone(const Model& model) const {
+#ifdef _DEBUG
+    if (ImGui::GetIO().WantCaptureMouse) {
+        return -1;
+    }
+
+    constexpr float kHoverRadius = 18.0f;
+    const ImVec2 mouse = ImGui::GetMousePos();
+    float nearestDistanceSquared = kHoverRadius * kHoverRadius;
+    int nearestBoneIndex = -1;
+    for (uint32_t i = 0; i < static_cast<uint32_t>(model.bones.size()); ++i) {
+        XMFLOAT2 screen{};
+        if (!ProjectWorldToScreen(BoneWorldPosition(i), screen)) {
             continue;
         }
 
-        XMFLOAT2 screen{};
-        if (!ProjectWorldToScreen(Add(BoneWorldPosition(i), {0.0f, 0.035f, 0.0f}),
-                                  screen)) {
-            continue;
+        const float deltaX = screen.x - mouse.x;
+        const float deltaY = screen.y - mouse.y;
+        const float distanceSquared = deltaX * deltaX + deltaY * deltaY;
+        if (distanceSquared < nearestDistanceSquared) {
+            nearestDistanceSquared = distanceSquared;
+            nearestBoneIndex = static_cast<int>(i);
         }
-        const std::string label = DisplayBoneName(bone.name);
-        const ImU32 color =
-            selected ? IM_COL32(255, 230, 45, 255)
-                     : IM_COL32(238, 244, 255, 226);
-        drawList->AddText(ImVec2(screen.x + 6.0f, screen.y - 10.0f), color,
-                          label.c_str());
     }
+    return nearestBoneIndex;
+#else
+    (void)model;
+    return -1;
+#endif
+}
+
+void GameScene::DrawBoneLabel(const Model& model, uint32_t boneIndex, bool selected) {
+#ifdef _DEBUG
+    if (boneIndex >= model.bones.size()) {
+        return;
+    }
+
+    XMFLOAT2 screen{};
+    if (!ProjectWorldToScreen(BoneWorldPosition(boneIndex), screen)) {
+        return;
+    }
+
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    const std::string label = DisplayBoneName(model.bones[boneIndex].name);
+    const ImVec2 textSize = ImGui::CalcTextSize(label.c_str());
+    const ImVec2 jointPosition(screen.x, screen.y);
+    const ImVec2 textPosition = selected
+                                    ? ImVec2(screen.x + 12.0f, screen.y - textSize.y - 12.0f)
+                                    : ImVec2(screen.x + 12.0f, screen.y + 10.0f);
+    constexpr float kPadding = 4.0f;
+    const ImVec2 backgroundMin(textPosition.x - kPadding, textPosition.y - kPadding);
+    const ImVec2 backgroundMax(textPosition.x + textSize.x + kPadding,
+                               textPosition.y + textSize.y + kPadding);
+    const ImU32 accentColor = selected ? IM_COL32(255, 230, 45, 255)
+                                       : IM_COL32(100, 220, 255, 255);
+
+    drawList->AddLine(jointPosition,
+                      ImVec2(backgroundMin.x, selected ? backgroundMax.y : backgroundMin.y),
+                      accentColor, selected ? 2.0f : 1.5f);
+    drawList->AddCircleFilled(jointPosition, selected ? 4.5f : 3.5f, accentColor);
+    drawList->AddRectFilled(backgroundMin, backgroundMax, IM_COL32(10, 12, 18, 220), 3.0f);
+    drawList->AddRect(backgroundMin, backgroundMax, accentColor, 3.0f, 0, 1.0f);
+    drawList->AddText(textPosition, IM_COL32(245, 248, 255, 255), label.c_str());
+#else
+    (void)model;
+    (void)boneIndex;
+    (void)selected;
 #endif
 }
 
@@ -1030,24 +1010,14 @@ XMMATRIX GameScene::CharacterWorldMatrix() const {
                                characterTransform_.position.z);
 }
 
-uint32_t GameScene::BoneSegmentModelId(const std::string &boneName) const {
-    if (boneName.find("Left") != std::string::npos) {
-        return boneLeftModelId_;
-    }
-    if (boneName.find("Right") != std::string::npos) {
-        return boneRightModelId_;
-    }
-    return boneCenterModelId_;
-}
-
-bool GameScene::IsMajorDebugBone(const std::string &boneName) const {
+bool GameScene::IsMajorDebugBone(const std::string &boneName) {
     return ContainsAny(boneName,
                        {"Root", "Hips", "Spine", "Neck", "Head", "Shoulder",
                         "Arm", "ForeArm", "Hand", "UpLeg", "Leg", "Foot",
                         "Toe"});
 }
 
-std::string GameScene::DisplayBoneName(const std::string &boneName) const {
+std::string GameScene::DisplayBoneName(const std::string &boneName) {
     constexpr const char *prefix = "mixamorig:";
     if (boneName.rfind(prefix, 0) == 0) {
         return boneName.substr(std::char_traits<char>::length(prefix));
@@ -1079,28 +1049,6 @@ bool GameScene::ProjectWorldToScreen(const XMFLOAT3 &world,
     screen.x = (x * 0.5f + 0.5f) * width;
     screen.y = (-y * 0.5f + 0.5f) * height;
     return true;
-}
-
-Transform GameScene::MakeTransformAt(const XMFLOAT3 &position,
-                                           const XMFLOAT3 &scale) const {
-    Transform transform{};
-    transform.position = position;
-    transform.rotation = QuaternionFromYaw(characterYaw_);
-    transform.scale = scale;
-    return transform;
-}
-
-Transform GameScene::MakeBoneSegmentTransform(const XMFLOAT3 &parent,
-                                                    const XMFLOAT3 &child) const {
-    XMFLOAT3 direction{child.x - parent.x, child.y - parent.y,
-                       child.z - parent.z};
-    const float length = Distance(parent, child);
-
-    Transform transform{};
-    transform.position = parent;
-    transform.rotation = AlignYAxisTo(direction);
-    transform.scale = {1.0f, length, 1.0f};
-    return transform;
 }
 
 void GameScene::DrawScreenBoneLine(const XMFLOAT3 &a, const XMFLOAT3 &b,

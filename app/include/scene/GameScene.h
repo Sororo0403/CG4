@@ -19,8 +19,6 @@ class GameScene final : public BaseScene {
     void Update() override;
     void SubmitLighting(LightingScene &lightingScene) override;
     void Draw() override;
-    bool UsesForeground3DPass() const override { return false; }
-    void DrawForeground3D() override;
     void DrawTransparent() override;
     void DrawPostProcessOverlay() override;
 
@@ -35,28 +33,23 @@ class GameScene final : public BaseScene {
     void EmitHandParticles(float deltaTime);
     void DrawCharacter();
     void DrawWeapon();
-    void DrawBoneRig();
-    void DrawBindPoseRig();
     void DrawSceneProps();
     void DrawBoneDebugOverlay();
     void DrawBindPoseBoneOverlay(const Model& model);
     void DrawAnimatedBoneOverlay(const Model& model);
     void DrawDebugPanel();
     void DrawBoneLabels();
+    int FindHoveredBone(const Model& model) const;
+    void DrawBoneLabel(const Model& model, uint32_t boneIndex, bool selected);
 
     uint32_t FindBoneIndex(const std::vector<std::string> &candidates) const;
     DirectX::XMFLOAT3 BoneWorldPosition(uint32_t boneIndex) const;
     DirectX::XMFLOAT3 BindBoneWorldPosition(uint32_t boneIndex) const;
     DirectX::XMMATRIX CharacterWorldMatrix() const;
-    uint32_t BoneSegmentModelId(const std::string &boneName) const;
-    bool IsMajorDebugBone(const std::string &boneName) const;
-    std::string DisplayBoneName(const std::string &boneName) const;
+    static bool IsMajorDebugBone(const std::string &boneName);
+    static std::string DisplayBoneName(const std::string &boneName);
     bool ProjectWorldToScreen(const DirectX::XMFLOAT3 &world,
                               DirectX::XMFLOAT2 &screen) const;
-    Transform MakeTransformAt(const DirectX::XMFLOAT3 &position,
-                              const DirectX::XMFLOAT3 &scale) const;
-    Transform MakeBoneSegmentTransform(const DirectX::XMFLOAT3 &parent,
-                                       const DirectX::XMFLOAT3 &child) const;
     void DrawScreenBoneLine(const DirectX::XMFLOAT3 &a,
                             const DirectX::XMFLOAT3 &b, uint32_t color,
                             float thickness);
@@ -64,6 +57,7 @@ class GameScene final : public BaseScene {
     Camera camera_{};
     uint32_t humanModelId_ = kInvalidResourceId;
     uint32_t sneakModelId_ = kInvalidResourceId;
+    uint32_t brainStemModelId_ = kInvalidResourceId;
     uint32_t groundModelId_ = kInvalidResourceId;
     uint32_t weaponHandleModelId_ = kInvalidResourceId;
     uint32_t weaponGuardModelId_ = kInvalidResourceId;
