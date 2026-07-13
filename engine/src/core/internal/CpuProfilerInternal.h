@@ -15,4 +15,5 @@ struct CpuProfiler::State {
     std::array<CpuTimingSample, CpuProfiler::kMaxEvents> lastSamples{};
     uint32_t currentSampleCount = 0;
     uint32_t lastSampleCount = 0;
+    bool enabled = false;
 };

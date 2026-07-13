@@ -45,6 +45,8 @@ void MaterialManager::Initialize(DirectXCommon* dxCommon) {
         return;
     }
     dxCommon_ = dxCommon;
+    const UINT frameCount = (std::max)(1u, dxCommon_->GetSwapChainBufferCount());
+    state_->frameDeferredDestroyedMaterials.resize(frameCount);
 }
 
 bool MaterialManager::Finalize() {
@@ -52,8 +54,13 @@ bool MaterialManager::Finalize() {
 }
 
 bool MaterialManager::Finalize(bool allowFrameAbort) {
+    const bool hasFrameDeferredMaterials = std::any_of(
+        state_->frameDeferredDestroyedMaterials.begin(),
+        state_->frameDeferredDestroyedMaterials.end(),
+        [](const auto &materials) { return !materials.empty(); });
     const bool hasGpuResources =
-        !state_->materials.empty() || !state_->deferredDestroyedMaterials.empty();
+        !state_->materials.empty() || !state_->deferredDestroyedMaterials.empty() ||
+        hasFrameDeferredMaterials;
     if (!CanReleaseGpuResources(dxCommon_, hasGpuResources, allowFrameAbort)) {
         return false;
     }
@@ -63,6 +70,7 @@ bool MaterialManager::Finalize(bool allowFrameAbort) {
     }
     state_->materials.clear();
     state_->deferredDestroyedMaterials.clear();
+    state_->frameDeferredDestroyedMaterials.clear();
     dxCommon_ = nullptr;
     return true;
 }
@@ -110,7 +118,17 @@ void MaterialManager::DestroyMaterial(uint32_t materialId) {
         return;
     }
 
-    state_->deferredDestroyedMaterials.push_back(std::move(state_->materials[materialId]));
+    if (dxCommon_ != nullptr && dxCommon_->IsCommandListRecording()) {
+        const UINT frameIndex = dxCommon_->GetBackBufferIndex();
+        if (frameIndex < state_->frameDeferredDestroyedMaterials.size()) {
+            state_->frameDeferredDestroyedMaterials[frameIndex].push_back(
+                std::move(state_->materials[materialId]));
+            state_->materials[materialId] = MaterialResource{};
+            return;
+        }
+    }
+    state_->deferredDestroyedMaterials.push_back(
+        std::move(state_->materials[materialId]));
     state_->materials[materialId] = MaterialResource{};
 }
 
@@ -124,6 +142,16 @@ void MaterialManager::ReleaseDeferredResources() {
         }
     }
     state_->deferredDestroyedMaterials.clear();
+}
+
+void MaterialManager::ReleaseCompletedFrameResources() {
+    if (dxCommon_ == nullptr || !dxCommon_->IsCommandListRecording()) {
+        return;
+    }
+    const UINT frameIndex = dxCommon_->GetBackBufferIndex();
+    if (frameIndex < state_->frameDeferredDestroyedMaterials.size()) {
+        state_->frameDeferredDestroyedMaterials[frameIndex].clear();
+    }
 }
 
 void MaterialManager::SetMaterial(uint32_t materialId, const Material& material) {

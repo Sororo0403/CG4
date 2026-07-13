@@ -5,6 +5,7 @@
 #include "model/MeshRenderer.h"
 
 #include <array>
+#include <vector>
 #include <wrl.h>
 
 struct MeshRenderer::InstancedPipelineSet {
@@ -49,6 +50,7 @@ struct MeshRenderer::State : RendererShadowState {
     std::vector<InstancedPipelineSet> customInstancedPipelines;
 
     UploadRingBuffer uploadBuffer;
+    std::vector<std::vector<MeshInstanceBuffer>> retiredStaticInstanceBuffers;
     uint32_t drawIndex = 0;
     std::unique_ptr<MeshRendererCommandCache> commandCache =
         std::make_unique<MeshRendererCommandCache>();

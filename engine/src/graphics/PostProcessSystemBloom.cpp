@@ -296,6 +296,12 @@ bool PostProcessSystem::BuildBloom(D3D12_GPU_DESCRIPTOR_HANDLE sourceHandle,
     if (commandList == nullptr || heap == nullptr) {
         return false;
     }
+    const uint32_t activeLevelCount =
+        (std::min)(state_->bloomLevelCount,
+                   (std::max)(1u, state_->profile.bloom.maxLevels));
+    if (activeLevelCount == 0u) {
+        return false;
+    }
 
     ID3D12DescriptorHeap *heaps[] = {heap};
     commandList->SetDescriptorHeaps(1, heaps);
@@ -355,7 +361,7 @@ bool PostProcessSystem::BuildBloom(D3D12_GPU_DESCRIPTOR_HANDLE sourceHandle,
         return false;
     }
 
-    for (uint32_t level = 1u; level < state_->bloomLevelCount; ++level) {
+    for (uint32_t level = 1u; level < activeLevelCount; ++level) {
         const BloomLevel &source = state_->bloomLevels[level - 1u];
         const D3D12_GPU_DESCRIPTOR_HANDLE input =
             srvManager_->GetGpuHandle(state_->bloomSrvStart + level - 1u);
@@ -365,7 +371,7 @@ bool PostProcessSystem::BuildBloom(D3D12_GPU_DESCRIPTOR_HANDLE sourceHandle,
         }
     }
 
-    for (uint32_t level = state_->bloomLevelCount - 1u; level > 0u; --level) {
+    for (uint32_t level = activeLevelCount - 1u; level > 0u; --level) {
         const BloomLevel &source = state_->bloomLevels[level];
         const D3D12_GPU_DESCRIPTOR_HANDLE input =
             srvManager_->GetGpuHandle(state_->bloomSrvStart + level);

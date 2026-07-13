@@ -35,6 +35,8 @@ class CpuProfiler {
     void BeginEvent(const char *name);
     void EndEvent();
     void EndFrame();
+    void SetEnabled(bool enabled);
+    bool IsEnabled() const;
 
     const std::array<CpuTimingSample, kMaxEvents> &GetLastSamples() const;
     uint32_t GetLastSampleCount() const;

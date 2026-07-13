@@ -77,6 +77,9 @@ void MeshRenderer::SetGraphicsRootSignatureCached(
     if (cmd == nullptr || rootSignature == nullptr) {
         return;
     }
+    if (state_->commandCache->rootSignature == rootSignature) {
+        return;
+    }
     cmd->SetGraphicsRootSignature(rootSignature);
     state_->commandCache->rootSignature = rootSignature;
     state_->commandCache->rootParameterKinds.fill(
@@ -87,6 +90,9 @@ void MeshRenderer::SetGraphicsRootSignatureCached(
 void MeshRenderer::SetPipelineStateCached(ID3D12PipelineState *pipelineState) {
     auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
     if (cmd == nullptr || pipelineState == nullptr) {
+        return;
+    }
+    if (state_->commandCache->pipelineState == pipelineState) {
         return;
     }
     cmd->SetPipelineState(pipelineState);
@@ -100,6 +106,11 @@ void MeshRenderer::SetGraphicsRootConstantBufferViewCached(
         rootIndex >= state_->commandCache->rootParameterValues.size()) {
         return;
     }
+    if (state_->commandCache->rootParameterKinds[rootIndex] ==
+            MeshRendererCommandCache::RootParameterKind::ConstantBuffer &&
+        state_->commandCache->rootParameterValues[rootIndex] == address) {
+        return;
+    }
     cmd->SetGraphicsRootConstantBufferView(rootIndex, address);
     state_->commandCache->rootParameterKinds[rootIndex] =
         MeshRendererCommandCache::RootParameterKind::ConstantBuffer;
@@ -111,6 +122,11 @@ void MeshRenderer::SetGraphicsRootDescriptorTableCached(
     auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
     if (cmd == nullptr ||
         rootIndex >= state_->commandCache->rootParameterValues.size()) {
+        return;
+    }
+    if (state_->commandCache->rootParameterKinds[rootIndex] ==
+            MeshRendererCommandCache::RootParameterKind::DescriptorTable &&
+        state_->commandCache->rootParameterValues[rootIndex] == handle.ptr) {
         return;
     }
     cmd->SetGraphicsRootDescriptorTable(rootIndex, handle);
@@ -128,6 +144,17 @@ void MeshRenderer::IASetVertexBuffersCached(
         return;
     }
 
+    bool cached = state_->commandCache->vertexBuffersValid &&
+                  state_->commandCache->vertexBufferStartSlot == startSlot &&
+                  state_->commandCache->vertexBufferViewCount == viewCount;
+    for (uint32_t index = 0u; cached && index < viewCount; ++index) {
+        cached = MeshRendererCommandCache::SameVertexBufferView(
+            state_->commandCache->vertexBufferViews[index], views[index]);
+    }
+    if (cached) {
+        return;
+    }
+
     cmd->IASetVertexBuffers(startSlot, viewCount, views);
     state_->commandCache->vertexBufferStartSlot = startSlot;
     state_->commandCache->vertexBufferViewCount = viewCount;
@@ -142,6 +169,11 @@ void MeshRenderer::IASetIndexBufferCached(const D3D12_INDEX_BUFFER_VIEW &view) {
     if (cmd == nullptr) {
         return;
     }
+    if (state_->commandCache->indexBufferValid &&
+        MeshRendererCommandCache::SameIndexBufferView(
+            state_->commandCache->indexBufferView, view)) {
+        return;
+    }
     cmd->IASetIndexBuffer(&view);
     state_->commandCache->indexBufferView = view;
     state_->commandCache->indexBufferValid = true;
@@ -151,6 +183,9 @@ void MeshRenderer::IASetPrimitiveTopologyCached(
     D3D12_PRIMITIVE_TOPOLOGY topology) {
     auto *cmd = state_->dxCommon ? state_->dxCommon->GetCommandList() : nullptr;
     if (cmd == nullptr) {
+        return;
+    }
+    if (state_->commandCache->primitiveTopology == topology) {
         return;
     }
     cmd->IASetPrimitiveTopology(topology);

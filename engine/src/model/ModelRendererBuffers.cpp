@@ -116,14 +116,14 @@ ModelRenderer::WriteInstances(const Model &model, const Transform *transforms,
         return {};
     }
 
-    std::vector<InstanceData> instances(instanceCount);
+    state_->instanceScratch.resize(instanceCount);
     for (uint32_t index = 0; index < instanceCount; ++index) {
         const XMMATRIX world =
             RendererMath::MakeWorldMatrix(transforms[index]);
-        XMStoreFloat4x4(&instances[index].world, world);
+        XMStoreFloat4x4(&state_->instanceScratch[index].world, world);
     }
 
-    return WriteInstances(model, instances.data(), instanceCount);
+    return WriteInstances(model, state_->instanceScratch.data(), instanceCount);
 }
 
 D3D12_VERTEX_BUFFER_VIEW
@@ -135,7 +135,7 @@ ModelRenderer::WriteInstances(const Model &model,
         return {};
     }
 
-    std::vector<InstanceData> instances(instanceCount);
+    state_->instanceScratch.resize(instanceCount);
     const XMFLOAT4X4 safeRootMatrix =
         model.hasRootAnimation
             ? InstanceDataDetail::SanitizeMatrix(model.rootAnimationMatrix)
@@ -145,18 +145,19 @@ ModelRenderer::WriteInstances(const Model &model,
                               : XMMatrixIdentity();
 
     for (uint32_t index = 0; index < instanceCount; ++index) {
-        instances[index] =
+        state_->instanceScratch[index] =
             SanitizeInstanceDataForDraw(sourceInstances[index]);
-        XMMATRIX world = XMLoadFloat4x4(&instances[index].world);
+        XMMATRIX world = XMLoadFloat4x4(&state_->instanceScratch[index].world);
         if (model.hasRootAnimation) {
             world = root * world;
         }
-        XMStoreFloat4x4(&instances[index].world, world);
+        XMStoreFloat4x4(&state_->instanceScratch[index].world, world);
     }
 
     const UploadAllocation allocation =
-        state_->uploadBuffer.WriteArray(instances.data(), instances.size(),
-                                 alignof(InstanceData));
+        state_->uploadBuffer.WriteArray(state_->instanceScratch.data(),
+                                        state_->instanceScratch.size(),
+                                        alignof(InstanceData));
 
     D3D12_VERTEX_BUFFER_VIEW view{};
     view.BufferLocation = allocation.gpu;

@@ -112,4 +112,8 @@ class SpriteManager {
 
     SpriteRenderer spriteRenderer_;
     std::vector<Sprite> sprites_;
+    std::vector<size_t> sortedIndices_;
+    std::vector<float> sortedZOrders_;
+    bool sortedBackToFront_ = false;
+    bool sortedCacheValid_ = false;
 };

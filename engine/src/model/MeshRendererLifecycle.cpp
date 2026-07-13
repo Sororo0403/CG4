@@ -86,6 +86,8 @@ void MeshRenderer::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
         state_->textureManager->GetGpuHandle(state_->textureManager->GetWhiteTextureId());
     state_->spotLightShadowMapGpuHandle = state_->shadowMapGpuHandle;
     state_->environmentTextureId = state_->textureManager->GetBlackCubeTextureId();
+    const UINT frameCount = (std::max)(1u, dxCommon->GetSwapChainBufferCount());
+    state_->retiredStaticInstanceBuffers.resize(frameCount);
 
     CreateRootSignature();
     CreateShadowRootSignature();
@@ -110,7 +112,12 @@ bool MeshRenderer::Finalize(bool allowFrameAbort) {
         IsValidResourceId(state_->fallbackOcclusionSrvIndex) || state_->gpuCullRootSignature ||
         state_->gpuCullPSO || state_->gpuCullArgsPSO || state_->gpuCullCommandSignature ||
         state_->gpuLodCullRootSignature || state_->gpuLodCullPSO || state_->gpuLodCullArgsPSO;
-    if (!CanReleaseGpuResources(state_->dxCommon, hasGpuResources,
+    const bool hasRetiredStaticInstanceBuffers = std::any_of(
+        state_->retiredStaticInstanceBuffers.begin(),
+        state_->retiredStaticInstanceBuffers.end(),
+        [](const auto &buffers) { return !buffers.empty(); });
+    if (!CanReleaseGpuResources(state_->dxCommon,
+                                hasGpuResources || hasRetiredStaticInstanceBuffers,
                                 allowFrameAbort)) {
         return false;
     }
@@ -152,6 +159,7 @@ void MeshRenderer::ResetResources() {
     state_->customPipelines.clear();
     state_->customInstancedPipelines.clear();
     state_->uploadBuffer.Reset();
+    state_->retiredStaticInstanceBuffers.clear();
     InvalidateConstantCaches();
     InvalidateCommandState();
     state_->instanceScratch.clear();
@@ -239,6 +247,16 @@ void MeshRenderer::BeginFrame() {
     state_->uploadBuffer.BeginFrame(state_->dxCommon->GetBackBufferIndex());
     InvalidateConstantCaches();
     InvalidateCommandState();
+}
+
+void MeshRenderer::ReleaseCompletedFrameResources() {
+    if (!state_->dxCommon || !state_->dxCommon->IsCommandListRecording()) {
+        return;
+    }
+    const UINT frameIndex = state_->dxCommon->GetBackBufferIndex();
+    if (frameIndex < state_->retiredStaticInstanceBuffers.size()) {
+        state_->retiredStaticInstanceBuffers[frameIndex].clear();
+    }
 }
 
 void MeshRenderer::PreDraw() {

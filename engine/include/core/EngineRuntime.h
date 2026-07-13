@@ -18,6 +18,8 @@ struct EngineRuntimeConfig {
     std::wstring logPath;
     InputReplayStartupOptions inputReplay;
     float replayFixedDeltaTime = 1.0f / 60.0f;
+    bool enableCpuProfiler = false;
+    bool enableGpuProfiler = false;
 };
 
 class EngineRuntime {
@@ -66,6 +68,8 @@ class EngineRuntime {
     ResizeResult ResizeIfNeeded();
     bool RenderFrame();
     void BeginRenderFrameSystems();
+    bool EnsureSpotLightShadowRenderer();
+    bool EnsureVolumetricLightingSystem();
     bool BeginCommandFrame();
     void BuildRenderGraph();
     bool FinishCommandFrame();
@@ -74,4 +78,10 @@ class EngineRuntime {
 
     int currentWidth_ = 0;
     int currentHeight_ = 0;
+    int renderGraphWidth_ = 0;
+    int renderGraphHeight_ = 0;
+    bool renderGraphBuilt_ = false;
+    bool renderGraphUsesSpotLightShadow_ = false;
+    bool renderGraphUsesForeground3D_ = false;
+    bool renderGraphUsesVolumetricLighting_ = false;
 };

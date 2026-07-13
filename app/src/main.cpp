@@ -1,5 +1,5 @@
 #include "Engine.h"
-#include "scene/ParticleDemoScene.h"
+#include "scene/EvaluationScene.h"
 
 #include <Windows.h>
 #include <filesystem>
@@ -55,5 +55,5 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int showCommand) {
 
     EngineRuntime runtime;
     return runtime.Run(instance, showCommand,
-                       std::make_unique<ParticleDemoScene>(), config);
+                       std::make_unique<EvaluationScene>(), config);
 }

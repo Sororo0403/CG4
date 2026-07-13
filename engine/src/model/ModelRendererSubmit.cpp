@@ -118,6 +118,143 @@ bool IsForwardDrawableSubMesh(
            HasRenderableVertexSource(subMesh);
 }
 
+void SetRootConstantBufferViewCached(auto &state,
+                                     uint32_t rootIndex,
+                                     D3D12_GPU_VIRTUAL_ADDRESS address) {
+    auto *cmd = state.dxCommon ? state.dxCommon->GetCommandList() : nullptr;
+    if (cmd == nullptr || state.commandCache == nullptr ||
+        rootIndex >= state.commandCache->rootParameterValues.size()) {
+        return;
+    }
+    if (state.commandCache->rootParameterKinds[rootIndex] ==
+            MeshRendererCommandCache::RootParameterKind::ConstantBuffer &&
+        state.commandCache->rootParameterValues[rootIndex] == address) {
+        return;
+    }
+    cmd->SetGraphicsRootConstantBufferView(rootIndex, address);
+    state.commandCache->rootParameterKinds[rootIndex] =
+        MeshRendererCommandCache::RootParameterKind::ConstantBuffer;
+    state.commandCache->rootParameterValues[rootIndex] = address;
+}
+
+void SetRootDescriptorTableCached(auto &state,
+                                  uint32_t rootIndex,
+                                  D3D12_GPU_DESCRIPTOR_HANDLE handle) {
+    auto *cmd = state.dxCommon ? state.dxCommon->GetCommandList() : nullptr;
+    if (cmd == nullptr || state.commandCache == nullptr ||
+        rootIndex >= state.commandCache->rootParameterValues.size()) {
+        return;
+    }
+    if (state.commandCache->rootParameterKinds[rootIndex] ==
+            MeshRendererCommandCache::RootParameterKind::DescriptorTable &&
+        state.commandCache->rootParameterValues[rootIndex] == handle.ptr) {
+        return;
+    }
+    cmd->SetGraphicsRootDescriptorTable(rootIndex, handle);
+    state.commandCache->rootParameterKinds[rootIndex] =
+        MeshRendererCommandCache::RootParameterKind::DescriptorTable;
+    state.commandCache->rootParameterValues[rootIndex] = handle.ptr;
+}
+
+void SetRootShaderResourceViewCached(auto &state,
+                                     uint32_t rootIndex,
+                                     D3D12_GPU_VIRTUAL_ADDRESS address) {
+    auto *cmd = state.dxCommon ? state.dxCommon->GetCommandList() : nullptr;
+    if (cmd == nullptr || state.commandCache == nullptr ||
+        rootIndex >= state.commandCache->rootParameterValues.size()) {
+        return;
+    }
+    if (state.commandCache->rootParameterKinds[rootIndex] ==
+            MeshRendererCommandCache::RootParameterKind::ShaderResource &&
+        state.commandCache->rootParameterValues[rootIndex] == address) {
+        return;
+    }
+    cmd->SetGraphicsRootShaderResourceView(rootIndex, address);
+    state.commandCache->rootParameterKinds[rootIndex] =
+        MeshRendererCommandCache::RootParameterKind::ShaderResource;
+    state.commandCache->rootParameterValues[rootIndex] = address;
+}
+
+void SetVertexBuffersCached(auto &state, uint32_t startSlot,
+                            uint32_t viewCount,
+                            const D3D12_VERTEX_BUFFER_VIEW *views) {
+    auto *cmd = state.dxCommon ? state.dxCommon->GetCommandList() : nullptr;
+    if (cmd == nullptr || state.commandCache == nullptr || views == nullptr ||
+        viewCount == 0u ||
+        viewCount > state.commandCache->vertexBufferViews.size()) {
+        return;
+    }
+
+    bool cached = state.commandCache->vertexBuffersValid &&
+                  state.commandCache->vertexBufferStartSlot == startSlot &&
+                  state.commandCache->vertexBufferViewCount == viewCount;
+    for (uint32_t index = 0u; cached && index < viewCount; ++index) {
+        cached = MeshRendererCommandCache::SameVertexBufferView(
+            state.commandCache->vertexBufferViews[index], views[index]);
+    }
+    if (cached) {
+        return;
+    }
+
+    cmd->IASetVertexBuffers(startSlot, viewCount, views);
+    state.commandCache->vertexBufferStartSlot = startSlot;
+    state.commandCache->vertexBufferViewCount = viewCount;
+    state.commandCache->vertexBuffersValid = true;
+    for (uint32_t index = 0u; index < viewCount; ++index) {
+        state.commandCache->vertexBufferViews[index] = views[index];
+    }
+}
+
+void SetIndexBufferCached(auto &state,
+                          const D3D12_INDEX_BUFFER_VIEW &view) {
+    auto *cmd = state.dxCommon ? state.dxCommon->GetCommandList() : nullptr;
+    if (cmd == nullptr || state.commandCache == nullptr) {
+        return;
+    }
+    if (state.commandCache->indexBufferValid &&
+        MeshRendererCommandCache::SameIndexBufferView(
+            state.commandCache->indexBufferView, view)) {
+        return;
+    }
+    cmd->IASetIndexBuffer(&view);
+    state.commandCache->indexBufferView = view;
+    state.commandCache->indexBufferValid = true;
+}
+
+void SetPrimitiveTopologyCached(auto &state,
+                                D3D12_PRIMITIVE_TOPOLOGY topology) {
+    auto *cmd = state.dxCommon ? state.dxCommon->GetCommandList() : nullptr;
+    if (cmd == nullptr || state.commandCache == nullptr ||
+        state.commandCache->primitiveTopology == topology) {
+        return;
+    }
+    cmd->IASetPrimitiveTopology(topology);
+    state.commandCache->primitiveTopology = topology;
+}
+
+bool SetShadowPipelineCached(auto &state,
+                             ID3D12PipelineState *pipelineState) {
+    auto *cmd = state.dxCommon ? state.dxCommon->GetCommandList() : nullptr;
+    ID3D12RootSignature *rootSignature = state.shadowRootSignature.Get();
+    if (cmd == nullptr || rootSignature == nullptr || pipelineState == nullptr ||
+        state.commandCache == nullptr) {
+        return false;
+    }
+    if (state.commandCache->rootSignature != rootSignature) {
+        cmd->SetGraphicsRootSignature(rootSignature);
+        state.commandCache->Reset();
+        state.commandCache->rootSignature = rootSignature;
+        state.currentGraphicsRootSignature = rootSignature;
+        state.currentGraphicsPipelineState = nullptr;
+    }
+    if (state.commandCache->pipelineState != pipelineState) {
+        cmd->SetPipelineState(pipelineState);
+        state.commandCache->pipelineState = pipelineState;
+        state.currentGraphicsPipelineState = pipelineState;
+    }
+    return true;
+}
+
 } // namespace
 
 bool ModelRenderer::SubmitForwardSubMeshDraw(
@@ -176,35 +313,39 @@ bool ModelRenderer::SubmitForwardSubMeshDraw(
         vertexViewCount = 2;
     }
 
-    cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(1, sceneCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(
-        2, state_->materialManager->GetGPUVirtualAddress(subMesh.materialId));
-    cmd->SetGraphicsRootDescriptorTable(
-        3, state_->textureManager->GetGpuHandle(ResolveBaseColorTextureId(
-               state_->textureManager, material, subMesh.textureId)));
-    cmd->SetGraphicsRootShaderResourceView(4, paletteAddress);
-    cmd->SetGraphicsRootDescriptorTable(
-        5, state_->textureManager->GetGpuHandle(safeEnvironmentTextureId));
-    cmd->SetGraphicsRootDescriptorTable(6, state_->shadowMapGpuHandle);
-    cmd->SetGraphicsRootDescriptorTable(
-        7, state_->textureManager->GetGpuHandle(ResolveNormalTextureId(
-               state_->textureManager, material, subMesh.normalTextureId)));
-    cmd->SetGraphicsRootConstantBufferView(8, effectCbAddr);
-    cmd->SetGraphicsRootDescriptorTable(
-        9, state_->textureManager->GetGpuHandle(state_->dissolveNoiseTextureId));
-    cmd->SetGraphicsRootDescriptorTable(10,
-                                        state_->spotLightShadowMapGpuHandle);
-    cmd->SetGraphicsRootDescriptorTable(
-        11, state_->textureManager->GetGpuHandle(
-                ResolveRoughnessTextureId(state_->textureManager, material)));
-    cmd->SetGraphicsRootDescriptorTable(
-        12, state_->textureManager->GetGpuHandle(
-                ResolveMetallicTextureId(state_->textureManager, material)));
+    SetRootConstantBufferViewCached(*state_, 0, objectCbAddr);
+    SetRootConstantBufferViewCached(*state_, 1, sceneCbAddr);
+    SetRootConstantBufferViewCached(
+        *state_, 2,
+        state_->materialManager->GetGPUVirtualAddress(subMesh.materialId));
+    SetRootDescriptorTableCached(
+        *state_, 3,
+        state_->textureManager->GetGpuHandle(ResolveBaseColorTextureId(
+            state_->textureManager, material, subMesh.textureId)));
+    SetRootShaderResourceViewCached(*state_, 4, paletteAddress);
+    SetRootDescriptorTableCached(
+        *state_, 5, state_->textureManager->GetGpuHandle(safeEnvironmentTextureId));
+    SetRootDescriptorTableCached(*state_, 6, state_->shadowMapGpuHandle);
+    SetRootDescriptorTableCached(
+        *state_, 7,
+        state_->textureManager->GetGpuHandle(ResolveNormalTextureId(
+            state_->textureManager, material, subMesh.normalTextureId)));
+    SetRootConstantBufferViewCached(*state_, 8, effectCbAddr);
+    SetRootDescriptorTableCached(
+        *state_, 9, state_->textureManager->GetGpuHandle(state_->dissolveNoiseTextureId));
+    SetRootDescriptorTableCached(*state_, 10, state_->spotLightShadowMapGpuHandle);
+    SetRootDescriptorTableCached(
+        *state_, 11,
+        state_->textureManager->GetGpuHandle(
+            ResolveRoughnessTextureId(state_->textureManager, material)));
+    SetRootDescriptorTableCached(
+        *state_, 12,
+        state_->textureManager->GetGpuHandle(
+            ResolveMetallicTextureId(state_->textureManager, material)));
 
-    cmd->IASetVertexBuffers(0, vertexViewCount, views.data());
-    cmd->IASetIndexBuffer(&mesh.ibView);
-    cmd->IASetPrimitiveTopology(mesh.primitiveTopology);
+    SetVertexBuffersCached(*state_, 0, vertexViewCount, views.data());
+    SetIndexBufferCached(*state_, mesh.ibView);
+    SetPrimitiveTopologyCached(*state_, mesh.primitiveTopology);
     cmd->DrawIndexedInstanced(mesh.indexCount, instanceCount, 0, 0, 0);
     ++state_->drawIndex;
     return true;
@@ -226,8 +367,9 @@ bool ModelRenderer::SubmitShadowSubMeshDraw(
         return false;
     }
 
-    cmd->SetGraphicsRootSignature(state_->shadowRootSignature.Get());
-    cmd->SetPipelineState(pipelineState);
+    if (!SetShadowPipelineCached(*state_, pipelineState)) {
+        return false;
+    }
 
     const Mesh &mesh = state_->meshManager->GetMesh(subMesh.meshId);
     const D3D12_VERTEX_BUFFER_VIEW vertexBufferView =
@@ -245,14 +387,15 @@ bool ModelRenderer::SubmitShadowSubMeshDraw(
         state_->materialManager->GetMaterial(subMesh.materialId);
     const D3D12_GPU_VIRTUAL_ADDRESS materialCbAddr =
         state_->materialManager->GetGPUVirtualAddress(subMesh.materialId);
-    cmd->SetGraphicsRootConstantBufferView(0, objectCbAddr);
-    cmd->SetGraphicsRootConstantBufferView(1, materialCbAddr);
-    cmd->SetGraphicsRootDescriptorTable(
-        2, state_->textureManager->GetGpuHandle(ResolveBaseColorTextureId(
-               state_->textureManager, material, subMesh.textureId)));
-    cmd->IASetVertexBuffers(0, vertexViewCount, views.data());
-    cmd->IASetIndexBuffer(&mesh.ibView);
-    cmd->IASetPrimitiveTopology(mesh.primitiveTopology);
+    SetRootConstantBufferViewCached(*state_, 0, objectCbAddr);
+    SetRootConstantBufferViewCached(*state_, 1, materialCbAddr);
+    SetRootDescriptorTableCached(
+        *state_, 2,
+        state_->textureManager->GetGpuHandle(ResolveBaseColorTextureId(
+            state_->textureManager, material, subMesh.textureId)));
+    SetVertexBuffersCached(*state_, 0, vertexViewCount, views.data());
+    SetIndexBufferCached(*state_, mesh.ibView);
+    SetPrimitiveTopologyCached(*state_, mesh.primitiveTopology);
     cmd->DrawIndexedInstanced(mesh.indexCount, instanceCount, 0, 0, 0);
     ++state_->drawIndex;
     return true;

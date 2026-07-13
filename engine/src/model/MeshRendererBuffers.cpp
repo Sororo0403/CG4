@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <utility>
 #include <vector>
 
 using namespace DirectX;
@@ -41,6 +42,37 @@ bool CanCreateStaticInstanceBuffer(uint32_t instanceCount) {
 }
 
 } // namespace
+
+void MeshRenderer::MarkStaticInstanceBufferUsed(
+    const MeshInstanceBuffer &buffer) const {
+    if (state_->dxCommon != nullptr && buffer.IsValid()) {
+        buffer.lastUsedFrameIndex = state_->dxCommon->GetBackBufferIndex();
+    }
+}
+
+bool MeshRenderer::RetireStaticInstanceBuffer(
+    MeshInstanceBuffer &buffer) noexcept {
+    if (!buffer.resource && !buffer.uploadResource) {
+        buffer.Reset();
+        return true;
+    }
+    const UINT frameIndex = buffer.lastUsedFrameIndex;
+    if (frameIndex == UINT_MAX) {
+        buffer.Reset();
+        return true;
+    }
+    try {
+        if (frameIndex < state_->retiredStaticInstanceBuffers.size()) {
+            state_->retiredStaticInstanceBuffers[frameIndex].push_back(
+                std::move(buffer));
+            buffer.Reset();
+            return true;
+        }
+    } catch (...) {
+        return false;
+    }
+    return false;
+}
 
 void MeshRenderer::CreateUploadBuffer() {
     RendererUploadUtils::InitializeUploadBuffer(state_->uploadBuffer, state_->dxCommon,
@@ -191,15 +223,6 @@ bool MeshRenderer::CreateStaticInstanceBuffer(const InstanceData* instances, uin
         buffer.contentHash == contentHash) {
         return true;
     }
-    if (buffer.resource && !state_->dxCommon->IsDeviceRemoved()) {
-        if (state_->dxCommon->IsCommandListRecording()) {
-            return false;
-        }
-        if (!state_->dxCommon->WaitForGpuIfPossible()) {
-            return false;
-        }
-    }
-
     MeshInstanceBuffer nextBuffer{};
     CD3DX12_HEAP_PROPERTIES defaultHeap(D3D12_HEAP_TYPE_DEFAULT);
     CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
@@ -255,7 +278,19 @@ bool MeshRenderer::CreateStaticInstanceBuffer(const InstanceData* instances, uin
     if (ownsUploadPass && uploadResult == DirectXCommon::UploadPassResult::Completed) {
         nextBuffer.uploadResource.Reset();
     }
-    buffer = nextBuffer;
+    if ((buffer.resource || buffer.uploadResource) &&
+        !RetireStaticInstanceBuffer(buffer)) {
+        if (state_->dxCommon && !state_->dxCommon->IsDeviceRemoved()) {
+            if (state_->dxCommon->IsCommandListRecording()) {
+                return false;
+            }
+            if (!state_->dxCommon->WaitForGpuIfPossible()) {
+                return false;
+            }
+        }
+        buffer.Reset();
+    }
+    buffer = std::move(nextBuffer);
     return true;
 }
 
@@ -263,6 +298,9 @@ bool MeshRenderer::ReleaseStaticInstanceBuffer(MeshInstanceBuffer& buffer,
                                                bool allowFrameAbort) noexcept {
     if (!buffer.resource && !buffer.uploadResource) {
         buffer.Reset();
+        return true;
+    }
+    if (RetireStaticInstanceBuffer(buffer)) {
         return true;
     }
     if (state_->dxCommon && !state_->dxCommon->IsDeviceRemoved()) {

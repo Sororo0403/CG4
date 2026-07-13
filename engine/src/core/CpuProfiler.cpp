@@ -26,18 +26,25 @@ CpuProfiler::ScopedEvent::~ScopedEvent() {
 }
 
 void CpuProfiler::BeginFrame() {
+    if (!state_->enabled) {
+        state_->lastSampleCount = 0;
+        return;
+    }
     state_->stack.clear();
     state_->currentSampleCount = 0;
 }
 
 void CpuProfiler::BeginEvent(const char *name) {
-    if (!name) {
+    if (!state_->enabled || !name) {
         return;
     }
     state_->stack.push_back(OpenEvent{name, std::chrono::steady_clock::now()});
 }
 
 void CpuProfiler::EndEvent() {
+    if (!state_->enabled) {
+        return;
+    }
     if (state_->stack.empty()) {
         return;
     }
@@ -56,9 +63,27 @@ void CpuProfiler::EndEvent() {
 }
 
 void CpuProfiler::EndFrame() {
+    if (!state_->enabled) {
+        state_->lastSampleCount = 0;
+        return;
+    }
     while (!state_->stack.empty()) {
         EndEvent();
     }
     state_->lastSamples = state_->currentSamples;
     state_->lastSampleCount = state_->currentSampleCount;
+}
+
+void CpuProfiler::SetEnabled(bool enabled) {
+    if (state_->enabled == enabled) {
+        return;
+    }
+    state_->enabled = enabled;
+    state_->stack.clear();
+    state_->currentSampleCount = 0;
+    state_->lastSampleCount = 0;
+}
+
+bool CpuProfiler::IsEnabled() const {
+    return state_->enabled;
 }

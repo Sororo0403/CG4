@@ -215,6 +215,7 @@ void MeshRenderer::DrawMeshInstancedWithPipeline(
     if (!instanceBuffer.IsValid()) {
         return;
     }
+    MarkStaticInstanceBufferUsed(instanceBuffer);
     const Material drawMaterial =
         NormalizeMaterialForDraw(material, state_->materialReflectionsEnabled);
     DrawInstancedWithPreparedBuffer(

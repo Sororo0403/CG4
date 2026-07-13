@@ -51,6 +51,7 @@ class MeshRenderer {
     /// Frameを開始する
     /// </summary>
     void BeginFrame();
+    void ReleaseCompletedFrameResources();
     void PreDraw();
     static void PostDraw();
     void InvalidateCommandState() noexcept;
@@ -415,6 +416,8 @@ class MeshRenderer {
         const D3D12_VERTEX_BUFFER_VIEW &instanceView, uint32_t instanceCount,
         const DirectX::XMFLOAT4X4 &lightViewProjection, uint32_t textureId,
         bool opaqueShadow);
+    void MarkStaticInstanceBufferUsed(const MeshInstanceBuffer &buffer) const;
+    bool RetireStaticInstanceBuffer(MeshInstanceBuffer &buffer) noexcept;
     /// <summary>
     /// PipelineForMaterialを設定する
     /// </summary>

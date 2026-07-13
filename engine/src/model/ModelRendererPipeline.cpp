@@ -168,9 +168,17 @@ bool ModelRenderer::SetPipelineForMaterial(const Material &material) {
     ID3D12RootSignature *rootSignature = state_->rootSignature.Get();
     ID3D12PipelineState *pipelineState =
         state_->pipelineStates[PipelineVariantIndex(material, state_->currentEffect)].Get();
-    return SetGraphicsPipelineStateCached(
+    const bool result = SetGraphicsPipelineStateCached(
         cmd, rootSignature, pipelineState, state_->currentGraphicsRootSignature,
         state_->currentGraphicsPipelineState);
+    if (result && state_->commandCache != nullptr) {
+        if (state_->commandCache->rootSignature != rootSignature) {
+            state_->commandCache->Reset();
+        }
+        state_->commandCache->rootSignature = rootSignature;
+        state_->commandCache->pipelineState = pipelineState;
+    }
+    return result;
 }
 
 bool ModelRenderer::SetInstancedPipelineForMaterial(const Material &material) {
@@ -179,9 +187,17 @@ bool ModelRenderer::SetInstancedPipelineForMaterial(const Material &material) {
     ID3D12PipelineState *pipelineState =
         state_->instancedPipelineStates[PipelineVariantIndex(material, state_->currentEffect)]
             .Get();
-    return SetGraphicsPipelineStateCached(
+    const bool result = SetGraphicsPipelineStateCached(
         cmd, rootSignature, pipelineState, state_->currentGraphicsRootSignature,
         state_->currentGraphicsPipelineState);
+    if (result && state_->commandCache != nullptr) {
+        if (state_->commandCache->rootSignature != rootSignature) {
+            state_->commandCache->Reset();
+        }
+        state_->commandCache->rootSignature = rootSignature;
+        state_->commandCache->pipelineState = pipelineState;
+    }
+    return result;
 }
 
 void ModelRenderer::CreateRootSignature() {

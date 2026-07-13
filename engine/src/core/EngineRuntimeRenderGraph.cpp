@@ -74,6 +74,14 @@ bool EngineRuntime::RenderFrame() {
     FrameAbortScope frameScope(systems_->dxCommon);
 
     BeginRenderFrameSystems();
+    if (!EnsureSpotLightShadowRenderer()) {
+        Log("Spot light shadow renderer initialization failed");
+        return false;
+    }
+    if (!EnsureVolumetricLightingSystem()) {
+        Log("Volumetric lighting system initialization failed");
+        return false;
+    }
     if (!BeginCommandFrame()) {
         return false;
     }
@@ -109,11 +117,41 @@ void EngineRuntime::BeginRenderFrameSystems() {
     systems_->transparentQueue.Clear();
 }
 
+bool EngineRuntime::EnsureSpotLightShadowRenderer() {
+    if (!UsesSpotLightShadowPass(*systems_)) {
+        return true;
+    }
+    if (systems_->spotLightShadowMapRenderer.IsReady()) {
+        return true;
+    }
+    systems_->spotLightShadowMapRenderer.Initialize(&systems_->dxCommon,
+                                                    &systems_->srvManager,
+                                                    1024u, 1024u);
+    return systems_->spotLightShadowMapRenderer.IsReady();
+}
+
+bool EngineRuntime::EnsureVolumetricLightingSystem() {
+    if (!systems_->sceneManager.UsesVolumetricLightingPass()) {
+        return true;
+    }
+    if (systems_->volumetricLightingSystem.IsReady()) {
+        return true;
+    }
+    systems_->volumetricLightingSystem.Initialize(
+        &systems_->dxCommon, &systems_->srvManager, currentWidth_,
+        currentHeight_);
+    return systems_->volumetricLightingSystem.IsReady();
+}
+
 bool EngineRuntime::BeginCommandFrame() {
     systems_->dxCommon.BeginFrame();
     if (!systems_->dxCommon.IsCommandListRecording()) {
         return false;
     }
+    systems_->meshManager.ReleaseCompletedFrameResources();
+    systems_->meshRenderer.ReleaseCompletedFrameResources();
+    systems_->modelManager.ReleaseCompletedFrameResources();
+    systems_->textureManager.ReleaseCompletedFrameResources();
     systems_->gpuProfiler.BeginFrame();
     systems_->textureManager.UpdateAsyncLoads();
     systems_->meshRenderer.ClearOcclusionPyramid();
@@ -130,10 +168,28 @@ bool EngineRuntime::BeginCommandFrame() {
 }
 
 void EngineRuntime::BuildRenderGraph() {
+    const bool usesSpotLightShadow = UsesSpotLightShadowPass(*systems_);
+    const bool usesForeground3D = systems_->sceneManager.UsesForeground3DPass();
+    const bool usesVolumetricLighting =
+        systems_->sceneManager.UsesVolumetricLightingPass();
+    if (renderGraphBuilt_ && renderGraphWidth_ == currentWidth_ &&
+        renderGraphHeight_ == currentHeight_ &&
+        renderGraphUsesSpotLightShadow_ == usesSpotLightShadow &&
+        renderGraphUsesForeground3D_ == usesForeground3D &&
+        renderGraphUsesVolumetricLighting_ == usesVolumetricLighting) {
+        return;
+    }
+
     systems_->renderGraph.Clear();
     AddDefaultRenderGraphPasses(*systems_);
     AddDefaultRenderGraphResources(*systems_, currentWidth_, currentHeight_);
     AddDefaultRenderGraphDependencies(*systems_);
+    renderGraphBuilt_ = true;
+    renderGraphWidth_ = currentWidth_;
+    renderGraphHeight_ = currentHeight_;
+    renderGraphUsesSpotLightShadow_ = usesSpotLightShadow;
+    renderGraphUsesForeground3D_ = usesForeground3D;
+    renderGraphUsesVolumetricLighting_ = usesVolumetricLighting;
 }
 
 namespace {

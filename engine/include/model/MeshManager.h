@@ -50,6 +50,7 @@ class MeshManager {
     /// GPU転送完了後にメッシュ作成用の一時UploadBufferを解放する
     /// </summary>
     void ReleaseUploadBuffers();
+    void ReleaseCompletedFrameResources();
 
     /// <summary>
     /// 頂点配列とインデックス配列からGPUメッシュを作成して登録する
@@ -106,6 +107,9 @@ class MeshManager {
 
     bool ReserveMeshStorage();
     bool StoreFrameUploadBuffers(
+        const Microsoft::WRL::ComPtr<ID3D12Resource> &vertexUploadBuffer,
+        const Microsoft::WRL::ComPtr<ID3D12Resource> &indexUploadBuffer);
+    bool StoreFallbackUploadBuffers(
         const Microsoft::WRL::ComPtr<ID3D12Resource> &vertexUploadBuffer,
         const Microsoft::WRL::ComPtr<ID3D12Resource> &indexUploadBuffer);
     bool StoreMesh(Mesh &&mesh, uint32_t &meshId);

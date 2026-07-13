@@ -362,21 +362,23 @@ void TextureManager::ReleaseUploadBuffers() {
         return;
     }
 
-    const bool hasFrameUploadBuffers =
-        std::any_of(state_->frameUploadBuffers.begin(),
-                    state_->frameUploadBuffers.end(),
-                    [](const auto &buffers) { return !buffers.empty(); });
-
     if (dxCommon_ && !dxCommon_->IsDeviceRemoved() &&
-        (!state_->uploadBuffers.empty() || hasFrameUploadBuffers)) {
+        !state_->uploadBuffers.empty()) {
         if (!dxCommon_->WaitForGpuIfPossible()) {
             return;
         }
     }
 
     state_->uploadBuffers.clear();
-    for (auto& buffers : state_->frameUploadBuffers) {
-        buffers.clear();
+}
+
+void TextureManager::ReleaseCompletedFrameResources() {
+    if (dxCommon_ == nullptr || !dxCommon_->IsCommandListRecording()) {
+        return;
+    }
+    const UINT frameIndex = dxCommon_->GetBackBufferIndex();
+    if (frameIndex < state_->frameUploadBuffers.size()) {
+        state_->frameUploadBuffers[frameIndex].clear();
     }
     state_->lastDynamicUploadFrameIndex = UINT_MAX;
 }

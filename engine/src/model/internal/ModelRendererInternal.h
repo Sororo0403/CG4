@@ -1,9 +1,12 @@
 #pragma once
+#include "MeshRendererCommandCache.h"
 #include "RendererSharedState.h"
 #include "graphics/UploadRingBuffer.h"
 #include "model/ModelRenderer.h"
 
 #include <array>
+#include <memory>
+#include <vector>
 #include <wrl.h>
 
 struct ModelRenderer::State : RendererShadowState {
@@ -37,5 +40,8 @@ struct ModelRenderer::State : RendererShadowState {
     ModelDrawEffect currentEffect{};
     ID3D12RootSignature *currentGraphicsRootSignature = nullptr;
     ID3D12PipelineState *currentGraphicsPipelineState = nullptr;
+    std::unique_ptr<MeshRendererCommandCache> commandCache =
+        std::make_unique<MeshRendererCommandCache>();
+    std::vector<InstanceData> instanceScratch;
     bool hasEnvironmentTexture = false;
 };

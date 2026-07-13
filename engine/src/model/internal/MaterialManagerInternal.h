@@ -74,4 +74,5 @@ struct MaterialManager::MaterialResource {
 struct MaterialManager::State {
     std::vector<MaterialResource> materials;
     std::vector<MaterialResource> deferredDestroyedMaterials;
+    std::vector<std::vector<MaterialResource>> frameDeferredDestroyedMaterials;
 };

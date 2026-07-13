@@ -58,6 +58,23 @@ class ImguiDescriptorAllocationGuard {
     bool active_ = true;
 };
 
+ImFont *TryLoadImguiFont(const std::filesystem::path &fontPath,
+                         const ImWchar *fontRanges) {
+    std::error_code existsError;
+    if (fontPath.empty() || !std::filesystem::exists(fontPath, existsError) ||
+        existsError) {
+        return nullptr;
+    }
+
+    const std::string fontPathString = fontPath.string();
+    if (fontPathString.empty()) {
+        return nullptr;
+    }
+
+    return ImGui::GetIO().Fonts->AddFontFromFileTTF(
+        fontPathString.c_str(), 18.0f, nullptr, fontRanges);
+}
+
 void LoadJapaneseImguiFont() {
     ImGuiIO &io = ImGui::GetIO();
     constexpr const char *kExtraJapaneseGlyphs =
@@ -90,16 +107,23 @@ void LoadJapaneseImguiFont() {
     glyphRangesBuilder.AddText(kExtraJapaneseGlyphs);
     glyphRangesBuilder.BuildRanges(&fontRanges);
 
-    const std::filesystem::path fontPath =
+    ImFont *font = TryLoadImguiFont(
         AssetManager::ResolvePath(
-            L"engine/resources/fonts/MPLUS1/MPLUS1-ExtraBold.ttf");
-    const std::string fontPathString = fontPath.string();
-    ImFont *font = nullptr;
-    std::error_code existsError;
-    if (!fontPathString.empty() &&
-        std::filesystem::exists(fontPath, existsError) && !existsError) {
-        font = io.Fonts->AddFontFromFileTTF(
-            fontPathString.c_str(), 18.0f, nullptr, fontRanges.Data);
+            L"engine/resources/fonts/MPLUS1/MPLUS1-ExtraBold.ttf"),
+        fontRanges.Data);
+    if (font == nullptr) {
+        static constexpr const wchar_t *kFallbackFontPaths[] = {
+            L"C:/Windows/Fonts/YuGothB.ttc",
+            L"C:/Windows/Fonts/YuGothM.ttc",
+            L"C:/Windows/Fonts/meiryob.ttc",
+            L"C:/Windows/Fonts/meiryo.ttc",
+        };
+        for (const wchar_t *fallbackPath : kFallbackFontPaths) {
+            font = TryLoadImguiFont(fallbackPath, fontRanges.Data);
+            if (font != nullptr) {
+                break;
+            }
+        }
     }
     if (font != nullptr) {
         io.FontDefault = font;

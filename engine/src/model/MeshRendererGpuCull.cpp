@@ -122,6 +122,7 @@ bool MeshRenderer::DrawMeshInstancedGpuCulledWithPipeline(
     if (!ShouldUseGpuCull(sourceInstances.instanceCount)) {
         return false;
     }
+    MarkStaticInstanceBufferUsed(sourceInstances);
     const XMFLOAT3 cameraPosition = camera.GetPosition();
     ID3D12GraphicsCommandList *cmd = nullptr;
     if (!DispatchSingleGpuCull(
@@ -160,6 +161,7 @@ bool MeshRenderer::DrawMeshInstancedGpuLodCulledWithPipeline(
     if (!ShouldUseGpuCull(sourceInstances.instanceCount)) {
         return false;
     }
+    MarkStaticInstanceBufferUsed(sourceInstances);
     for (const Mesh *mesh : lodMeshes) {
         if (mesh == nullptr || !IsDrawableMesh(*mesh)) {
             return false;
@@ -203,6 +205,7 @@ bool MeshRenderer::DrawMeshInstancedGpuCulledShadowWithPipeline(
     if (!ShouldUseGpuCull(sourceInstances.instanceCount)) {
         return false;
     }
+    MarkStaticInstanceBufferUsed(sourceInstances);
     ID3D12GraphicsCommandList *cmd = nullptr;
     if (!DispatchSingleGpuCull(
             mesh, sourceInstances, cullBuffer, localBounds,
@@ -242,6 +245,7 @@ bool MeshRenderer::DrawMeshInstancedGpuLodCulledShadowWithPipeline(
     if (!ShouldUseGpuCull(sourceInstances.instanceCount)) {
         return false;
     }
+    MarkStaticInstanceBufferUsed(sourceInstances);
     for (const Mesh *mesh : lodMeshes) {
         if (mesh == nullptr || !IsDrawableMesh(*mesh)) {
             return false;

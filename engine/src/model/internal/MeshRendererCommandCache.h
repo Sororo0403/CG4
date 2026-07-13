@@ -6,13 +6,14 @@
 #include <d3d12.h>
 
 struct MeshRendererCommandCache {
-    static constexpr size_t kRootParameterCount = 11;
+    static constexpr size_t kRootParameterCount = 13;
     static constexpr size_t kVertexBufferViewCount = 2;
 
     enum class RootParameterKind : uint8_t {
         None,
         ConstantBuffer,
         DescriptorTable,
+        ShaderResource,
     };
 
     ID3D12RootSignature *rootSignature = nullptr;
@@ -28,6 +29,20 @@ struct MeshRendererCommandCache {
     bool indexBufferValid = false;
     D3D12_PRIMITIVE_TOPOLOGY primitiveTopology =
         D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
+
+    static bool SameVertexBufferView(const D3D12_VERTEX_BUFFER_VIEW &lhs,
+                                     const D3D12_VERTEX_BUFFER_VIEW &rhs) noexcept {
+        return lhs.BufferLocation == rhs.BufferLocation &&
+               lhs.SizeInBytes == rhs.SizeInBytes &&
+               lhs.StrideInBytes == rhs.StrideInBytes;
+    }
+
+    static bool SameIndexBufferView(const D3D12_INDEX_BUFFER_VIEW &lhs,
+                                    const D3D12_INDEX_BUFFER_VIEW &rhs) noexcept {
+        return lhs.BufferLocation == rhs.BufferLocation &&
+               lhs.SizeInBytes == rhs.SizeInBytes &&
+               lhs.Format == rhs.Format;
+    }
 
     void Reset() noexcept {
         rootSignature = nullptr;

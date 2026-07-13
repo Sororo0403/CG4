@@ -31,6 +31,8 @@ void ModelRenderer::PreDraw() {
     cmd->SetGraphicsRootSignature(state_->rootSignature.Get());
     state_->currentGraphicsRootSignature = state_->rootSignature.Get();
     state_->currentGraphicsPipelineState = nullptr;
+    state_->commandCache->Reset();
+    state_->commandCache->rootSignature = state_->rootSignature.Get();
 
     state_->drawIndex = 0;
 }

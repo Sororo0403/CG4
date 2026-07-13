@@ -67,6 +67,7 @@ T NormalizeMeshItem(const T &item) {
 } // namespace
 
 void RenderScene::BeginFrame() {
+    previousStats_ = stats_;
     meshes_.clear();
     opaqueMeshes_.clear();
     transparentMeshes_.clear();
@@ -75,6 +76,7 @@ void RenderScene::BeginFrame() {
     opaqueInstancedMeshes_.clear();
     shadowInstancedMeshes_.clear();
     stats_ = {};
+    ReserveForLikelyFrame();
 }
 
 void RenderScene::SubmitMesh(const RenderMeshItem &item) {
@@ -178,4 +180,14 @@ bool RenderScene::IsValid(const RenderMeshItem &item) {
 bool RenderScene::IsValid(const RenderInstancedMeshItem &item) {
     return item.mesh != nullptr && item.instances != nullptr &&
            item.instanceCount > 0u;
+}
+
+void RenderScene::ReserveForLikelyFrame() {
+    meshes_.reserve(previousStats_.meshCount);
+    opaqueMeshes_.reserve(previousStats_.opaqueMeshCount);
+    transparentMeshes_.reserve(previousStats_.transparentMeshCount);
+    shadowMeshes_.reserve(previousStats_.shadowMeshCount);
+    instancedMeshes_.reserve(previousStats_.instancedMeshCount);
+    opaqueInstancedMeshes_.reserve(previousStats_.opaqueInstancedMeshCount);
+    shadowInstancedMeshes_.reserve(previousStats_.shadowInstancedMeshCount);
 }

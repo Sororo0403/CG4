@@ -42,6 +42,7 @@ class ModelManager {
     /// GPU転送完了後にモデル内部メッシュの一時UploadBufferを解放する
     /// </summary>
     void ReleaseUploadBuffers();
+    void ReleaseCompletedFrameResources();
 
     /// <summary>
     /// モデルを読み込む

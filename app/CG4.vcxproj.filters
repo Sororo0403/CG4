@@ -16,6 +16,12 @@
     <Filter Include="resources\ui">
       <UniqueIdentifier>{003b3e55-154c-ff36-a53b-279728c2471c}</UniqueIdentifier>
     </Filter>
+    <Filter Include="resources\models">
+      <UniqueIdentifier>{30a8e72b-39ff-4ad4-8842-cb08f90bf7a3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="resources\models\human">
+      <UniqueIdentifier>{9622cbcb-f88e-49d1-9f1e-75a915d6d18a}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src">
       <UniqueIdentifier>{c202d925-8342-8c3b-bbac-54dfa101ad31}</UniqueIdentifier>
     </Filter>
@@ -27,6 +33,9 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\main.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\EvaluationScene.cpp">
+      <Filter>src\scene</Filter>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\scene\ParticleDemoScene.cpp">
       <Filter>src\scene</Filter>
     </ClCompile>
@@ -35,11 +44,23 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\effects\FireworkHitEffectPresets.h">
       <Filter>include\effects</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\EvaluationScene.h">
+      <Filter>include\scene</Filter>
+    </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\scene\ParticleDemoScene.h">
       <Filter>include\scene</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)resources\models\human\walk.bin">
+      <Filter>resources\models\human</Filter>
+    </None>
+    <None Include="$(MSBuildThisFileDirectory)resources\models\human\walk.gltf">
+      <Filter>resources\models\human</Filter>
+    </None>
+    <None Include="$(MSBuildThisFileDirectory)resources\models\human\white.png">
+      <Filter>resources\models\human</Filter>
+    </None>
     <None Include="$(MSBuildThisFileDirectory)resources\ui\space_particle_prompt.png">
       <Filter>resources\ui</Filter>
     </None>

@@ -180,6 +180,7 @@ class TextureManager {
     /// ロード時に使った一時UploadBufferを解放
     /// </summary>
     void ReleaseUploadBuffers();
+    void ReleaseCompletedFrameResources();
 
     /// <summary>
     /// テクスチャのGPUハンドルを取得する

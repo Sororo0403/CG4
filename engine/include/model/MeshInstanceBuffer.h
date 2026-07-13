@@ -10,6 +10,7 @@ struct MeshInstanceBuffer {
     D3D12_VERTEX_BUFFER_VIEW view{};
     uint32_t instanceCount = 0;
     uint64_t contentHash = 0;
+    mutable UINT lastUsedFrameIndex = UINT_MAX;
 
     bool IsValid() const {
         return resource && view.BufferLocation != 0 && view.SizeInBytes > 0 &&
@@ -22,5 +23,6 @@ struct MeshInstanceBuffer {
         view = {};
         instanceCount = 0;
         contentHash = 0;
+        lastUsedFrameIndex = UINT_MAX;
     }
 };

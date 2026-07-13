@@ -47,4 +47,6 @@ class TransparentRenderQueue {
 
     std::vector<Item> items_;
     uint64_t nextSequence_ = 0;
+    float lastDistanceSquared_ = 0.0f;
+    bool orderDirty_ = false;
 };

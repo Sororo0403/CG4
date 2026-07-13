@@ -41,6 +41,8 @@ float SafeDistanceSquared(const XMFLOAT3 &worldPosition,
 void TransparentRenderQueue::Clear() {
     items_.clear();
     nextSequence_ = 0;
+    lastDistanceSquared_ = 0.0f;
+    orderDirty_ = false;
 }
 
 void TransparentRenderQueue::Submit(float distanceSquared, DrawCallback draw) {
@@ -52,6 +54,10 @@ void TransparentRenderQueue::Submit(float distanceSquared, DrawCallback draw) {
         distanceSquared = 0.0f;
     }
 
+    if (!items_.empty() && distanceSquared > lastDistanceSquared_) {
+        orderDirty_ = true;
+    }
+    lastDistanceSquared_ = distanceSquared;
     items_.push_back({distanceSquared, nextSequence_++, std::move(draw)});
 }
 
@@ -62,13 +68,15 @@ void TransparentRenderQueue::Submit(const XMFLOAT3 &worldPosition,
 }
 
 void TransparentRenderQueue::Flush() {
-    std::stable_sort(items_.begin(), items_.end(),
-                     [](const Item &a, const Item &b) {
-                         if (a.distanceSquared == b.distanceSquared) {
-                             return a.sequence < b.sequence;
-                         }
-                         return a.distanceSquared > b.distanceSquared;
-                     });
+    if (orderDirty_ && items_.size() > 1u) {
+        std::sort(items_.begin(), items_.end(),
+                  [](const Item &a, const Item &b) {
+                      if (a.distanceSquared == b.distanceSquared) {
+                          return a.sequence < b.sequence;
+                      }
+                      return a.distanceSquared > b.distanceSquared;
+                  });
+    }
 
     for (const Item &item : items_) {
         item.draw();

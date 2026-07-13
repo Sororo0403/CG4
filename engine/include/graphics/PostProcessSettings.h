@@ -64,6 +64,7 @@ struct PostProcessBloomSettings {
     float intensity = 0.25f;
     float radius = 2.0f;
     float softKnee = 0.55f;
+    uint32_t maxLevels = 4u;
 };
 
 struct PostProcessNoiseSettings {

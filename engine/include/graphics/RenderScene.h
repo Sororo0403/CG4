@@ -118,6 +118,7 @@ class RenderScene {
     static RenderInstancedMeshItem Normalize(const RenderInstancedMeshItem &item);
     static bool IsValid(const RenderMeshItem &item);
     static bool IsValid(const RenderInstancedMeshItem &item);
+    void ReserveForLikelyFrame();
 
     std::vector<RenderMeshItem> meshes_;
     std::vector<RenderMeshItem> opaqueMeshes_;
@@ -129,4 +130,5 @@ class RenderScene {
     std::vector<RenderInstancedMeshItem> shadowInstancedMeshes_;
 
     RenderSceneStats stats_{};
+    RenderSceneStats previousStats_{};
 };

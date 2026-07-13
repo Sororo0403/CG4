@@ -264,6 +264,12 @@ void ModelManager::ReleaseUploadBuffers() {
     meshManager_.ReleaseUploadBuffers();
     materialManager_.ReleaseDeferredResources();
 }
+
+void ModelManager::ReleaseCompletedFrameResources() {
+    meshManager_.ReleaseCompletedFrameResources();
+    materialManager_.ReleaseCompletedFrameResources();
+}
+
 uint32_t ModelManager::Load(const std::wstring& path) {
     std::filesystem::path p = ResolveModelPath(path);
     std::error_code ec;

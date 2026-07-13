@@ -224,6 +224,46 @@ ShaderMemoryCache() {
     return cache;
 }
 
+inline Microsoft::WRL::ComPtr<IDxcUtils> SharedDxcUtils() {
+    using Microsoft::WRL::ComPtr;
+    static ComPtr<IDxcUtils> utils = [] {
+        ComPtr<IDxcUtils> instance;
+        if (FAILED(DxcCreateInstance(CLSID_DxcUtils,
+                                     IID_PPV_ARGS(&instance)))) {
+            instance.Reset();
+        }
+        return instance;
+    }();
+    return utils;
+}
+
+inline Microsoft::WRL::ComPtr<IDxcCompiler3> SharedDxcCompiler() {
+    using Microsoft::WRL::ComPtr;
+    static ComPtr<IDxcCompiler3> compiler = [] {
+        ComPtr<IDxcCompiler3> instance;
+        if (FAILED(DxcCreateInstance(CLSID_DxcCompiler,
+                                     IID_PPV_ARGS(&instance)))) {
+            instance.Reset();
+        }
+        return instance;
+    }();
+    return compiler;
+}
+
+inline Microsoft::WRL::ComPtr<IDxcIncludeHandler> SharedDxcIncludeHandler() {
+    using Microsoft::WRL::ComPtr;
+    static ComPtr<IDxcIncludeHandler> includeHandler = [] {
+        ComPtr<IDxcIncludeHandler> instance;
+        ComPtr<IDxcUtils> utils = SharedDxcUtils();
+        if (!utils ||
+            FAILED(utils->CreateDefaultIncludeHandler(&instance))) {
+            instance.Reset();
+        }
+        return instance;
+    }();
+    return includeHandler;
+}
+
 inline Microsoft::WRL::ComPtr<IDxcBlob>
 CreateBlobFromBytes(const std::vector<uint8_t> &bytes) {
     using Microsoft::WRL::ComPtr;
@@ -231,9 +271,8 @@ CreateBlobFromBytes(const std::vector<uint8_t> &bytes) {
         return {};
     }
 
-    ComPtr<IDxcUtils> utils;
-    if (FAILED(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils))) ||
-        !utils) {
+    ComPtr<IDxcUtils> utils = SharedDxcUtils();
+    if (!utils) {
         return {};
     }
     ComPtr<IDxcBlobEncoding> encoded;
@@ -340,22 +379,18 @@ Compile(const std::wstring &path, const std::string &entry,
         }
     }
 
-    ComPtr<IDxcUtils> utils;
-    ComPtr<IDxcCompiler3> compiler;
-    ComPtr<IDxcIncludeHandler> includeHandler;
-    if (FAILED(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils))) ||
-        !utils) {
+    ComPtr<IDxcUtils> utils = SharedDxcUtils();
+    ComPtr<IDxcCompiler3> compiler = SharedDxcCompiler();
+    ComPtr<IDxcIncludeHandler> includeHandler = SharedDxcIncludeHandler();
+    if (!utils) {
         OutputDebugStringA("ShaderCompiler: DxcCreateInstance(DxcUtils) failed\n");
         return {};
     }
-    if (FAILED(DxcCreateInstance(CLSID_DxcCompiler,
-                                 IID_PPV_ARGS(&compiler))) ||
-        !compiler) {
+    if (!compiler) {
         OutputDebugStringA("ShaderCompiler: DxcCreateInstance(DxcCompiler) failed\n");
         return {};
     }
-    if (FAILED(utils->CreateDefaultIncludeHandler(&includeHandler)) ||
-        !includeHandler) {
+    if (!includeHandler) {
         OutputDebugStringA("ShaderCompiler: CreateDefaultIncludeHandler failed\n");
         return {};
     }

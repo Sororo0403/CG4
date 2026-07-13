@@ -242,7 +242,10 @@ bool EngineRuntime::InitializeWindowAndDevice(
                                       &systems_->srvManager,
                                       static_cast<uint32_t>(currentWidth_),
                                       static_cast<uint32_t>(currentHeight_));
-    systems_->gpuProfiler.Initialize(&systems_->dxCommon);
+    systems_->cpuProfiler.SetEnabled(config.enableCpuProfiler);
+    if (config.enableGpuProfiler) {
+        systems_->gpuProfiler.Initialize(&systems_->dxCommon);
+    }
     return true;
 }
 
@@ -296,12 +299,6 @@ bool EngineRuntime::InitializeRenderingSystems() {
     if (!systems_->postProcessSystem.IsReady()) {
         return FailInitialize("PostProcessSystem");
     }
-    systems_->volumetricLightingSystem.Initialize(
-        &systems_->dxCommon, &systems_->srvManager, currentWidth_,
-        currentHeight_);
-    if (!systems_->volumetricLightingSystem.IsReady()) {
-        return FailInitialize("VolumetricLightingSystem");
-    }
     systems_->postEffectManager.Initialize(&systems_->postProcessSystem);
     if (!systems_->postEffectManager.IsReady()) {
         return FailInitialize("PostEffectManager");
@@ -315,12 +312,6 @@ bool EngineRuntime::InitializeRenderingSystems() {
                                            &systems_->srvManager);
     if (!systems_->shadowMapRenderer.IsReady()) {
         return FailInitialize("ShadowMapRenderer");
-    }
-    systems_->spotLightShadowMapRenderer.Initialize(&systems_->dxCommon,
-                                                    &systems_->srvManager,
-                                                    1024u, 1024u);
-    if (!systems_->spotLightShadowMapRenderer.IsReady()) {
-        return FailInitialize("SpotLightShadowMapRenderer");
     }
     systems_->renderPassController.Initialize(&systems_->dxCommon,
                                               &systems_->srvManager);
@@ -439,7 +430,9 @@ EngineRuntime::ResizeResult EngineRuntime::ResizeIfNeeded() {
     currentHeight_ = height;
     systems_->renderTexture.Resize(width, height);
     systems_->postProcessSystem.Resize(width, height);
-    systems_->volumetricLightingSystem.Resize(width, height);
+    if (systems_->volumetricLightingSystem.IsReady()) {
+        systems_->volumetricLightingSystem.Resize(width, height);
+    }
     systems_->frameHistory.Resize(static_cast<uint32_t>(width),
                                   static_cast<uint32_t>(height));
     const bool depthPyramidReady =
@@ -449,7 +442,6 @@ EngineRuntime::ResizeResult EngineRuntime::ResizeIfNeeded() {
     systems_->spriteManager.Resize(width, height);
     if (!systems_->renderTexture.IsReady() ||
         !systems_->postProcessSystem.IsReady() ||
-        !systems_->volumetricLightingSystem.IsReady() ||
         !depthPyramidReady ||
         !systems_->spriteManager.IsReady()) {
         return ResizeResult::Failed;

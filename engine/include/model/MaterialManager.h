@@ -82,6 +82,7 @@ class MaterialManager {
     }
 
     void ReleaseDeferredResources();
+    void ReleaseCompletedFrameResources();
 
   private:
     struct MaterialResource;

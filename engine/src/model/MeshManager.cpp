@@ -169,6 +169,9 @@ void MeshManager::Initialize(DirectXCommon* dxCommon) {
         return;
     }
     dxCommon_ = dxCommon;
+    const UINT frameCount = (std::max)(1u, dxCommon_->GetSwapChainBufferCount());
+    state_->frameUploadBuffers.resize(frameCount);
+    state_->frameDeferredDestroyedMeshes.resize(frameCount);
 }
 
 bool MeshManager::Finalize() {
@@ -176,8 +179,17 @@ bool MeshManager::Finalize() {
 }
 
 bool MeshManager::Finalize(bool allowFrameAbort) {
-    const bool hasGpuResources = !state_->meshes.empty() || !state_->uploadBuffers.empty() ||
-                                 !state_->deferredDestroyedMeshes.empty();
+    const bool hasFrameUploads = std::any_of(
+        state_->frameUploadBuffers.begin(), state_->frameUploadBuffers.end(),
+        [](const auto &buffers) { return !buffers.empty(); });
+    const bool hasFrameDeferredMeshes = std::any_of(
+        state_->frameDeferredDestroyedMeshes.begin(),
+        state_->frameDeferredDestroyedMeshes.end(),
+        [](const auto &meshes) { return !meshes.empty(); });
+    const bool hasGpuResources =
+        !state_->meshes.empty() || !state_->uploadBuffers.empty() ||
+        !state_->deferredDestroyedMeshes.empty() || hasFrameUploads ||
+        hasFrameDeferredMeshes;
     if (!CanReleaseGpuResources(dxCommon_, hasGpuResources, allowFrameAbort)) {
         return false;
     }
@@ -188,6 +200,8 @@ bool MeshManager::Finalize(bool allowFrameAbort) {
     state_->meshes.clear();
     state_->uploadBuffers.clear();
     state_->deferredDestroyedMeshes.clear();
+    state_->frameUploadBuffers.clear();
+    state_->frameDeferredDestroyedMeshes.clear();
     dxCommon_ = nullptr;
     return true;
 }
@@ -200,6 +214,13 @@ bool MeshManager::ReserveMeshStorage() {
     try {
         state_->meshes.reserve(state_->meshes.size() + 1);
         state_->uploadBuffers.reserve(state_->uploadBuffers.size() + 2);
+        if (dxCommon_ != nullptr) {
+            const UINT frameIndex = dxCommon_->GetBackBufferIndex();
+            if (frameIndex < state_->frameUploadBuffers.size()) {
+                state_->frameUploadBuffers[frameIndex].reserve(
+                    state_->frameUploadBuffers[frameIndex].size() + 2);
+            }
+        }
     } catch (...) {
         return false;
     }
@@ -207,6 +228,26 @@ bool MeshManager::ReserveMeshStorage() {
 }
 
 bool MeshManager::StoreFrameUploadBuffers(
+    const ComPtr<ID3D12Resource> &vertexUploadBuffer,
+    const ComPtr<ID3D12Resource> &indexUploadBuffer) {
+    if (dxCommon_ == nullptr) {
+        return StoreFallbackUploadBuffers(vertexUploadBuffer, indexUploadBuffer);
+    }
+    const UINT frameIndex = dxCommon_->GetBackBufferIndex();
+    try {
+        if (frameIndex < state_->frameUploadBuffers.size()) {
+            auto &buffers = state_->frameUploadBuffers[frameIndex];
+            buffers.push_back(vertexUploadBuffer);
+            buffers.push_back(indexUploadBuffer);
+            return true;
+        }
+    } catch (...) {
+        return false;
+    }
+    return StoreFallbackUploadBuffers(vertexUploadBuffer, indexUploadBuffer);
+}
+
+bool MeshManager::StoreFallbackUploadBuffers(
     const ComPtr<ID3D12Resource> &vertexUploadBuffer,
     const ComPtr<ID3D12Resource> &indexUploadBuffer) {
     try {
@@ -235,6 +276,15 @@ void MeshManager::RollBackStoredMesh(uint32_t meshId) {
 }
 
 void MeshManager::RemoveLastStoredUploadBuffers() {
+    if (dxCommon_ != nullptr) {
+        const UINT frameIndex = dxCommon_->GetBackBufferIndex();
+        if (frameIndex < state_->frameUploadBuffers.size() &&
+            state_->frameUploadBuffers[frameIndex].size() >= 2) {
+            auto &buffers = state_->frameUploadBuffers[frameIndex];
+            buffers.resize(buffers.size() - 2);
+            return;
+        }
+    }
     if (state_->uploadBuffers.size() >= 2) {
         state_->uploadBuffers.resize(state_->uploadBuffers.size() - 2);
     }
@@ -252,7 +302,7 @@ bool MeshManager::RegisterMeshFrameRollback(uint32_t meshId) {
 bool MeshManager::KeepSubmittedUploadBuffers(
     uint32_t meshId, const ComPtr<ID3D12Resource> &vertexUploadBuffer,
     const ComPtr<ID3D12Resource> &indexUploadBuffer) {
-    if (StoreFrameUploadBuffers(vertexUploadBuffer, indexUploadBuffer)) {
+    if (StoreFallbackUploadBuffers(vertexUploadBuffer, indexUploadBuffer)) {
         return true;
     }
     RollBackStoredMesh(meshId);
@@ -271,6 +321,19 @@ void MeshManager::ReleaseUploadBuffers() {
     }
     state_->uploadBuffers.clear();
     state_->deferredDestroyedMeshes.clear();
+}
+
+void MeshManager::ReleaseCompletedFrameResources() {
+    if (dxCommon_ == nullptr || !dxCommon_->IsCommandListRecording()) {
+        return;
+    }
+    const UINT frameIndex = dxCommon_->GetBackBufferIndex();
+    if (frameIndex < state_->frameUploadBuffers.size()) {
+        state_->frameUploadBuffers[frameIndex].clear();
+    }
+    if (frameIndex < state_->frameDeferredDestroyedMeshes.size()) {
+        state_->frameDeferredDestroyedMeshes[frameIndex].clear();
+    }
 }
 
 uint32_t MeshManager::CreateMesh(const void* vertexData, uint32_t vertexStride,
@@ -373,6 +436,15 @@ void MeshManager::DestroyMesh(uint32_t meshId) {
     }
 
     try {
+        if (dxCommon_ != nullptr && dxCommon_->IsCommandListRecording()) {
+            const UINT frameIndex = dxCommon_->GetBackBufferIndex();
+            if (frameIndex < state_->frameDeferredDestroyedMeshes.size()) {
+                state_->frameDeferredDestroyedMeshes[frameIndex].push_back(
+                    std::move(mesh));
+                mesh = {};
+                return;
+            }
+        }
         state_->deferredDestroyedMeshes.push_back(std::move(mesh));
         mesh = {};
     } catch (...) {
@@ -411,18 +483,37 @@ uint64_t MeshManager::GetActiveGpuBytes() const {
 }
 
 uint64_t MeshManager::GetDeferredGpuBytes() const {
-    return std::accumulate(
+    const uint64_t fallbackBytes = std::accumulate(
         state_->deferredDestroyedMeshes.begin(),
         state_->deferredDestroyedMeshes.end(), uint64_t{0},
         [](uint64_t bytes, const Mesh &mesh) {
             return bytes + MeshGpuBytes(mesh);
         });
+    return std::accumulate(
+        state_->frameDeferredDestroyedMeshes.begin(),
+        state_->frameDeferredDestroyedMeshes.end(), fallbackBytes,
+        [](uint64_t bytes, const auto &meshes) {
+            return std::accumulate(
+                meshes.begin(), meshes.end(), bytes,
+                [](uint64_t total, const Mesh &mesh) {
+                    return total + MeshGpuBytes(mesh);
+                });
+        });
 }
 
 uint64_t MeshManager::GetUploadBytes() const {
-    return std::accumulate(
+    const uint64_t fallbackBytes = std::accumulate(
         state_->uploadBuffers.begin(), state_->uploadBuffers.end(), uint64_t{0},
         [](uint64_t bytes, const auto &buffer) {
             return bytes + ResourceByteWidth(buffer.Get());
+        });
+    return std::accumulate(
+        state_->frameUploadBuffers.begin(), state_->frameUploadBuffers.end(),
+        fallbackBytes, [](uint64_t bytes, const auto &buffers) {
+            return std::accumulate(
+                buffers.begin(), buffers.end(), bytes,
+                [](uint64_t total, const auto &buffer) {
+                    return total + ResourceByteWidth(buffer.Get());
+                });
         });
 }

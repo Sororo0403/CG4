@@ -16,6 +16,19 @@ Sprite &FallbackSprite() {
     static Sprite fallback{};
     return fallback;
 }
+
+bool SpriteSortCacheMatches(const std::vector<Sprite> &sprites,
+                            const std::vector<float> &zOrders) {
+    if (sprites.size() != zOrders.size()) {
+        return false;
+    }
+    for (size_t index = 0; index < sprites.size(); ++index) {
+        if (FiniteOr(sprites[index].zOrder, 0.0f) != zOrders[index]) {
+            return false;
+        }
+    }
+    return true;
+}
 } // namespace
 
 void SpriteManager::Initialize(DirectXCommon *dxCommon,
@@ -32,6 +45,9 @@ void SpriteManager::Initialize(DirectXCommon *dxCommon,
     dxCommon_ = dxCommon;
     textureManager_ = textureManager;
     sprites_.clear();
+    sortedIndices_.clear();
+    sortedZOrders_.clear();
+    sortedCacheValid_ = false;
 }
 
 void SpriteManager::Finalize() {
@@ -39,6 +55,9 @@ void SpriteManager::Finalize() {
     dxCommon_ = nullptr;
     textureManager_ = nullptr;
     sprites_.clear();
+    sortedIndices_.clear();
+    sortedZOrders_.clear();
+    sortedCacheValid_ = false;
 }
 
 void SpriteManager::Draw(uint32_t id) {
@@ -49,18 +68,30 @@ void SpriteManager::Draw(uint32_t id) {
 }
 
 void SpriteManager::DrawAllSorted(bool backToFront) {
-    std::vector<size_t> indices(sprites_.size());
-    std::iota(indices.begin(), indices.end(), size_t{0});
-    std::stable_sort(indices.begin(), indices.end(),
-                     [&](size_t lhs, size_t rhs) {
-                         const float lhsZ = FiniteOr(sprites_[lhs].zOrder, 0.0f);
-                         const float rhsZ = FiniteOr(sprites_[rhs].zOrder, 0.0f);
-                         return backToFront
-                                    ? lhsZ > rhsZ
-                                    : lhsZ < rhsZ;
-                     });
+    const bool needsSort =
+        !sortedCacheValid_ || sortedBackToFront_ != backToFront ||
+        !SpriteSortCacheMatches(sprites_, sortedZOrders_);
+    if (needsSort) {
+        sortedIndices_.resize(sprites_.size());
+        sortedZOrders_.resize(sprites_.size());
+        std::iota(sortedIndices_.begin(), sortedIndices_.end(), size_t{0});
+        for (size_t index = 0; index < sprites_.size(); ++index) {
+            sortedZOrders_[index] = FiniteOr(sprites_[index].zOrder, 0.0f);
+        }
+        std::sort(sortedIndices_.begin(), sortedIndices_.end(),
+                  [&](size_t lhs, size_t rhs) {
+                      const float lhsZ = sortedZOrders_[lhs];
+                      const float rhsZ = sortedZOrders_[rhs];
+                      if (lhsZ == rhsZ) {
+                          return lhs < rhs;
+                      }
+                      return backToFront ? lhsZ > rhsZ : lhsZ < rhsZ;
+                  });
+        sortedBackToFront_ = backToFront;
+        sortedCacheValid_ = true;
+    }
 
-    for (size_t index : indices) {
+    for (size_t index : sortedIndices_) {
         spriteRenderer_.Draw(sprites_[index]);
     }
 }
@@ -99,6 +130,7 @@ uint32_t SpriteManager::Create(const std::wstring &filePath) {
     sprite.color = {1.0f, 1.0f, 1.0f, 1.0f};
 
     sprites_.push_back(sprite);
+    sortedCacheValid_ = false;
     return static_cast<uint32_t>(sprites_.size() - 1);
 }
 
