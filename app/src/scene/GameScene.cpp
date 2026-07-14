@@ -548,6 +548,9 @@ void GameScene::UpdateDebugControls() {
     }
 
     const Input *input = ctx_->systems.input;
+    if (input->IsKeyTrigger(DIK_F2)) {
+        evaluationPanelVisible_ = !evaluationPanelVisible_;
+    }
     if (input->IsKeyTrigger(DIK_F1)) {
         debugRigEnabled_ = !debugRigEnabled_;
     }
@@ -735,7 +738,6 @@ void GameScene::DrawPostProcessOverlay() {
     DrawLookAtDebug();
     DrawBoneLabels();
     DrawDebugPanel();
-    DrawParticleEditor();
 }
 
 void GameScene::DrawCharacter() {
@@ -943,7 +945,8 @@ void GameScene::DrawSelectedBoneAxes(const Model& model) {
 
 void GameScene::DrawLookAtDebug() {
 #ifdef _DEBUG
-    if (!lookAtIkEnabled_ || headBone_ == kInvalidResourceId) {
+    if (!debugLookAtTargetEnabled_ || !lookAtIkEnabled_ ||
+        headBone_ == kInvalidResourceId) {
         return;
     }
 
@@ -967,7 +970,8 @@ void GameScene::DrawLookAtDebug() {
                       ImVec2(center.x, center.y + 13.0f),
                       IM_COL32(255, 80, 220, 255), 2.0f);
     drawList->AddText(ImVec2(center.x + 14.0f, center.y - 22.0f),
-                      IM_COL32(255, 180, 240, 255), "LookAt Target");
+                      IM_COL32(255, 180, 240, 255),
+                      UiText("LookAt 注視点", "LookAt Target"));
 #endif
 }
 
@@ -977,50 +981,147 @@ void GameScene::DrawDebugPanel() {
         return;
     }
 
-    const Model *model = ctx_->rendering.model->GetModel(humanModelId_);
+    if (!evaluationPanelVisible_) {
+        const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+        ImGui::GetForegroundDrawList()->AddText(
+            ImVec2(16.0f, (std::max)(16.0f, displaySize.y - 28.0f)),
+            IM_COL32(190, 198, 215, 190),
+            UiText("F2: 評価パネル", "F2: Evaluation Panel"));
+        return;
+    }
+
+    const Model* model = ctx_->rendering.model->GetModel(humanModelId_);
     ImGui::SetNextWindowPos(ImVec2(16.0f, 16.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(360.0f, 560.0f), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Bone Debug")) {
+    ImGui::SetNextWindowSize(ImVec2(440.0f, 650.0f), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin(UiText("CG4 評価パネル###CG4Evaluation",
+                             "CG4 Evaluation###CG4Evaluation"),
+                      &evaluationPanelVisible_)) {
         ImGui::End();
         return;
     }
 
-    ImGui::Checkbox("Skeleton", &debugRigEnabled_);
-    ImGui::Checkbox("Labels", &debugLabelsEnabled_);
-    ImGui::SameLine();
-    ImGui::Checkbox("Local axes", &debugLocalAxesEnabled_);
-    ImGui::Checkbox("Bind pose", &debugBindPoseEnabled_);
-    ImGui::SameLine();
-    ImGui::Checkbox("Major only", &debugMajorBonesOnly_);
+    DrawEvaluationToolbar();
+    if (ImGui::BeginTabBar("EvaluationTabs")) {
+        const ImGuiTabItemFlags animationFlags = evaluationTabRequest_ == 0
+                                                      ? ImGuiTabItemFlags_SetSelected
+                                                      : ImGuiTabItemFlags_None;
+        const ImGuiTabItemFlags skeletonFlags = evaluationTabRequest_ == 1
+                                                     ? ImGuiTabItemFlags_SetSelected
+                                                     : ImGuiTabItemFlags_None;
+        const ImGuiTabItemFlags particleFlags = evaluationTabRequest_ == 2
+                                                     ? ImGuiTabItemFlags_SetSelected
+                                                     : ImGuiTabItemFlags_None;
+        if (ImGui::BeginTabItem(UiText("アニメーション###AnimationTab",
+                                      "Animation###AnimationTab"),
+                                nullptr, animationFlags)) {
+            DrawAnimationTab();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem(UiText("スケルトン###SkeletonTab",
+                                      "Skeleton###SkeletonTab"),
+                                nullptr, skeletonFlags)) {
+            DrawSkeletonTab(model);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem(UiText("パーティクル###ParticleTab",
+                                      "Particle###ParticleTab"),
+                                nullptr, particleFlags)) {
+            DrawParticleEditor();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem(UiText("モデル###ModelTab", "Model###ModelTab"))) {
+            DrawModelTab(model);
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+        evaluationTabRequest_ = -1;
+    }
+    ImGui::End();
+#endif
+}
 
+void GameScene::DrawEvaluationToolbar() {
+#ifdef _DEBUG
+    ImGui::TextUnformatted(UiText("表示プリセット:", "Presets:"));
+    ImGui::SameLine();
+    const char* presetNames[] = {
+        UiText("通常", "Clean"), UiText("骨格", "Skeleton"),
+        "LookAt", UiText("パーティクル", "Particle")};
+    for (uint32_t i = 0; i < static_cast<uint32_t>(std::size(presetNames)); ++i) {
+        if (i > 0u) {
+            ImGui::SameLine();
+        }
+        if (ImGui::Button(presetNames[i])) {
+            ApplyEvaluationPreset(i);
+        }
+    }
+    const char* languageNames[] = {"日本語", "English"};
+    int language = japaneseUiEnabled_ ? 0 : 1;
+    ImGui::SetNextItemWidth(110.0f);
+    if (ImGui::Combo("言語 / Language###UiLanguage", &language, languageNames,
+                     IM_ARRAYSIZE(languageNames))) {
+        japaneseUiEnabled_ = language == 0;
+    }
     ImGui::Separator();
-    ImGui::Text("Sneak blend: %.2f", sneakBlend_);
+#endif
+}
+
+void GameScene::DrawAnimationTab() {
+#ifdef _DEBUG
+    ImGui::SeparatorText(UiText("アニメーション補間", "Animation Blend"));
+    ImGui::Text(UiText("スニーク補間: %.2f", "Sneak blend: %.2f"), sneakBlend_);
     float manualBlend = manualSneakBlend_ >= 0.0f ? manualSneakBlend_ : sneakBlend_;
-    if (ImGui::SliderFloat("Manual blend", &manualBlend, 0.0f, 1.0f)) {
+    if (ImGui::SliderFloat(UiText("手動補間###ManualBlend", "Manual blend###ManualBlend"),
+                           &manualBlend, 0.0f, 1.0f)) {
         manualSneakBlend_ = manualBlend;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Auto")) {
+    if (ImGui::Button(UiText("自動###AutoBlend", "Auto###AutoBlend"))) {
         manualSneakBlend_ = -1.0f;
     }
 
-    ImGui::Separator();
-    ImGui::TextUnformatted(
-        "Keys: Shift Sneak / F1 Rig / F3 Name / F5 Bind / F6 Filter / F7 IK");
-    ImGui::TextUnformatted("Keys: [ ] Select bone");
-
-    ImGui::SeparatorText("Head LookAt IK");
-    ImGui::Checkbox("Enabled##LookAt", &lookAtIkEnabled_);
-    ImGui::DragFloat3("Target", &lookAtTarget_.x, 0.02f, -8.0f, 8.0f);
-    ImGui::SliderFloat("Weight", &lookAtWeight_, 0.0f, 1.0f);
-    ImGui::SliderFloat("Max angle", &lookAtMaxAngleDegrees_, 1.0f, 120.0f, "%.0f deg");
+    ImGui::SeparatorText(UiText("頭部 LookAt IK", "Head LookAt IK"));
+    ImGui::Checkbox(UiText("有効##LookAt", "Enabled##LookAt"), &lookAtIkEnabled_);
+    ImGui::SameLine();
+    ImGui::Checkbox(UiText("ターゲット表示###TargetDebug",
+                           "Target debug###TargetDebug"),
+                    &debugLookAtTargetEnabled_);
+    ImGui::DragFloat3(UiText("注視点###LookAtTarget", "Target###LookAtTarget"),
+                      &lookAtTarget_.x, 0.02f, -8.0f, 8.0f);
+    ImGui::SliderFloat(UiText("適用率###LookAtWeight", "Weight###LookAtWeight"),
+                       &lookAtWeight_, 0.0f, 1.0f);
+    ImGui::SliderFloat(UiText("最大角度###LookAtAngle", "Max angle###LookAtAngle"),
+                       &lookAtMaxAngleDegrees_, 1.0f, 120.0f, "%.0f deg");
     constexpr const char* kForwardAxes[] = {"+X", "-X", "+Y", "-Y", "+Z", "-Z"};
-    ImGui::Combo("Head forward", &lookAtForwardAxis_, kForwardAxes,
+    ImGui::Combo(UiText("頭の前方向###HeadForward", "Head forward###HeadForward"),
+                 &lookAtForwardAxis_, kForwardAxes,
                  IM_ARRAYSIZE(kForwardAxes));
+    ImGui::Spacing();
+    ImGui::TextDisabled(UiText("Shift: スニーク | F7: LookAt 切替",
+                               "Shift: Sneak | F7: LookAt ON/OFF"));
+#endif
+}
 
+void GameScene::DrawSkeletonTab(const Model* model) {
+#ifdef _DEBUG
+    ImGui::Checkbox(UiText("骨格###Skeleton", "Skeleton###Skeleton"), &debugRigEnabled_);
+    ImGui::SameLine();
+    ImGui::Checkbox(UiText("ボーン名###Labels", "Labels###Labels"), &debugLabelsEnabled_);
+    ImGui::Checkbox(UiText("ローカル軸###LocalAxes", "Local axes###LocalAxes"),
+                    &debugLocalAxesEnabled_);
+    ImGui::SameLine();
+    ImGui::Checkbox(UiText("バインド姿勢###BindPose", "Bind pose###BindPose"),
+                    &debugBindPoseEnabled_);
+    ImGui::SameLine();
+    ImGui::Checkbox(UiText("主要のみ###MajorOnly", "Major only###MajorOnly"),
+                    &debugMajorBonesOnly_);
+    ImGui::TextDisabled(UiText(
+        "F1: 骨格 | F3: 名前 | F5: バインド | F6: 絞込 | [ ]: 選択",
+        "F1: Rig | F3: Labels | F5: Bind | F6: Filter | [ ]: Select"));
+    ImGui::SeparatorText(UiText("ボーン情報", "Bone Inspector"));
     if (model == nullptr || model->bones.empty()) {
-        ImGui::TextUnformatted("No bones loaded.");
-        ImGui::End();
+        ImGui::TextUnformatted(UiText("ボーンが読み込まれていません。",
+                                      "No bones loaded."));
         return;
     }
 
@@ -1029,7 +1130,8 @@ void GameScene::DrawDebugPanel() {
     const BoneInfo &selected = model->bones[static_cast<size_t>(selectedBoneIndex_)];
     const std::string selectedName = DisplayBoneName(selected.name);
 
-    if (ImGui::BeginCombo("Selected", selectedName.c_str())) {
+    if (ImGui::BeginCombo(UiText("選択中###SelectedBone", "Selected###SelectedBone"),
+                          selectedName.c_str())) {
         for (int i = 0; i < static_cast<int>(model->bones.size()); ++i) {
             const std::string name = DisplayBoneName(model->bones[static_cast<size_t>(i)].name);
             const bool isSelected = selectedBoneIndex_ == i;
@@ -1045,11 +1147,13 @@ void GameScene::DrawDebugPanel() {
 
     const XMFLOAT3 position =
         BoneWorldPosition(static_cast<uint32_t>(selectedBoneIndex_));
-    ImGui::Text("Index: %d / %d", selectedBoneIndex_,
+    ImGui::Text(UiText("番号: %d / %d", "Index: %d / %d"), selectedBoneIndex_,
                 static_cast<int>(model->bones.size()) - 1);
-    ImGui::Text("Parent: %d", selected.parentIndex);
-    ImGui::Text("World: %.3f, %.3f, %.3f", position.x, position.y, position.z);
-    ImGui::Text("Children:");
+    ImGui::Text(UiText("親: %d", "Parent: %d"), selected.parentIndex);
+    ImGui::Text(UiText("ワールド座標: %.3f, %.3f, %.3f",
+                       "World: %.3f, %.3f, %.3f"),
+                position.x, position.y, position.z);
+    ImGui::TextUnformatted(UiText("子ボーン:", "Children:"));
     ImGui::Indent();
     bool hasChild = false;
     for (int i = 0; i < static_cast<int>(model->bones.size()); ++i) {
@@ -1060,12 +1164,78 @@ void GameScene::DrawDebugPanel() {
         }
     }
     if (!hasChild) {
-        ImGui::TextUnformatted("(none)");
+        ImGui::TextUnformatted(UiText("（なし）", "(none)"));
     }
     ImGui::Unindent();
-
-    ImGui::End();
+#else
+    (void)model;
 #endif
+}
+
+void GameScene::DrawModelTab(const Model* model) const {
+#ifdef _DEBUG
+    ImGui::SeparatorText(UiText("読込済みアセット", "Loaded Assets"));
+    ImGui::BulletText(UiText("キャラクター: %s", "Human: %s"),
+                      model != nullptr ? UiText("準備完了", "Ready")
+                                       : UiText("未読込", "Missing"));
+    ImGui::BulletText("BrainStem: %s",
+                      brainStemModelId_ != kInvalidResourceId
+                          ? UiText("準備完了", "Ready")
+                          : UiText("未読込", "Missing"));
+    if (model != nullptr) {
+        ImGui::Text(UiText("ボーン数: %zu", "Bones: %zu"), model->bones.size());
+        ImGui::Text(UiText("サブメッシュ数: %zu", "SubMeshes: %zu"),
+                    model->subMeshes.size());
+        ImGui::Text(UiText("アニメーション数: %zu", "Animations: %zu"),
+                    model->animations.size());
+    }
+
+    ImGui::SeparatorText(UiText("評価項目", "Evaluation Checklist"));
+    ImGui::BulletText(UiText("Compute Shader スキニング", "Compute Shader Skinning"));
+    ImGui::BulletText(UiText("マルチメッシュ / マルチマテリアル",
+                             "MultiMesh / MultiMaterial"));
+    ImGui::BulletText(UiText("アニメーション補間 + LookAt IK",
+                             "Animation Blend + LookAt IK"));
+    ImGui::BulletText(UiText("骨格 / ボーン名 / ローカル軸",
+                             "Skeleton / Labels / Local Axes"));
+    ImGui::BulletText(UiText("ボーンへのオブジェクト追従", "Bone Attachments"));
+    ImGui::BulletText(UiText("GPUパーティクル / フィールド / メッシュ / ライト",
+                             "GPU Particle / Fields / Mesh / Lights"));
+#else
+    (void)model;
+#endif
+}
+
+void GameScene::ApplyEvaluationPreset(uint32_t presetIndex) {
+    debugRigEnabled_ = presetIndex == 1u || presetIndex == 2u;
+    debugLabelsEnabled_ = presetIndex == 1u;
+    debugLocalAxesEnabled_ = presetIndex == 1u || presetIndex == 2u;
+    debugBindPoseEnabled_ = false;
+    debugMajorBonesOnly_ = presetIndex == 1u;
+    debugLookAtTargetEnabled_ = presetIndex == 2u;
+    if (presetIndex == 1u) {
+        evaluationTabRequest_ = 1;
+    } else if (presetIndex == 2u) {
+        evaluationTabRequest_ = 0;
+    } else if (presetIndex == 3u) {
+        evaluationTabRequest_ = 2;
+    }
+    if (presetIndex == 2u) {
+        lookAtIkEnabled_ = true;
+        if (headBone_ != kInvalidResourceId) {
+            selectedBoneIndex_ = static_cast<int>(headBone_);
+        }
+    }
+    if (presetIndex == 3u) {
+        rightParticleEmitterEnabled_ = true;
+        leftParticleEmitterEnabled_ = true;
+        handParticles_.SetEmitterEnabled(rightParticleEmitterId_, true);
+        handParticles_.SetEmitterEnabled(leftParticleEmitterId_, true);
+    }
+}
+
+const char* GameScene::UiText(const char* japanese, const char* english) const {
+    return japaneseUiEnabled_ ? japanese : english;
 }
 
 bool GameScene::DrawParticleEmitterControls(const char* label,
@@ -1077,42 +1247,69 @@ bool GameScene::DrawParticleEmitterControls(const char* label,
     }
 
     ImGui::PushID(label);
-    bool changed = ImGui::Checkbox("Enabled", &enabled);
-    constexpr const char* kShapeNames[] = {
+    bool changed = ImGui::Checkbox(UiText("有効###EmitterEnabled",
+                                          "Enabled###EmitterEnabled"),
+                                   &enabled);
+    constexpr const char* kShapeNamesEnglish[] = {
         "Point", "Sphere", "Box", "Ring", "Disk", "Arc", "Triangle", "Mesh surface"};
+    constexpr const char* kShapeNamesJapanese[] = {
+        "点", "球", "箱", "リング", "円盤", "円弧", "三角形", "メッシュ表面"};
+    const char* const* shapeNames =
+        japaneseUiEnabled_ ? kShapeNamesJapanese : kShapeNamesEnglish;
     int shape = static_cast<int>(settings.spawnShape);
-    if (ImGui::Combo("Shape", &shape, kShapeNames, IM_ARRAYSIZE(kShapeNames))) {
+    if (ImGui::Combo(UiText("発生形状###EmitterShape", "Shape###EmitterShape"),
+                     &shape, shapeNames, IM_ARRAYSIZE(kShapeNamesEnglish))) {
         settings.spawnShape = static_cast<ParticleSpawnShape>(shape);
         changed = true;
     }
 
     int burstCount = static_cast<int>(settings.burstCount);
-    if (ImGui::DragInt("Particles / emission", &burstCount, 1.0f, 1, 256)) {
+    if (ImGui::DragInt(UiText("1回の発生数###EmissionCount",
+                              "Particles / emission###EmissionCount"),
+                       &burstCount, 1.0f, 1, 256)) {
         settings.burstCount = static_cast<uint32_t>(burstCount);
         changed = true;
     }
     int particlesPerThread = static_cast<int>(settings.particlesPerThread);
-    if (ImGui::SliderInt("Particles / thread", &particlesPerThread, 1, 8)) {
+    if (ImGui::SliderInt(UiText("1スレッドの粒子数###ParticlesPerThread",
+                                "Particles / thread###ParticlesPerThread"),
+                         &particlesPerThread, 1, 8)) {
         settings.particlesPerThread = static_cast<uint32_t>(particlesPerThread);
         changed = true;
     }
 
-    changed |= ImGui::DragFloat("Emission rate", &settings.emitRate, 0.5f, 0.1f, 120.0f);
-    changed |= ImGui::DragFloat3("Spawn size", &settings.spawnOffsetScale.x, 0.01f, 0.0f, 2.0f);
-    changed |= ImGui::ColorEdit4("Color", &settings.tintColor.x);
-    changed |= ImGui::DragFloat("Lifetime", &settings.baseLifeTime, 0.01f, 0.05f, 8.0f);
-    changed |= ImGui::DragFloat("Radial speed", &settings.radialVelocity, 0.01f, 0.0f, 8.0f);
-    changed |= ImGui::DragFloat("Directional speed", &settings.directionalVelocity,
+    changed |= ImGui::DragFloat(UiText("発生頻度###EmissionRate", "Emission rate###EmissionRate"),
+                                &settings.emitRate, 0.5f, 0.1f, 120.0f);
+    changed |= ImGui::DragFloat3(UiText("発生範囲###SpawnSize", "Spawn size###SpawnSize"),
+                                 &settings.spawnOffsetScale.x, 0.01f, 0.0f, 2.0f);
+    changed |= ImGui::ColorEdit4(UiText("色###EmitterColor", "Color###EmitterColor"),
+                                 &settings.tintColor.x);
+    changed |= ImGui::DragFloat(UiText("寿命###Lifetime", "Lifetime###Lifetime"),
+                                &settings.baseLifeTime, 0.01f, 0.05f, 8.0f);
+    changed |= ImGui::DragFloat(UiText("放射速度###RadialSpeed",
+                                       "Radial speed###RadialSpeed"),
+                                &settings.radialVelocity, 0.01f, 0.0f, 8.0f);
+    changed |= ImGui::DragFloat(UiText("方向速度###DirectionalSpeed",
+                                       "Directional speed###DirectionalSpeed"),
+                                &settings.directionalVelocity,
                                 0.01f, 0.0f, 8.0f);
-    changed |= ImGui::DragFloat("Turbulence", &settings.turbulence, 0.01f, 0.0f, 5.0f);
-    changed |= ImGui::DragFloat("Stretch", &settings.stretch, 0.05f, 0.0f, 12.0f);
-    changed |= ImGui::SliderFloat("Light influence", &settings.lightInfluence, 0.0f, 1.0f);
-    constexpr const char* kLightNames[] = {"None", "Right hand", "Left hand"};
+    changed |= ImGui::DragFloat(UiText("乱流###Turbulence", "Turbulence###Turbulence"),
+                                &settings.turbulence, 0.01f, 0.0f, 5.0f);
+    changed |= ImGui::DragFloat(UiText("伸び###Stretch", "Stretch###Stretch"),
+                                &settings.stretch, 0.05f, 0.0f, 12.0f);
+    changed |= ImGui::SliderFloat(UiText("光の影響###LightInfluence",
+                                         "Light influence###LightInfluence"),
+                                  &settings.lightInfluence, 0.0f, 1.0f);
+    constexpr const char* kLightNamesEnglish[] = {"None", "Right hand", "Left hand"};
+    constexpr const char* kLightNamesJapanese[] = {"なし", "右手", "左手"};
+    const char* const* lightNames =
+        japaneseUiEnabled_ ? kLightNamesJapanese : kLightNamesEnglish;
     int lightSelection = settings.assignedLight < 2u
                              ? static_cast<int>(settings.assignedLight) + 1
                              : 0;
-    if (ImGui::Combo("Assigned light", &lightSelection, kLightNames,
-                     IM_ARRAYSIZE(kLightNames))) {
+    if (ImGui::Combo(UiText("割当ライト###AssignedLight",
+                            "Assigned light###AssignedLight"),
+                     &lightSelection, lightNames, IM_ARRAYSIZE(kLightNamesEnglish))) {
         settings.assignedLight = lightSelection > 0
                                      ? static_cast<uint32_t>(lightSelection - 1)
                                      : UINT32_MAX;
@@ -1130,26 +1327,37 @@ bool GameScene::DrawParticleEmitterControls(const char* label,
 
 bool GameScene::DrawParticleFieldControls() {
 #ifdef _DEBUG
-    if (!ImGui::CollapsingHeader("Fields", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (!ImGui::CollapsingHeader(UiText("フィールド###Fields", "Fields###Fields"),
+                                 ImGuiTreeNodeFlags_DefaultOpen)) {
         return false;
     }
 
-    constexpr const char* kFieldNames[] = {"Directional", "Radial", "Vortex", "Drag"};
+    constexpr const char* kFieldNamesEnglish[] = {"Directional", "Radial", "Vortex", "Drag"};
+    constexpr const char* kFieldNamesJapanese[] = {"一定方向", "放射", "渦", "抵抗"};
+    const char* const* fieldNames =
+        japaneseUiEnabled_ ? kFieldNamesJapanese : kFieldNamesEnglish;
     bool changed = false;
     for (size_t i = 0; i < particleFields_.size(); ++i) {
         ParticleFieldSettings& field = particleFields_[i];
         ImGui::PushID(static_cast<int>(i));
-        ImGui::SeparatorText(kFieldNames[static_cast<size_t>(field.type)]);
-        changed |= ImGui::Checkbox("Enabled", &field.enabled);
+        ImGui::SeparatorText(fieldNames[static_cast<size_t>(field.type)]);
+        changed |= ImGui::Checkbox(UiText("有効###FieldEnabled", "Enabled###FieldEnabled"),
+                                   &field.enabled);
         int type = static_cast<int>(field.type);
-        if (ImGui::Combo("Type", &type, kFieldNames, IM_ARRAYSIZE(kFieldNames))) {
+        if (ImGui::Combo(UiText("種類###FieldType", "Type###FieldType"), &type,
+                         fieldNames, IM_ARRAYSIZE(kFieldNamesEnglish))) {
             field.type = static_cast<ParticleFieldType>(type);
             changed = true;
         }
-        changed |= ImGui::DragFloat("Radius", &field.radius, 0.05f, 0.05f, 10.0f);
-        changed |= ImGui::DragFloat("Strength", &field.strength, 0.05f, -10.0f, 10.0f);
-        changed |= ImGui::DragFloat("Falloff", &field.falloff, 0.05f, 0.05f, 8.0f);
-        changed |= ImGui::DragFloat3("Direction", &field.direction.x, 0.02f, -1.0f, 1.0f);
+        changed |= ImGui::DragFloat(UiText("範囲###FieldRadius", "Radius###FieldRadius"),
+                                    &field.radius, 0.05f, 0.05f, 10.0f);
+        changed |= ImGui::DragFloat(UiText("強さ###FieldStrength", "Strength###FieldStrength"),
+                                    &field.strength, 0.05f, -10.0f, 10.0f);
+        changed |= ImGui::DragFloat(UiText("減衰###FieldFalloff", "Falloff###FieldFalloff"),
+                                    &field.falloff, 0.05f, 0.05f, 8.0f);
+        changed |= ImGui::DragFloat3(UiText("方向###FieldDirection",
+                                            "Direction###FieldDirection"),
+                                     &field.direction.x, 0.02f, -1.0f, 1.0f);
         ImGui::PopID();
     }
     return changed;
@@ -1161,38 +1369,39 @@ bool GameScene::DrawParticleFieldControls() {
 void GameScene::DrawParticleEditor() {
 #ifdef _DEBUG
     if (!handParticlesReady_) {
+        ImGui::TextUnformatted(UiText("GPUパーティクルを準備できませんでした。",
+                                      "GPU Particle is not ready."));
         return;
     }
 
-    const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
-    ImGui::SetNextWindowPos(ImVec2((std::max)(16.0f, displaySize.x - 396.0f), 16.0f),
-                            ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(380.0f, (std::min)(720.0f, displaySize.y - 32.0f)),
-                             ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("GPU Particle Editor")) {
-        ImGui::End();
-        return;
-    }
-
-    ImGui::Text("GPU threads: 256 | Emitters: %zu | Fields: %zu",
+    ImGui::BeginChild("ParticleEditorScroll", ImVec2(0.0f, 0.0f), false);
+    ImGui::Text(UiText("GPUスレッド: 256 | エミッター: %zu | フィールド: %zu",
+                       "GPU threads: 256 | Emitters: %zu | Fields: %zu"),
                 handParticles_.GetEmitterCount(), particleFields_.size());
-    ImGui::TextUnformatted(
-        "Point / Sphere / Box / Ring / Disk / Arc / Triangle / Mesh surface");
-    if (ImGui::Button("Clear particles")) {
+    ImGui::TextUnformatted(UiText(
+        "点 / 球 / 箱 / リング / 円盤 / 円弧 / 三角形 / メッシュ表面",
+        "Point / Sphere / Box / Ring / Disk / Arc / Triangle / Mesh surface"));
+    if (ImGui::Button(UiText("粒子を消去###ClearParticles",
+                             "Clear particles###ClearParticles"))) {
         handParticles_.Clear();
     }
     ImGui::SameLine();
-    if (ImGui::Checkbox("Trail", &particleTrailEnabled_)) {
+    if (ImGui::Checkbox(UiText("軌跡###Trail", "Trail###Trail"),
+                        &particleTrailEnabled_)) {
         particleMaterial_.params1.x = particleTrailEnabled_ ? 4.0f : 0.0f;
         handParticles_.SetMaterialSettings(particleMaterial_);
     }
 
-    if (DrawParticleEmitterControls("Right Hand Emitter", rightParticleEmitter_,
+    if (DrawParticleEmitterControls(UiText("右手エミッター###RightHandEmitter",
+                                           "Right Hand Emitter###RightHandEmitter"),
+                                    rightParticleEmitter_,
                                     rightParticleEmitterEnabled_)) {
         handParticles_.UpdateEmitter(rightParticleEmitterId_, rightParticleEmitter_);
         handParticles_.SetEmitterEnabled(rightParticleEmitterId_, rightParticleEmitterEnabled_);
     }
-    if (DrawParticleEmitterControls("Left Hand Emitter", leftParticleEmitter_,
+    if (DrawParticleEmitterControls(UiText("左手エミッター###LeftHandEmitter",
+                                           "Left Hand Emitter###LeftHandEmitter"),
+                                    leftParticleEmitter_,
                                     leftParticleEmitterEnabled_)) {
         handParticles_.UpdateEmitter(leftParticleEmitterId_, leftParticleEmitter_);
         handParticles_.SetEmitterEnabled(leftParticleEmitterId_, leftParticleEmitterEnabled_);
@@ -1202,24 +1411,39 @@ void GameScene::DrawParticleEditor() {
         handParticles_.SetFields(particleFields_);
     }
 
-    if (ImGui::CollapsingHeader("Lighting", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader(UiText("ライティング###Lighting",
+                                       "Lighting###Lighting"),
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
         bool lightingChanged = false;
-        lightingChanged |= ImGui::DragFloat3("Light direction", &particleLighting_.direction.x,
-                                             0.02f, -1.0f, 1.0f);
+        lightingChanged |= ImGui::DragFloat3(
+            UiText("ライト方向###LightDirection", "Light direction###LightDirection"),
+            &particleLighting_.direction.x, 0.02f, -1.0f, 1.0f);
         lightingChanged |=
-            ImGui::DragFloat("Light intensity", &particleLighting_.intensity, 0.05f, 0.0f, 8.0f);
-        lightingChanged |= ImGui::ColorEdit3("Light color", &particleLighting_.color.x);
-        lightingChanged |= ImGui::ColorEdit3("Ambient", &particleLighting_.ambient.x);
-        constexpr const char* kAssignedLightNames[] = {"Right hand light", "Left hand light"};
+            ImGui::DragFloat(UiText("ライト強度###LightIntensity",
+                                    "Light intensity###LightIntensity"),
+                             &particleLighting_.intensity, 0.05f, 0.0f, 8.0f);
+        lightingChanged |= ImGui::ColorEdit3(
+            UiText("ライト色###LightColor", "Light color###LightColor"),
+            &particleLighting_.color.x);
+        lightingChanged |= ImGui::ColorEdit3(
+            UiText("環境光###Ambient", "Ambient###Ambient"),
+            &particleLighting_.ambient.x);
+        const char* assignedLightNames[] = {
+            UiText("右手ライト", "Right hand light"),
+            UiText("左手ライト", "Left hand light")};
         for (size_t i = 0; i < particleLighting_.pointLightCount; ++i) {
             ImGui::PushID(static_cast<int>(i));
-            ImGui::SeparatorText(kAssignedLightNames[i]);
-            lightingChanged |= ImGui::ColorEdit3("Color", &particleLighting_.pointLights[i].color.x);
-            lightingChanged |= ImGui::DragFloat("Intensity",
+            ImGui::SeparatorText(assignedLightNames[i]);
+            lightingChanged |= ImGui::ColorEdit3(
+                UiText("色###PointLightColor", "Color###PointLightColor"),
+                &particleLighting_.pointLights[i].color.x);
+            lightingChanged |= ImGui::DragFloat(
+                UiText("強度###PointLightIntensity", "Intensity###PointLightIntensity"),
                                                 &particleLighting_.pointLights[i].intensity,
                                                 0.05f, 0.0f, 8.0f);
-            lightingChanged |= ImGui::DragFloat("Range", &particleLighting_.pointLights[i].range,
-                                                0.05f, 0.05f, 8.0f);
+            lightingChanged |= ImGui::DragFloat(
+                UiText("範囲###PointLightRange", "Range###PointLightRange"),
+                &particleLighting_.pointLights[i].range, 0.05f, 0.05f, 8.0f);
             ImGui::PopID();
         }
         if (lightingChanged) {
@@ -1227,7 +1451,7 @@ void GameScene::DrawParticleEditor() {
         }
     }
 
-    ImGui::End();
+    ImGui::EndChild();
 #endif
 }
 

@@ -145,9 +145,45 @@ class GameScene final : public BaseScene {
     void DrawLookAtDebug();
 
     /// <summary>
-    /// ボーン選択とアニメーション操作用のデバッグパネルを描画する。
+    /// 評価機能をタブ別に整理した統合デバッグパネルを描画する。
     /// </summary>
     void DrawDebugPanel();
+
+    /// <summary>
+    /// クリーン表示、Skeleton、LookAt、Particleの評価プリセットを描画する。
+    /// </summary>
+    void DrawEvaluationToolbar();
+
+    /// <summary>
+    /// アニメーション補間とHead LookAt IKの操作UIを描画する。
+    /// </summary>
+    void DrawAnimationTab();
+
+    /// <summary>
+    /// ボーン表示設定、選択、階層情報の操作UIを描画する。
+    /// </summary>
+    /// <param name="model">表示対象のスケルトンを保持するモデル。</param>
+    void DrawSkeletonTab(const Model* model);
+
+    /// <summary>
+    /// 読み込んだモデルと評価課題の達成状況を表示する。
+    /// </summary>
+    /// <param name="model">状態を表示するキャラクターモデル。</param>
+    void DrawModelTab(const Model* model) const;
+
+    /// <summary>
+    /// 指定した評価表示プリセットをデバッグ状態へ反映する。
+    /// </summary>
+    /// <param name="presetIndex">0=Clean、1=Skeleton、2=LookAt、3=Particle。</param>
+    void ApplyEvaluationPreset(uint32_t presetIndex);
+
+    /// <summary>
+    /// 現在のUI言語に対応する日本語または英語の文字列を返す。
+    /// </summary>
+    /// <param name="japanese">日本語表示で使用するUTF-8文字列。</param>
+    /// <param name="english">英語表示で使用する文字列。</param>
+    /// <returns>現在選択されている言語の文字列。</returns>
+    const char* UiText(const char* japanese, const char* english) const;
 
     /// <summary>
     /// Emitter、Field、Trail、ライトを操作するGPU Particle Editorを描画する。
@@ -299,9 +335,13 @@ class GameScene final : public BaseScene {
     DirectX::XMFLOAT3 rightFootWorld_{0.0f, 0.0f, 0.0f};
     DirectX::XMFLOAT3 leftFootWorld_{0.0f, 0.0f, 0.0f};
 
-    bool debugRigEnabled_ = true;
-    bool debugLabelsEnabled_ = true;
-    bool debugLocalAxesEnabled_ = true;
+    bool evaluationPanelVisible_ = false;
+    int evaluationTabRequest_ = -1;
+    bool japaneseUiEnabled_ = true;
+    bool debugRigEnabled_ = false;
+    bool debugLabelsEnabled_ = false;
+    bool debugLocalAxesEnabled_ = false;
+    bool debugLookAtTargetEnabled_ = false;
     bool debugBindPoseEnabled_ = false;
     bool debugMajorBonesOnly_ = false;
     int selectedBoneIndex_ = -1;
