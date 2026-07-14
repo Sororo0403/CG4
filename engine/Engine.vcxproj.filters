@@ -743,6 +743,9 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)include\particle\GPUParticleSystem.h">
       <Filter>include\particle</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\particle\ParticleFieldSettings.h">
+      <Filter>include\particle</Filter>
+    </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)include\particle\ParticleEmitterSettings.h">
       <Filter>include\particle</Filter>
     </ClInclude>

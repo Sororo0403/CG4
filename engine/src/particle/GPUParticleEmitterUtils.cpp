@@ -63,6 +63,7 @@ ParticleEmitterSettings NormalizeParticleEmitterSettings(ParticleEmitterSettings
     settings.maxParticles = (std::max)(1u, settings.maxParticles);
     settings.emitRate = (std::max)(0.0f, settings.emitRate);
     settings.burstCount = (std::max)(1u, settings.burstCount);
+    settings.particlesPerThread = (std::clamp)(settings.particlesPerThread, 1u, 8u);
     settings.position = SanitizeFinite(settings.position, {0.0f, 0.0f, 0.0f});
     settings.spawnOffsetScale = SanitizeFinite(settings.spawnOffsetScale, {0.0f, 0.0f, 0.0f});
     settings.spawnShapeParams = SanitizeFinite(settings.spawnShapeParams, {0.0f, 0.0f, 0.0f, 0.0f});
@@ -87,6 +88,7 @@ ParticleEmitterSettings NormalizeParticleEmitterSettings(ParticleEmitterSettings
     settings.fadeInTime = SanitizeFinite(settings.fadeInTime, 0.0f);
     settings.fadeOutTime = SanitizeFinite(settings.fadeOutTime, 0.0f);
     settings.fadeOutPower = SanitizeFinite(settings.fadeOutPower, 1.0f);
+    settings.lightInfluence = SanitizeFinite(settings.lightInfluence, 0.0f);
     settings.rotationSpeed = SanitizeFinite(settings.rotationSpeed, 0.0f);
     settings.spawnOffsetScale.x = (std::max)(0.0f, settings.spawnOffsetScale.x);
     settings.spawnOffsetScale.y = (std::max)(0.0f, settings.spawnOffsetScale.y);
@@ -115,6 +117,15 @@ ParticleEmitterSettings NormalizeParticleEmitterSettings(ParticleEmitterSettings
     settings.fadeInTime = (std::max)(0.0f, settings.fadeInTime);
     settings.fadeOutTime = (std::max)(0.0f, settings.fadeOutTime);
     settings.fadeOutPower = (std::max)(0.01f, settings.fadeOutPower);
+    settings.lightInfluence = (std::clamp)(settings.lightInfluence, 0.0f, 1.0f);
+    if (settings.assignedLight >= 4u) {
+        settings.assignedLight = UINT32_MAX;
+    }
+    for (ParticleMeshTriangle& triangle : settings.meshTriangles) {
+        triangle.a = SanitizeFinite(triangle.a, {0.0f, 0.0f, 0.0f});
+        triangle.b = SanitizeFinite(triangle.b, {0.0f, 0.0f, 0.0f});
+        triangle.c = SanitizeFinite(triangle.c, {0.0f, 0.0f, 0.0f});
+    }
     settings.tintColor.w = (std::clamp)(settings.tintColor.w, 0.0f, 1.0f);
     return settings;
 }

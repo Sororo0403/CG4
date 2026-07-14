@@ -1,16 +1,5 @@
 #include "GPUParticle.hlsli"
 
-cbuffer ParticleDrawParams : register(b0)
-{
-    float4x4 viewProjection;
-    float4 cameraRight;
-    float4 cameraUp;
-    float4 tintColor;
-    float4 atlasInfo;
-    float4 materialParams0;
-    float4 materialParams1;
-};
-
 StructuredBuffer<Particle> gParticles : register(t0);
 StructuredBuffer<uint> gActiveIndices : register(t3);
 
@@ -48,6 +37,8 @@ ParticleVSOutput main(uint vertexId : SV_VertexID, uint instanceId : SV_Instance
         inactiveOutput.color = float4(0.0f, 0.0f, 0.0f, 0.0f);
         inactiveOutput.params = float2(1.0f, 0.0f);
         inactiveOutput.worldPosition = float3(0.0f, 0.0f, 0.0f);
+        inactiveOutput.lightInfluence = 0.0f;
+        inactiveOutput.assignedLight = 0xFFFFFFFFu;
         return inactiveOutput;
     }
 
@@ -233,5 +224,8 @@ ParticleVSOutput main(uint vertexId : SV_VertexID, uint instanceId : SV_Instance
     output.color = particle.color * tintColor;
     output.params = float2(ageRate, particle.params1.z);
     output.worldPosition = worldPosition;
+    uint packedAssignment = (uint) floor(max(0.0f, particle.params4.w) * 0.5f);
+    output.lightInfluence = saturate(particle.params4.w - (float) packedAssignment * 2.0f);
+    output.assignedLight = packedAssignment > 0u ? packedAssignment - 1u : 0xFFFFFFFFu;
     return output;
 }

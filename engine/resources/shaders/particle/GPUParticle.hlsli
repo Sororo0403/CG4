@@ -26,6 +26,25 @@ struct ParticleVSOutput
     float2 params : TEXCOORD1;
     float2 localUv : TEXCOORD2;
     float3 worldPosition : TEXCOORD3;
+    float lightInfluence : TEXCOORD4;
+    nointerpolation uint assignedLight : TEXCOORD5;
+};
+
+cbuffer ParticleDrawParams : register(b0)
+{
+    float4x4 viewProjection;
+    float4 cameraRight;
+    float4 cameraUp;
+    float4 tintColor;
+    float4 atlasInfo;
+    float4 materialParams0;
+    float4 materialParams1;
+    float4 lightDirectionIntensity;
+    float4 lightColor;
+    float4 ambientColor;
+    float4 pointLightPositionRange[4];
+    float4 pointLightColorIntensity[4];
+    uint4 lightConfig;
 };
 
 #endif // GPU_PARTICLE_HLSLI

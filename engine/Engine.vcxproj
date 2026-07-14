@@ -250,6 +250,7 @@ if exist "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxil.dll" copy /Y "$(WindowsSdk
     <ClInclude Include="$(MSBuildThisFileDirectory)include\collision\CollisionUtil.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\collision\OBB.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\particle\GPUParticleSystem.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)include\particle\ParticleFieldSettings.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\particle\internal\GPUParticleSystemShared.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\particle\ParticleEmitterSettings.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)include\model\Transform.h" />

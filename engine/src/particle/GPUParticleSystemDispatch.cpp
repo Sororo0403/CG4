@@ -14,6 +14,19 @@ using GpuParticleSystemInternal::kParticleThreadCount;
 
 namespace {
 
+constexpr uint32_t kEmitterCountMask = 0x00FFFFFFu;
+
+float PackParticleLight(const ParticleEmitterSettings& settings) {
+    const uint32_t assignment = settings.assignedLight < 4u ? settings.assignedLight + 1u : 0u;
+    return static_cast<float>(assignment * 2u) + settings.lightInfluence;
+}
+
+uint32_t PackEmitterDispatchConfig(uint32_t particleCount, uint32_t particlesPerThread) {
+    const uint32_t count = (std::min)(particleCount, kEmitterCountMask);
+    const uint32_t batch = (std::clamp)(particlesPerThread, 1u, 8u);
+    return count | ((batch - 1u) << 24u);
+}
+
 template <typename ResourceState>
 bool HasUpdateDispatchCoreResources(const ResourceState& resources) {
     const bool required[] = {
@@ -274,7 +287,11 @@ void GPUParticleSystem::RecordUpdateDispatch(const EmitterForGPU& emitter,
     cmd->SetComputeRootDescriptorTable(8, explicitFrame.srvGpuHandle);
     const uint32_t dispatchCount =
         dispatchParticleCount == 0u ? maxParticles_ : dispatchParticleCount;
-    cmd->Dispatch((dispatchCount + kParticleThreadCount - 1u) / kParticleThreadCount, 1, 1);
+    const uint32_t batchSize =
+        emitter.position.w == 0.0f ? 1u : ((emitter.config.z >> 24u) + 1u);
+    const uint32_t workerCount =
+        (dispatchCount + batchSize - 1u) / batchSize;
+    cmd->Dispatch((workerCount + kParticleThreadCount - 1u) / kParticleThreadCount, 1, 1);
 }
 
 void GPUParticleSystem::RecordExplicitSpawnDispatch(uint32_t spawnCount) {
@@ -282,8 +299,10 @@ void GPUParticleSystem::RecordExplicitSpawnDispatch(uint32_t spawnCount) {
         return;
     }
     EmitterForGPU emitter = BuildEmitterForGPU(emitterSettings_, 2u);
-    emitter.config.z = (std::min)(spawnCount, maxParticles_);
-    RecordUpdateDispatch(emitter, emitter.config.z);
+    const uint32_t emitCount = (std::min)(spawnCount, maxParticles_);
+    emitter.config.z =
+        PackEmitterDispatchConfig(emitCount, emitterSettings_.particlesPerThread);
+    RecordUpdateDispatch(emitter, emitCount);
 }
 
 GPUParticleSystem::EmitterForGPU GPUParticleSystem::BuildEmitterForGPU(
@@ -294,7 +313,7 @@ GPUParticleSystem::EmitterForGPU GPUParticleSystem::BuildEmitterForGPU(
     emitter.spawnOffsetScale = {settings.spawnOffsetScale.x, settings.spawnOffsetScale.y,
                                 settings.spawnOffsetScale.z, settings.spawnShapeParams.x};
     emitter.basisRight = {settings.basisRight.x, settings.basisRight.y, settings.basisRight.z,
-                          0.0f};
+                          PackParticleLight(settings)};
     emitter.basisUp = {settings.basisUp.x, settings.basisUp.y, settings.basisUp.z, 0.0f};
     emitter.basisForward = {settings.basisForward.x, settings.basisForward.y,
                             settings.basisForward.z, 0.0f};
@@ -317,6 +336,8 @@ GPUParticleSystem::EmitterForGPU GPUParticleSystem::BuildEmitterForGPU(
     emitter.tintColor = settings.tintColor;
     emitter.config = {static_cast<uint32_t>(settings.emissionType),
                       static_cast<uint32_t>(settings.spawnShape),
-                      (std::min)({settings.burstCount, settings.maxParticles, maxParticles_})};
+                      PackEmitterDispatchConfig(
+                          (std::min)({settings.burstCount, settings.maxParticles, maxParticles_}),
+                          settings.particlesPerThread)};
     return emitter;
 }

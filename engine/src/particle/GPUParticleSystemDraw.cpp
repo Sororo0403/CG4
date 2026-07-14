@@ -70,6 +70,19 @@ void GPUParticleSystem::UpdateDrawConstants(const Camera& camera, ConstantFrame&
         static_cast<float>((std::max)(1u, emitterSettings_.atlasRows)), 0.0f, 0.0f};
     constantFrame.mappedDrawCB->materialParams0 = materialSettings_.params0;
     constantFrame.mappedDrawCB->materialParams1 = materialSettings_.params1;
+    constantFrame.mappedDrawCB->lightDirectionIntensity = {
+        lightingSettings_.direction.x, lightingSettings_.direction.y,
+        lightingSettings_.direction.z, lightingSettings_.intensity};
+    constantFrame.mappedDrawCB->lightColor = lightingSettings_.color;
+    constantFrame.mappedDrawCB->ambientColor = lightingSettings_.ambient;
+    for (size_t i = 0; i < lightingSettings_.pointLights.size(); ++i) {
+        const GPUParticleLightingSettings::PointLight& light = lightingSettings_.pointLights[i];
+        constantFrame.mappedDrawCB->pointLightPositionRange[i] = {
+            light.position.x, light.position.y, light.position.z, light.range};
+        constantFrame.mappedDrawCB->pointLightColorIntensity[i] = {
+            light.color.x, light.color.y, light.color.z, light.intensity};
+    }
+    constantFrame.mappedDrawCB->lightConfig = {lightingSettings_.pointLightCount, 0u, 0u, 0u};
 }
 
 bool GPUParticleSystem::ResolveDrawTextureHandles(

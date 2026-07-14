@@ -2,8 +2,10 @@
 #include "camera/Camera.h"
 #include "core/ResourceHandle.h"
 #include "particle/ParticleEmitterSettings.h"
+#include "particle/ParticleFieldSettings.h"
 
 #include <DirectXMath.h>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <d3d12.h>
@@ -11,6 +13,8 @@
 #include <memory>
 #include <string>
 #include <vector>
+
+inline constexpr uint32_t kInvalidParticleEmitterId = UINT32_MAX;
 
 class DirectXCommon;
 class SrvManager;
@@ -27,6 +31,22 @@ struct GPUParticleMaterialSettings {
     DirectX::XMFLOAT4 params1{0.0f, 0.0f, 0.0f, 0.0f};
     uint32_t noiseTextureId = kInvalidResourceId;
     BlendMode blendMode = BlendMode::Alpha;
+};
+
+struct GPUParticleLightingSettings {
+    struct PointLight {
+        DirectX::XMFLOAT3 position{0.0f, 0.0f, 0.0f};
+        float range = 1.0f;
+        DirectX::XMFLOAT4 color{1.0f, 1.0f, 1.0f, 1.0f};
+        float intensity = 1.0f;
+    };
+
+    DirectX::XMFLOAT3 direction{-0.35f, -0.95f, 0.25f};
+    float intensity = 1.0f;
+    DirectX::XMFLOAT4 color{1.0f, 0.96f, 0.9f, 1.0f};
+    DirectX::XMFLOAT4 ambient{0.2f, 0.22f, 0.26f, 1.0f};
+    std::array<PointLight, 4> pointLights{};
+    uint32_t pointLightCount = 0;
 };
 
 struct GPUParticleExplicitSpawn {
@@ -110,6 +130,7 @@ public:
     /// 描画用PixelShaderとマテリアル定数を設定する
     /// </summary>
     void SetMaterialSettings(const GPUParticleMaterialSettings& settings);
+    void SetLightingSettings(const GPUParticleLightingSettings& settings);
 
     /// <summary>
     /// TextureManager経由でテクスチャを読み込み、描画テクスチャを切り替える
@@ -126,11 +147,31 @@ public:
     /// </summary>
     size_t EmitParticles(const std::vector<GPUParticleExplicitSpawn>& particles);
 
+    uint32_t AddEmitter(const ParticleEmitterSettings& settings, bool enabled = true);
+    bool UpdateEmitter(uint32_t emitterId, const ParticleEmitterSettings& settings);
+    bool RemoveEmitter(uint32_t emitterId);
+    bool SetEmitterEnabled(uint32_t emitterId, bool enabled);
+    bool GetEmitterSettings(uint32_t emitterId, ParticleEmitterSettings& settings) const;
+    size_t GetEmitterCount() const {
+        return managedEmitters_.size();
+    }
+
+    void SetFields(const std::vector<ParticleFieldSettings>& fields);
+    const std::vector<ParticleFieldSettings>& GetFields() const {
+        return fields_;
+    }
+
 private:
     class InitializationGuard;
     struct ConstantFrame;
     struct ExplicitSpawnFrame;
     struct ResourceState;
+    struct ManagedEmitter {
+        uint32_t id = kInvalidParticleEmitterId;
+        ParticleEmitterSettings settings{};
+        float frequencyTime = 0.0f;
+        bool enabled = true;
+    };
 
     struct ParticleForGPU {
         DirectX::XMFLOAT3 translate{};
@@ -150,6 +191,13 @@ private:
 
     struct UpdateConstantBufferData {
         DirectX::XMFLOAT4 time{};
+        struct FieldForGPU {
+            DirectX::XMFLOAT4 positionRadius{};
+            DirectX::XMFLOAT4 directionStrength{};
+            DirectX::XMFLOAT4 params{};
+        };
+        std::array<FieldForGPU, 8> fields{};
+        DirectX::XMUINT4 fieldConfig{};
     };
 
     struct EmitterForGPU {
@@ -177,6 +225,12 @@ private:
         DirectX::XMFLOAT4 atlasInfo{1.0f, 1.0f, 0.0f, 0.0f};
         DirectX::XMFLOAT4 materialParams0{};
         DirectX::XMFLOAT4 materialParams1{};
+        DirectX::XMFLOAT4 lightDirectionIntensity{};
+        DirectX::XMFLOAT4 lightColor{};
+        DirectX::XMFLOAT4 ambientColor{};
+        std::array<DirectX::XMFLOAT4, 4> pointLightPositionRange{};
+        std::array<DirectX::XMFLOAT4, 4> pointLightColorIntensity{};
+        DirectX::XMUINT4 lightConfig{};
     };
 
     /// <summary>
@@ -236,6 +290,11 @@ private:
     bool EnsureExplicitSpawnFrameCapacity(ExplicitSpawnFrame& frame, uint32_t capacity);
     bool UploadExplicitParticles(const std::vector<GPUParticleExplicitSpawn>& particles,
                                  uint32_t& uploadedCount);
+    void UpdateManagedEmitters(float deltaTime);
+    void QueueContinuousEmitter(const ParticleEmitterSettings& settings, float deltaTime,
+                                float& frequencyTime);
+    void QueueMeshSurfaceEmission(const ParticleEmitterSettings& settings);
+    void UpdateFieldConstants();
 
     EmitterForGPU BuildEmitterForGPU(const ParticleEmitterSettings& settings, uint32_t emit) const;
     ConstantFrame* GetCurrentConstantFrame();
@@ -276,7 +335,12 @@ private:
     ParticleEmitterSettings emitterSettings_{};
     std::deque<ParticleEmitterSettings> pendingEmitSettings_;
     std::vector<GPUParticleExplicitSpawn> pendingExplicitParticles_;
+    std::vector<ManagedEmitter> managedEmitters_;
+    std::vector<ParticleFieldSettings> fields_;
+    uint32_t nextEmitterId_ = 1u;
     GPUParticleMaterialSettings materialSettings_{};
+    GPUParticleLightingSettings lightingSettings_{};
+    uint32_t meshRandomState_ = 0xA341316Cu;
 
     std::unique_ptr<ResourceState> resources_;
 };

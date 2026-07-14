@@ -1,6 +1,7 @@
 #pragma once
 #include <DirectXMath.h>
 #include <cstdint>
+#include <vector>
 
 enum class ParticleEmissionType : uint32_t {
     Burst = 0,
@@ -14,6 +15,14 @@ enum class ParticleSpawnShape : uint32_t {
     Ring = 3,
     Disk = 4,
     Arc = 5,
+    Triangle = 6,
+    Mesh = 7,
+};
+
+struct ParticleMeshTriangle {
+    DirectX::XMFLOAT3 a{0.0f, 0.0f, 0.0f};
+    DirectX::XMFLOAT3 b{0.0f, 0.0f, 0.0f};
+    DirectX::XMFLOAT3 c{0.0f, 0.0f, 0.0f};
 };
 
 struct ParticleEmitterSettings {
@@ -25,8 +34,10 @@ struct ParticleEmitterSettings {
 
     float emitRate = 0.0f;
     uint32_t burstCount = 32;
+    uint32_t particlesPerThread = 1;
     DirectX::XMFLOAT3 spawnOffsetScale{0.1f, 0.1f, 0.1f};
     DirectX::XMFLOAT4 spawnShapeParams{0.0f, 0.0f, 0.0f, 0.0f};
+    std::vector<ParticleMeshTriangle> meshTriangles;
 
     DirectX::XMFLOAT4 tintColor{1.0f, 1.0f, 1.0f, 1.0f};
     DirectX::XMFLOAT3 direction{0.0f, 1.0f, 0.0f};
@@ -59,4 +70,6 @@ struct ParticleEmitterSettings {
     float fadeInTime = 0.0f;
     float fadeOutTime = 0.2f;
     float fadeOutPower = 1.0f;
+    float lightInfluence = 0.0f;
+    uint32_t assignedLight = UINT32_MAX;
 };

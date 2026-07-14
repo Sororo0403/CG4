@@ -16,7 +16,6 @@ using namespace DirectX;
 namespace {
 
 constexpr float kMoveSpeed = 2.2f;
-constexpr float kParticleEmitInterval = 1.0f / 18.0f;
 constexpr float kWeaponHandleLength = 0.52f;
 constexpr float kWeaponGuardWidth = 0.38f;
 constexpr float kWeaponGuardThickness = 0.055f;
@@ -189,6 +188,19 @@ XMFLOAT4 QuaternionFromAxes(const XMFLOAT3& xAxis, const XMFLOAT3& yAxis,
     return result;
 }
 
+std::vector<ParticleMeshTriangle> MakeOctahedronParticleMesh() {
+    constexpr XMFLOAT3 top{0.0f, 1.0f, 0.0f};
+    constexpr XMFLOAT3 bottom{0.0f, -1.0f, 0.0f};
+    constexpr XMFLOAT3 right{1.0f, 0.0f, 0.0f};
+    constexpr XMFLOAT3 left{-1.0f, 0.0f, 0.0f};
+    constexpr XMFLOAT3 front{0.0f, 0.0f, 1.0f};
+    constexpr XMFLOAT3 back{0.0f, 0.0f, -1.0f};
+    return {{top, right, front},    {top, front, left},
+            {top, left, back},      {top, back, right},
+            {bottom, front, right}, {bottom, left, front},
+            {bottom, back, left},   {bottom, right, back}};
+}
+
 } // namespace
 
 GameScene::~GameScene() {
@@ -323,10 +335,73 @@ void GameScene::InitializeParticles() {
         return;
     }
 
-    GPUParticleMaterialSettings material{};
-    material.blendMode = GPUParticleMaterialSettings::BlendMode::Additive;
-    material.params0 = {0.0f, 1.0f, 0.0f, 0.0f};
-    handParticles_.SetMaterialSettings(material);
+    particleMaterial_.blendMode = GPUParticleMaterialSettings::BlendMode::Additive;
+    particleMaterial_.params0 = {0.0f, 1.0f, 0.0f, 0.0f};
+    handParticles_.SetMaterialSettings(particleMaterial_);
+    handParticles_.SetLightingSettings(particleLighting_);
+
+    rightParticleEmitter_.maxParticles = 8192u;
+    rightParticleEmitter_.emissionType = ParticleEmissionType::Continuous;
+    rightParticleEmitter_.spawnShape = ParticleSpawnShape::Sphere;
+    rightParticleEmitter_.emitRate = 24.0f;
+    rightParticleEmitter_.burstCount = 8u;
+    rightParticleEmitter_.particlesPerThread = 4u;
+    rightParticleEmitter_.spawnOffsetScale = {0.06f, 0.06f, 0.06f};
+    rightParticleEmitter_.tintColor = {0.25f, 0.65f, 1.0f, 0.92f};
+    rightParticleEmitter_.direction = {0.0f, 1.0f, 0.15f};
+    rightParticleEmitter_.radialVelocity = 0.24f;
+    rightParticleEmitter_.directionalVelocity = 0.32f;
+    rightParticleEmitter_.baseLifeTime = 0.72f;
+    rightParticleEmitter_.lifeTimeRandom = 0.22f;
+    rightParticleEmitter_.startScale = 0.055f;
+    rightParticleEmitter_.endScale = 0.0f;
+    rightParticleEmitter_.scaleRandom = 0.025f;
+    rightParticleEmitter_.stretch = 1.8f;
+    rightParticleEmitter_.acceleration = {0.0f, 0.18f, 0.0f};
+    rightParticleEmitter_.turbulence = 0.30f;
+    rightParticleEmitter_.damping = 0.985f;
+    rightParticleEmitter_.fadeInTime = 0.02f;
+    rightParticleEmitter_.fadeOutTime = 0.24f;
+    rightParticleEmitter_.lightInfluence = 1.0f;
+    rightParticleEmitter_.assignedLight = 0u;
+    rightParticleEmitter_.meshTriangles = MakeOctahedronParticleMesh();
+
+    leftParticleEmitter_ = rightParticleEmitter_;
+    leftParticleEmitter_.spawnShape = ParticleSpawnShape::Mesh;
+    leftParticleEmitter_.spawnOffsetScale = {0.12f, 0.12f, 0.02f};
+    leftParticleEmitter_.tintColor = {1.0f, 0.36f, 0.10f, 0.92f};
+    leftParticleEmitter_.direction = {0.0f, 0.8f, -0.2f};
+    leftParticleEmitter_.assignedLight = 1u;
+
+    particleLighting_.pointLightCount = 2u;
+    particleLighting_.pointLights[0].range = 1.25f;
+    particleLighting_.pointLights[0].color = {0.20f, 0.55f, 1.0f, 1.0f};
+    particleLighting_.pointLights[0].intensity = 2.4f;
+    particleLighting_.pointLights[1].range = 1.25f;
+    particleLighting_.pointLights[1].color = {1.0f, 0.28f, 0.06f, 1.0f};
+    particleLighting_.pointLights[1].intensity = 2.4f;
+    handParticles_.SetLightingSettings(particleLighting_);
+
+    rightParticleEmitterId_ = handParticles_.AddEmitter(rightParticleEmitter_);
+    leftParticleEmitterId_ = handParticles_.AddEmitter(leftParticleEmitter_);
+
+    particleFields_.resize(4);
+    particleFields_[0].type = ParticleFieldType::Directional;
+    particleFields_[0].direction = {0.0f, 1.0f, 0.0f};
+    particleFields_[0].strength = 0.12f;
+    particleFields_[1].type = ParticleFieldType::Radial;
+    particleFields_[1].enabled = false;
+    particleFields_[1].radius = 2.0f;
+    particleFields_[1].strength = 1.0f;
+    particleFields_[2].type = ParticleFieldType::Vortex;
+    particleFields_[2].enabled = false;
+    particleFields_[2].radius = 2.0f;
+    particleFields_[2].strength = 1.2f;
+    particleFields_[3].type = ParticleFieldType::Drag;
+    particleFields_[3].enabled = false;
+    particleFields_[3].radius = 2.0f;
+    particleFields_[3].strength = 1.5f;
+    handParticles_.SetFields(particleFields_);
 }
 
 void GameScene::Update() {
@@ -338,7 +413,7 @@ void GameScene::Update() {
     UpdateMovement(deltaTime);
     UpdateModelAnimation(deltaTime);
     UpdateAttachmentPoints();
-    EmitHandParticles(deltaTime);
+    UpdateParticleEmitters();
 
     if (handParticlesReady_) {
         handParticles_.Update(deltaTime);
@@ -505,39 +580,23 @@ void GameScene::UpdateAttachmentPoints() {
     leftFootWorld_ = BoneWorldPosition(leftFootBone_);
 }
 
-void GameScene::EmitHandParticles(float deltaTime) {
+void GameScene::UpdateParticleEmitters() {
     if (!handParticlesReady_) {
         return;
     }
+    rightParticleEmitter_.position = rightHandWorld_;
+    leftParticleEmitter_.position = leftHandWorld_;
+    handParticles_.UpdateEmitter(rightParticleEmitterId_, rightParticleEmitter_);
+    handParticles_.UpdateEmitter(leftParticleEmitterId_, leftParticleEmitter_);
+    particleLighting_.pointLights[0].position = rightHandWorld_;
+    particleLighting_.pointLights[1].position = leftHandWorld_;
+    handParticles_.SetLightingSettings(particleLighting_);
 
-    particleEmitAccumulator_ += deltaTime;
-    if (particleEmitAccumulator_ < kParticleEmitInterval) {
-        return;
+    const XMFLOAT3 fieldCenter = Add(characterTransform_.position, {0.0f, 0.9f, 0.0f});
+    for (ParticleFieldSettings& field : particleFields_) {
+        field.position = fieldCenter;
     }
-    particleEmitAccumulator_ = 0.0f;
-
-    ParticleEmitterSettings emit{};
-    emit.position = rightHandWorld_;
-    emit.maxParticles = 8192u;
-    emit.emissionType = ParticleEmissionType::Burst;
-    emit.spawnShape = ParticleSpawnShape::Sphere;
-    emit.burstCount = 24u;
-    emit.spawnOffsetScale = {0.05f, 0.05f, 0.05f};
-    emit.tintColor = {0.38f, 0.72f, 1.0f, 0.88f};
-    emit.direction = {0.0f, 1.0f, 0.15f};
-    emit.radialVelocity = 0.24f;
-    emit.directionalVelocity = 0.34f;
-    emit.baseLifeTime = 0.48f;
-    emit.lifeTimeRandom = 0.18f;
-    emit.startScale = 0.055f;
-    emit.endScale = 0.0f;
-    emit.scaleRandom = 0.025f;
-    emit.acceleration = {0.0f, 0.22f, 0.0f};
-    emit.turbulence = 0.36f;
-    emit.damping = 0.985f;
-    emit.fadeInTime = 0.02f;
-    emit.fadeOutTime = 0.24f;
-    handParticles_.EmitOnce(emit);
+    handParticles_.SetFields(particleFields_);
 }
 
 void GameScene::SubmitLighting(LightingScene &lightingScene) {
@@ -570,6 +629,7 @@ void GameScene::DrawPostProcessOverlay() {
     DrawBoneDebugOverlay();
     DrawBoneLabels();
     DrawDebugPanel();
+    DrawParticleEditor();
 }
 
 void GameScene::DrawCharacter() {
@@ -736,6 +796,40 @@ void GameScene::DrawAnimatedBoneOverlay(const Model& model) {
         DrawScreenBoneLine(BoneWorldPosition(static_cast<uint32_t>(bone.parentIndex)), child,
                            color, selected ? 4.0f : 2.5f);
     }
+    DrawSelectedBoneAxes(model);
+#else
+    (void)model;
+#endif
+}
+
+void GameScene::DrawSelectedBoneAxes(const Model& model) {
+#ifdef _DEBUG
+    if (!debugLocalAxesEnabled_ || selectedBoneIndex_ < 0 ||
+        selectedBoneIndex_ >= static_cast<int>(model.bones.size())) {
+        return;
+    }
+
+    constexpr float kAxisLength = 0.20f;
+    const XMMATRIX world = BoneWorldMatrix(static_cast<uint32_t>(selectedBoneIndex_));
+    const XMVECTOR origin = XMVector3TransformCoord(XMVectorZero(), world);
+    const XMVECTOR localAxes[] = {
+        XMVectorSet(kAxisLength, 0.0f, 0.0f, 0.0f),
+        XMVectorSet(0.0f, kAxisLength, 0.0f, 0.0f),
+        XMVectorSet(0.0f, 0.0f, kAxisLength, 0.0f),
+    };
+    constexpr ImU32 kColors[] = {
+        IM_COL32(255, 70, 70, 255),
+        IM_COL32(70, 255, 100, 255),
+        IM_COL32(80, 145, 255, 255),
+    };
+
+    XMFLOAT3 start{};
+    XMStoreFloat3(&start, origin);
+    for (size_t i = 0; i < std::size(localAxes); ++i) {
+        XMFLOAT3 end{};
+        XMStoreFloat3(&end, XMVector3TransformCoord(localAxes[i], world));
+        DrawScreenBoneLine(start, end, kColors[i], 3.0f);
+    }
 #else
     (void)model;
 #endif
@@ -757,6 +851,8 @@ void GameScene::DrawDebugPanel() {
 
     ImGui::Checkbox("Skeleton", &debugRigEnabled_);
     ImGui::Checkbox("Labels", &debugLabelsEnabled_);
+    ImGui::SameLine();
+    ImGui::Checkbox("Local axes", &debugLocalAxesEnabled_);
     ImGui::Checkbox("Bind pose", &debugBindPoseEnabled_);
     ImGui::SameLine();
     ImGui::Checkbox("Major only", &debugMajorBonesOnly_);
@@ -822,6 +918,169 @@ void GameScene::DrawDebugPanel() {
         ImGui::TextUnformatted("(none)");
     }
     ImGui::Unindent();
+
+    ImGui::End();
+#endif
+}
+
+bool GameScene::DrawParticleEmitterControls(const char* label,
+                                            ParticleEmitterSettings& settings,
+                                            bool& enabled) {
+#ifdef _DEBUG
+    if (!ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen)) {
+        return false;
+    }
+
+    ImGui::PushID(label);
+    bool changed = ImGui::Checkbox("Enabled", &enabled);
+    constexpr const char* kShapeNames[] = {
+        "Point", "Sphere", "Box", "Ring", "Disk", "Arc", "Triangle", "Mesh surface"};
+    int shape = static_cast<int>(settings.spawnShape);
+    if (ImGui::Combo("Shape", &shape, kShapeNames, IM_ARRAYSIZE(kShapeNames))) {
+        settings.spawnShape = static_cast<ParticleSpawnShape>(shape);
+        changed = true;
+    }
+
+    int burstCount = static_cast<int>(settings.burstCount);
+    if (ImGui::DragInt("Particles / emission", &burstCount, 1.0f, 1, 256)) {
+        settings.burstCount = static_cast<uint32_t>(burstCount);
+        changed = true;
+    }
+    int particlesPerThread = static_cast<int>(settings.particlesPerThread);
+    if (ImGui::SliderInt("Particles / thread", &particlesPerThread, 1, 8)) {
+        settings.particlesPerThread = static_cast<uint32_t>(particlesPerThread);
+        changed = true;
+    }
+
+    changed |= ImGui::DragFloat("Emission rate", &settings.emitRate, 0.5f, 0.1f, 120.0f);
+    changed |= ImGui::DragFloat3("Spawn size", &settings.spawnOffsetScale.x, 0.01f, 0.0f, 2.0f);
+    changed |= ImGui::ColorEdit4("Color", &settings.tintColor.x);
+    changed |= ImGui::DragFloat("Lifetime", &settings.baseLifeTime, 0.01f, 0.05f, 8.0f);
+    changed |= ImGui::DragFloat("Radial speed", &settings.radialVelocity, 0.01f, 0.0f, 8.0f);
+    changed |= ImGui::DragFloat("Directional speed", &settings.directionalVelocity,
+                                0.01f, 0.0f, 8.0f);
+    changed |= ImGui::DragFloat("Turbulence", &settings.turbulence, 0.01f, 0.0f, 5.0f);
+    changed |= ImGui::DragFloat("Stretch", &settings.stretch, 0.05f, 0.0f, 12.0f);
+    changed |= ImGui::SliderFloat("Light influence", &settings.lightInfluence, 0.0f, 1.0f);
+    constexpr const char* kLightNames[] = {"None", "Right hand", "Left hand"};
+    int lightSelection = settings.assignedLight < 2u
+                             ? static_cast<int>(settings.assignedLight) + 1
+                             : 0;
+    if (ImGui::Combo("Assigned light", &lightSelection, kLightNames,
+                     IM_ARRAYSIZE(kLightNames))) {
+        settings.assignedLight = lightSelection > 0
+                                     ? static_cast<uint32_t>(lightSelection - 1)
+                                     : UINT32_MAX;
+        changed = true;
+    }
+    ImGui::PopID();
+    return changed;
+#else
+    (void)label;
+    (void)settings;
+    (void)enabled;
+    return false;
+#endif
+}
+
+bool GameScene::DrawParticleFieldControls() {
+#ifdef _DEBUG
+    if (!ImGui::CollapsingHeader("Fields", ImGuiTreeNodeFlags_DefaultOpen)) {
+        return false;
+    }
+
+    constexpr const char* kFieldNames[] = {"Directional", "Radial", "Vortex", "Drag"};
+    bool changed = false;
+    for (size_t i = 0; i < particleFields_.size(); ++i) {
+        ParticleFieldSettings& field = particleFields_[i];
+        ImGui::PushID(static_cast<int>(i));
+        ImGui::SeparatorText(kFieldNames[static_cast<size_t>(field.type)]);
+        changed |= ImGui::Checkbox("Enabled", &field.enabled);
+        int type = static_cast<int>(field.type);
+        if (ImGui::Combo("Type", &type, kFieldNames, IM_ARRAYSIZE(kFieldNames))) {
+            field.type = static_cast<ParticleFieldType>(type);
+            changed = true;
+        }
+        changed |= ImGui::DragFloat("Radius", &field.radius, 0.05f, 0.05f, 10.0f);
+        changed |= ImGui::DragFloat("Strength", &field.strength, 0.05f, -10.0f, 10.0f);
+        changed |= ImGui::DragFloat("Falloff", &field.falloff, 0.05f, 0.05f, 8.0f);
+        changed |= ImGui::DragFloat3("Direction", &field.direction.x, 0.02f, -1.0f, 1.0f);
+        ImGui::PopID();
+    }
+    return changed;
+#else
+    return false;
+#endif
+}
+
+void GameScene::DrawParticleEditor() {
+#ifdef _DEBUG
+    if (!handParticlesReady_) {
+        return;
+    }
+
+    const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+    ImGui::SetNextWindowPos(ImVec2((std::max)(16.0f, displaySize.x - 396.0f), 16.0f),
+                            ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(380.0f, (std::min)(720.0f, displaySize.y - 32.0f)),
+                             ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("GPU Particle Editor")) {
+        ImGui::End();
+        return;
+    }
+
+    ImGui::Text("GPU threads: 256 | Emitters: %zu | Fields: %zu",
+                handParticles_.GetEmitterCount(), particleFields_.size());
+    ImGui::TextUnformatted(
+        "Point / Sphere / Box / Ring / Disk / Arc / Triangle / Mesh surface");
+    if (ImGui::Button("Clear particles")) {
+        handParticles_.Clear();
+    }
+    ImGui::SameLine();
+    if (ImGui::Checkbox("Trail", &particleTrailEnabled_)) {
+        particleMaterial_.params1.x = particleTrailEnabled_ ? 4.0f : 0.0f;
+        handParticles_.SetMaterialSettings(particleMaterial_);
+    }
+
+    if (DrawParticleEmitterControls("Right Hand Emitter", rightParticleEmitter_,
+                                    rightParticleEmitterEnabled_)) {
+        handParticles_.UpdateEmitter(rightParticleEmitterId_, rightParticleEmitter_);
+        handParticles_.SetEmitterEnabled(rightParticleEmitterId_, rightParticleEmitterEnabled_);
+    }
+    if (DrawParticleEmitterControls("Left Hand Emitter", leftParticleEmitter_,
+                                    leftParticleEmitterEnabled_)) {
+        handParticles_.UpdateEmitter(leftParticleEmitterId_, leftParticleEmitter_);
+        handParticles_.SetEmitterEnabled(leftParticleEmitterId_, leftParticleEmitterEnabled_);
+    }
+
+    if (DrawParticleFieldControls()) {
+        handParticles_.SetFields(particleFields_);
+    }
+
+    if (ImGui::CollapsingHeader("Lighting", ImGuiTreeNodeFlags_DefaultOpen)) {
+        bool lightingChanged = false;
+        lightingChanged |= ImGui::DragFloat3("Light direction", &particleLighting_.direction.x,
+                                             0.02f, -1.0f, 1.0f);
+        lightingChanged |=
+            ImGui::DragFloat("Light intensity", &particleLighting_.intensity, 0.05f, 0.0f, 8.0f);
+        lightingChanged |= ImGui::ColorEdit3("Light color", &particleLighting_.color.x);
+        lightingChanged |= ImGui::ColorEdit3("Ambient", &particleLighting_.ambient.x);
+        constexpr const char* kAssignedLightNames[] = {"Right hand light", "Left hand light"};
+        for (size_t i = 0; i < particleLighting_.pointLightCount; ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::SeparatorText(kAssignedLightNames[i]);
+            lightingChanged |= ImGui::ColorEdit3("Color", &particleLighting_.pointLights[i].color.x);
+            lightingChanged |= ImGui::DragFloat("Intensity",
+                                                &particleLighting_.pointLights[i].intensity,
+                                                0.05f, 0.0f, 8.0f);
+            lightingChanged |= ImGui::DragFloat("Range", &particleLighting_.pointLights[i].range,
+                                                0.05f, 0.05f, 8.0f);
+            ImGui::PopID();
+        }
+        if (lightingChanged) {
+            handParticles_.SetLightingSettings(particleLighting_);
+        }
+    }
 
     ImGui::End();
 #endif
@@ -955,36 +1214,29 @@ GameScene::FindBoneIndex(const std::vector<std::string> &candidates) const {
 }
 
 XMFLOAT3 GameScene::BoneWorldPosition(uint32_t boneIndex) const {
-    if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
-        humanModelId_ == kInvalidResourceId) {
-        return characterTransform_.position;
-    }
-
-    const Model *model = ctx_->rendering.model->GetModel(humanModelId_);
-    if (model == nullptr || boneIndex == kInvalidResourceId ||
-        boneIndex >= model->skeletonSpaceMatrices.size()) {
-        return Add(characterTransform_.position, {0.0f, 1.0f, 0.0f});
-    }
-
-    XMMATRIX world = XMMatrixScaling(characterTransform_.scale.x,
-                                    characterTransform_.scale.y,
-                                    characterTransform_.scale.z) *
-                     XMMatrixRotationQuaternion(
-                         XMLoadFloat4(&characterTransform_.rotation)) *
-                     XMMatrixTranslation(characterTransform_.position.x,
-                                         characterTransform_.position.y,
-                                         characterTransform_.position.z);
-
-    if (model->hasRootAnimation) {
-        world = XMLoadFloat4x4(&model->rootAnimationMatrix) * world;
-    }
-
-    XMMATRIX bone = XMLoadFloat4x4(&model->skeletonSpaceMatrices[boneIndex]);
-    XMVECTOR position = XMVector3TransformCoord(XMVectorZero(), bone * world);
+    const XMVECTOR position = XMVector3TransformCoord(XMVectorZero(), BoneWorldMatrix(boneIndex));
 
     XMFLOAT3 result{};
     XMStoreFloat3(&result, position);
     return result;
+}
+
+XMMATRIX GameScene::BoneWorldMatrix(uint32_t boneIndex) const {
+    XMMATRIX world = CharacterWorldMatrix();
+    if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
+        humanModelId_ == kInvalidResourceId) {
+        return world;
+    }
+
+    const Model* model = ctx_->rendering.model->GetModel(humanModelId_);
+    if (model == nullptr || boneIndex == kInvalidResourceId ||
+        boneIndex >= model->skeletonSpaceMatrices.size()) {
+        return world;
+    }
+    if (model->hasRootAnimation) {
+        world = XMLoadFloat4x4(&model->rootAnimationMatrix) * world;
+    }
+    return XMLoadFloat4x4(&model->skeletonSpaceMatrices[boneIndex]) * world;
 }
 
 XMFLOAT3 GameScene::BindBoneWorldPosition(uint32_t boneIndex) const {

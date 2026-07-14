@@ -1,8 +1,17 @@
 #include "GPUParticle.hlsli"
 
+struct ParticleField
+{
+    float4 positionRadius;
+    float4 directionStrength;
+    float4 params;
+};
+
 cbuffer ParticleUpdateParams : register(b0)
 {
     float4 time;
+    ParticleField particleFields[8];
+    uint4 fieldConfig;
 };
 
 cbuffer EmitterParams : register(b1)
@@ -51,6 +60,7 @@ StructuredBuffer<ExplicitParticleSpawn> gExplicitSpawns : register(t0);
 #define SPAWN_SHAPE_RING 3u
 #define SPAWN_SHAPE_DISK 4u
 #define SPAWN_SHAPE_ARC 5u
+#define SPAWN_SHAPE_TRIANGLE 6u
 
 struct RandomGenerator
 {
@@ -123,6 +133,16 @@ float3 MakeSpawnOffset(uint spawnShape, float r0, float r1, float r2,
                float3(0.0f, thickness * 0.08f, 0.0f);
     }
 
+    if (spawnShape == SPAWN_SHAPE_TRIANGLE)
+    {
+        float root = sqrt(r0);
+        float barycentricA = 1.0f - root;
+        float barycentricB = root * (1.0f - r1);
+        float barycentricC = root * r1;
+        return float3(-barycentricA + barycentricB,
+                      -barycentricA - barycentricB + barycentricC, 0.0f);
+    }
+
     float radius3d = pow(max(r2, 0.0001f), 0.3333333f);
     return MakeSphereDirection(r0, r1) * radius3d;
 }
@@ -132,6 +152,55 @@ float3 MakeTurbulence(float seed, float age)
     return float3(sin(age * 11.7f + seed * 0.31f),
                   cos(age * 9.1f + seed * 0.43f),
                   sin(age * 7.4f + seed * 0.59f));
+}
+
+float FieldAttenuation(ParticleField field, float distanceToField)
+{
+    float radius = max(0.001f, field.positionRadius.w);
+    float normalizedDistance = saturate(1.0f - distanceToField / radius);
+    return pow(normalizedDistance, max(0.01f, field.params.y));
+}
+
+void ApplyParticleFields(float3 position, inout float3 velocity, float deltaTime)
+{
+    uint count = min(fieldConfig.x, 8u);
+    [loop]
+    for (uint fieldIndex = 0u; fieldIndex < count; ++fieldIndex)
+    {
+        ParticleField field = particleFields[fieldIndex];
+        if (field.params.z < 0.5f)
+        {
+            continue;
+        }
+
+        uint fieldType = (uint) round(field.params.x);
+        float3 offset = position - field.positionRadius.xyz;
+        float distanceToField = length(offset);
+        float attenuation = FieldAttenuation(field, distanceToField);
+        float3 axis = SafeNormalize(field.directionStrength.xyz,
+                                    float3(0.0f, 1.0f, 0.0f));
+        float strength = field.directionStrength.w;
+
+        if (fieldType == 0u)
+        {
+            velocity += axis * strength * deltaTime;
+        }
+        else if (fieldType == 1u)
+        {
+            float3 inward = SafeNormalize(-offset, axis);
+            velocity += inward * strength * attenuation * deltaTime;
+        }
+        else if (fieldType == 2u)
+        {
+            float3 tangent = SafeNormalize(cross(axis, offset),
+                                           float3(1.0f, 0.0f, 0.0f));
+            velocity += tangent * strength * attenuation * deltaTime;
+        }
+        else if (fieldType == 3u)
+        {
+            velocity *= exp(-abs(strength) * attenuation * deltaTime);
+        }
+    }
 }
 
 void Respawn(uint index, inout Particle particle)
@@ -204,7 +273,8 @@ void Respawn(uint index, inout Particle particle)
                               max(1.0f, emitterMotion.z));
     particle.params3 =
         float4(emitterAccelerationAndTurbulence.xyz, max(1.0f, emitterMotion.w));
-    particle.params4 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+    particle.params4 = float4(0.0f, 0.0f, 0.0f,
+                             max(0.0f, emitterBasisRight.w));
     particle.isActive = 1;
 }
 
@@ -270,11 +340,20 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     Particle particle = gParticles[index];
 
     uint emitMode = (uint) round(emitterPosition.w);
+    uint emitCount = emitterConfig.z & 0x00FFFFFFu;
+    uint particlesPerThread = ((emitterConfig.z >> 24u) & 0xFFu) + 1u;
 
     if (emitMode == 2u)
     {
-        if (index < emitterConfig.z)
+        uint spawnBase = index * particlesPerThread;
+        [loop]
+        for (uint lane = 0u; lane < particlesPerThread; ++lane)
         {
+            uint spawnIndex = spawnBase + lane;
+            if (spawnIndex >= emitCount)
+            {
+                break;
+            }
             int freeListIndex = 0;
             InterlockedAdd(gFreeListIndex[0], -1, freeListIndex);
             if (freeListIndex <= 0)
@@ -292,7 +371,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
                     return;
                 }
                 Particle respawnParticle = gParticles[particleIndex];
-                RespawnExplicit(particleIndex, index, respawnParticle);
+                RespawnExplicit(particleIndex, spawnIndex, respawnParticle);
                 gParticles[particleIndex] = respawnParticle;
                 AppendActiveParticle(particleIndex, particleCount, respawnParticle);
             }
@@ -331,6 +410,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
                 float damping = pow(max(particle.params2.y, 0.0f), deltaTime * 60.0f);
                 particle.velocity +=
                     (particle.params3.xyz + wander) * deltaTime;
+                ApplyParticleFields(particle.translate, particle.velocity, deltaTime);
                 particle.velocity *= damping;
                 particle.translate += particle.velocity * deltaTime;
 
@@ -357,28 +437,38 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         return;
     }
 
-    if (emitMode != 0u && index < emitterConfig.z)
+    if (emitMode != 0u)
     {
-        int freeListIndex = 0;
-        InterlockedAdd(gFreeListIndex[0], -1, freeListIndex);
-        if (freeListIndex <= 0)
+        uint spawnBase = index * particlesPerThread;
+        [loop]
+        for (uint lane = 0u; lane < particlesPerThread; ++lane)
         {
-            InterlockedAdd(gFreeListIndex[0], 1);
-        } else if (freeListIndex > (int) particleCount)
-        {
-            InterlockedAdd(gFreeListIndex[0], 1);
-        } else
-        {
-            uint particleIndex = gFreeList[freeListIndex - 1];
-            if (particleIndex >= particleCount)
+            uint spawnIndex = spawnBase + lane;
+            if (spawnIndex >= emitCount)
+            {
+                break;
+            }
+            int freeListIndex = 0;
+            InterlockedAdd(gFreeListIndex[0], -1, freeListIndex);
+            if (freeListIndex <= 0)
             {
                 InterlockedAdd(gFreeListIndex[0], 1);
-                return;
+            } else if (freeListIndex > (int) particleCount)
+            {
+                InterlockedAdd(gFreeListIndex[0], 1);
+            } else
+            {
+                uint particleIndex = gFreeList[freeListIndex - 1];
+                if (particleIndex >= particleCount)
+                {
+                    InterlockedAdd(gFreeListIndex[0], 1);
+                    continue;
+                }
+                Particle respawnParticle = gParticles[particleIndex];
+                Respawn(particleIndex, respawnParticle);
+                gParticles[particleIndex] = respawnParticle;
+                AppendActiveParticle(particleIndex, particleCount, respawnParticle);
             }
-            Particle respawnParticle = gParticles[particleIndex];
-            Respawn(particleIndex, respawnParticle);
-            gParticles[particleIndex] = respawnParticle;
-            AppendActiveParticle(particleIndex, particleCount, respawnParticle);
         }
     }
 }
