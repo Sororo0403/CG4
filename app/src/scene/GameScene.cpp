@@ -1038,6 +1038,11 @@ void GameScene::DrawDebugPanel() {
         const ImGuiTabItemFlags particleFlags = evaluationTabRequest_ == 2
                                                      ? ImGuiTabItemFlags_SetSelected
                                                      : ImGuiTabItemFlags_None;
+        if (ImGui::BeginTabItem(UiText("操作方法###ControlsTab",
+                                      "Controls###ControlsTab"))) {
+            DrawControlsTab();
+            ImGui::EndTabItem();
+        }
         if (ImGui::BeginTabItem(UiText("アニメーション###AnimationTab",
                                       "Animation###AnimationTab"),
                                 nullptr, animationFlags)) {
@@ -1064,6 +1069,42 @@ void GameScene::DrawDebugPanel() {
         evaluationTabRequest_ = -1;
     }
     ImGui::End();
+#endif
+}
+
+void GameScene::DrawControlsTab() {
+#ifdef ENABLE_IMGUI
+    ImGui::TextWrapped(UiText(
+        "起動時は骨格とLookAt注視点が表示されています。各機能はタブ内の設定または下記キーで操作できます。",
+        "The skeleton and LookAt target are visible at startup. Use the tabs or the shortcuts below to control each feature."));
+
+    ImGui::SeparatorText(UiText("キャラクター", "Character"));
+    ImGui::BulletText("W / A / S / D : %s", UiText("移動", "Move"));
+    ImGui::BulletText("Shift : %s",
+                      UiText("スニークアニメーションへ補間",
+                             "Blend to sneak animation"));
+
+    ImGui::SeparatorText(UiText("デバッグ表示", "Debug Display"));
+    ImGui::BulletText("F1 : %s", UiText("骨格表示の切り替え",
+                                         "Toggle skeleton"));
+    ImGui::BulletText("F3 : %s", UiText("ボーン名表示の切り替え",
+                                         "Toggle bone labels"));
+    ImGui::BulletText("F5 : %s", UiText("バインド姿勢表示の切り替え",
+                                         "Toggle bind pose"));
+    ImGui::BulletText("F6 : %s", UiText("主要ボーンのみ表示",
+                                         "Show major bones only"));
+    ImGui::BulletText("F7 : %s", UiText("Head LookAt IKの切り替え",
+                                         "Toggle Head LookAt IK"));
+    ImGui::BulletText("[ / ] : %s", UiText("前後のボーンを選択",
+                                            "Select previous / next bone"));
+
+    ImGui::SeparatorText(UiText("ImGuiパネル", "ImGui Panel"));
+    ImGui::BulletText("%s", UiText("上部のタブで評価機能を切り替えます。",
+                                     "Use the tabs above to switch evaluation tools."));
+    ImGui::BulletText("%s", UiText("言語 / Languageから日本語と英語を切り替えられます。",
+                                     "Use Language to switch between Japanese and English."));
+    ImGui::BulletText("%s", UiText("パネルは常時表示され、閉じる操作はありません。",
+                                     "The panel is always visible and cannot be closed."));
 #endif
 }
 

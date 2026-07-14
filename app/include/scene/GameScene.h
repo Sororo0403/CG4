@@ -161,6 +161,11 @@ class GameScene final : public BaseScene {
     void DrawEvaluationToolbar();
 
     /// <summary>
+    /// キャラクター操作とデバッグ表示のショートカット一覧を描画する。
+    /// </summary>
+    void DrawControlsTab();
+
+    /// <summary>
     /// アニメーション補間とHead LookAt IKの操作UIを描画する。
     /// </summary>
     void DrawAnimationTab();
