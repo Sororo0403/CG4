@@ -28,7 +28,7 @@ EngineRuntime::~EngineRuntime() {
     systems_->dxCommon.WaitForGpuIfPossible();
     systems_->sceneManager.Finalize();
     systems_->soundManager.Finalize();
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     systems_->imguiManager.Finalize();
 #endif
     systems_->spotLightShadowMapRenderer.Release();
@@ -316,7 +316,7 @@ bool EngineRuntime::InitializeSceneSystems(HINSTANCE instance, const EngineRunti
     }
     systems_->soundManager.Initialize();
 
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     systems_->imguiManager.Initialize(&systems_->winApp, &systems_->dxCommon,
                                       &systems_->srvManager);
     if (!systems_->imguiManager.IsReady()) {
@@ -365,7 +365,7 @@ void EngineRuntime::BindSceneContext() {
     systems_->sceneContext.rendering.gpuProfiler = &systems_->gpuProfiler;
     systems_->sceneContext.rendering.volumetricLighting = &systems_->volumetricLightingSystem;
     systems_->sceneContext.render = systems_->renderPassController.GetContextPtr();
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     systems_->sceneContext.systems.imgui = &systems_->imguiManager;
 #endif
 }

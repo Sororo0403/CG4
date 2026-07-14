@@ -1,12 +1,12 @@
 #include "core/WinApp.h"
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
 #include "imgui_impl_win32.h"
 #endif
 
 #include <algorithm>
 #include <array>
 
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam,
                                                              LPARAM lParam);
 #endif
@@ -124,7 +124,7 @@ WinApp::~WinApp() {
 }
 
 LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam)) {
         return true;
     }

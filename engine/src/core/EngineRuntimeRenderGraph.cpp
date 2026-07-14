@@ -191,7 +191,7 @@ template <typename Systems> bool AddOverlayPass(Systems& systems) {
     });
 }
 
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
 template <typename Systems> bool AddImguiPass(Systems& systems) {
     return AddRenderGraphPass(systems, "ImGui", [&systems]() {
         CpuProfiler::ScopedEvent cpuEvent(systems.cpuProfiler, "Render.ImGui");
@@ -295,7 +295,7 @@ bool EngineRuntime::BeginCommandFrame() {
         systems_->sceneContext.frame.frameTime, systems_->sceneContext.frame.deltaTime,
         static_cast<uint32_t>(currentWidth_), static_cast<uint32_t>(currentHeight_));
 
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     systems_->imguiManager.Begin(systems_->dxCommon.GetCommandList());
 #endif
     return true;
@@ -338,7 +338,7 @@ template <typename Systems> bool AddDefaultRenderGraphPasses(Systems& systems) {
         !AddPostProcessPass(systems) || !AddOverlayPass(systems)) {
         return false;
     }
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     if (!AddImguiPass(systems)) {
         return false;
     }
@@ -458,7 +458,7 @@ bool AddDefaultRenderGraphResources(Systems& systems, int width, int height) {
         !BindVolumetricLightingResources(systems) || !BindPostProcessAndOverlayResources(systems)) {
         return false;
     }
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     if (!WriteGraphResource(systems, "ImGui", "BackBuffer",
                             RenderGraph::ResourceUsage::RenderTarget)) {
         return false;
@@ -500,7 +500,7 @@ template <typename Systems> bool AddDefaultRenderGraphDependencies(Systems& syst
     if (!systems.renderGraph.AddDependency("PostProcess", "Overlay")) {
         return false;
     }
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     if (!systems.renderGraph.AddDependency("Overlay", "ImGui")) {
         return false;
     }

@@ -2,7 +2,7 @@
 
 #include "animation/SkeletonPoseBuilder.h"
 
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
 #include "imgui.h"
 #endif
 
@@ -832,7 +832,7 @@ void GameScene::DrawSceneProps() {
 }
 
 void GameScene::DrawBoneDebugOverlay() {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
         humanModelId_ == kInvalidResourceId) {
         return;
@@ -858,7 +858,7 @@ void GameScene::DrawBoneDebugOverlay() {
 }
 
 void GameScene::DrawBindPoseBoneOverlay(const Model& model) {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     for (uint32_t i = 0; i < static_cast<uint32_t>(model.bones.size()); ++i) {
         const BoneInfo& bone = model.bones[i];
         if ((debugMajorBonesOnly_ && !IsMajorDebugBone(bone.name) &&
@@ -875,7 +875,7 @@ void GameScene::DrawBindPoseBoneOverlay(const Model& model) {
 }
 
 void GameScene::DrawAnimatedBoneOverlay(const Model& model) {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     ImDrawList* drawList = ImGui::GetForegroundDrawList();
     for (uint32_t i = 0; i < static_cast<uint32_t>(model.bones.size()); ++i) {
         const BoneInfo& bone = model.bones[i];
@@ -911,7 +911,7 @@ void GameScene::DrawAnimatedBoneOverlay(const Model& model) {
 }
 
 void GameScene::DrawSelectedBoneAxes(const Model& model) {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     if (!debugLocalAxesEnabled_ || selectedBoneIndex_ < 0 ||
         selectedBoneIndex_ >= static_cast<int>(model.bones.size())) {
         return;
@@ -944,7 +944,7 @@ void GameScene::DrawSelectedBoneAxes(const Model& model) {
 }
 
 void GameScene::DrawLookAtDebug() {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     if (!debugLookAtTargetEnabled_ || !lookAtIkEnabled_ ||
         headBone_ == kInvalidResourceId) {
         return;
@@ -976,7 +976,7 @@ void GameScene::DrawLookAtDebug() {
 }
 
 void GameScene::DrawDebugPanel() {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     if (ctx_ == nullptr || ctx_->rendering.model == nullptr) {
         return;
     }
@@ -1041,7 +1041,7 @@ void GameScene::DrawDebugPanel() {
 }
 
 void GameScene::DrawEvaluationToolbar() {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     ImGui::TextUnformatted(UiText("表示プリセット:", "Presets:"));
     ImGui::SameLine();
     const char* presetNames[] = {
@@ -1067,7 +1067,7 @@ void GameScene::DrawEvaluationToolbar() {
 }
 
 void GameScene::DrawAnimationTab() {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     ImGui::SeparatorText(UiText("アニメーション補間", "Animation Blend"));
     ImGui::Text(UiText("スニーク補間: %.2f", "Sneak blend: %.2f"), sneakBlend_);
     float manualBlend = manualSneakBlend_ >= 0.0f ? manualSneakBlend_ : sneakBlend_;
@@ -1103,7 +1103,7 @@ void GameScene::DrawAnimationTab() {
 }
 
 void GameScene::DrawSkeletonTab(const Model* model) {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     ImGui::Checkbox(UiText("骨格###Skeleton", "Skeleton###Skeleton"), &debugRigEnabled_);
     ImGui::SameLine();
     ImGui::Checkbox(UiText("ボーン名###Labels", "Labels###Labels"), &debugLabelsEnabled_);
@@ -1173,7 +1173,7 @@ void GameScene::DrawSkeletonTab(const Model* model) {
 }
 
 void GameScene::DrawModelTab(const Model* model) const {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     ImGui::SeparatorText(UiText("読込済みアセット", "Loaded Assets"));
     ImGui::BulletText(UiText("キャラクター: %s", "Human: %s"),
                       model != nullptr ? UiText("準備完了", "Ready")
@@ -1241,7 +1241,7 @@ const char* GameScene::UiText(const char* japanese, const char* english) const {
 bool GameScene::DrawParticleEmitterControls(const char* label,
                                             ParticleEmitterSettings& settings,
                                             bool& enabled) {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     if (!ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen)) {
         return false;
     }
@@ -1326,7 +1326,7 @@ bool GameScene::DrawParticleEmitterControls(const char* label,
 }
 
 bool GameScene::DrawParticleFieldControls() {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     if (!ImGui::CollapsingHeader(UiText("フィールド###Fields", "Fields###Fields"),
                                  ImGuiTreeNodeFlags_DefaultOpen)) {
         return false;
@@ -1367,7 +1367,7 @@ bool GameScene::DrawParticleFieldControls() {
 }
 
 void GameScene::DrawParticleEditor() {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     if (!handParticlesReady_) {
         ImGui::TextUnformatted(UiText("GPUパーティクルを準備できませんでした。",
                                       "GPU Particle is not ready."));
@@ -1460,7 +1460,7 @@ void GameScene::DrawBoneLabels() {
         return;
     }
 
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     const Model *model = ctx_->rendering.model->GetModel(humanModelId_);
     if (model == nullptr) {
         return;
@@ -1482,7 +1482,7 @@ void GameScene::DrawBoneLabels() {
 }
 
 int GameScene::FindHoveredBone(const Model& model) const {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     if (ImGui::GetIO().WantCaptureMouse) {
         return -1;
     }
@@ -1513,7 +1513,7 @@ int GameScene::FindHoveredBone(const Model& model) const {
 }
 
 void GameScene::DrawBoneLabel(const Model& model, uint32_t boneIndex, bool selected) {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     if (boneIndex >= model.bones.size()) {
         return;
     }
@@ -1674,7 +1674,7 @@ bool GameScene::ProjectWorldToScreen(const XMFLOAT3 &world,
 
 void GameScene::DrawScreenBoneLine(const XMFLOAT3 &a, const XMFLOAT3 &b,
                                          uint32_t color, float thickness) {
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
     XMFLOAT2 screenA{};
     XMFLOAT2 screenB{};
     if (!ProjectWorldToScreen(a, screenA) || !ProjectWorldToScreen(b, screenB)) {

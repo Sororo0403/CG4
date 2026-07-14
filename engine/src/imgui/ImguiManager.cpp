@@ -1,4 +1,4 @@
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
 #include "imgui/ImguiManager.h"
 
 #include "core/AssetManager.h"

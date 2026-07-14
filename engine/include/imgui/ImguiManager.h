@@ -1,5 +1,5 @@
 #pragma once
-#ifdef _DEBUG
+#ifdef ENABLE_IMGUI
 #include <d3d12.h>
 #include <unordered_map>
 
