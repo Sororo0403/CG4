@@ -101,6 +101,10 @@ bool ContainsAny(const std::string &text,
     return false;
 }
 
+bool IsKeyOrGamepadButtonTriggered(const Input& input, int dik, WORD button) {
+    return input.IsKeyTrigger(dik) || input.IsGamepadButtonTrigger(button);
+}
+
 const AnimationClip *FirstAnimationClip(const Model &model) {
     if (model.animations.empty()) {
         return nullptr;
@@ -496,30 +500,37 @@ void GameScene::UpdateMovement(float deltaTime) {
         return;
     }
 
-    float moveX = ctx_->systems.input->GetGamepadLeftStickX();
-    float moveZ = ctx_->systems.input->GetGamepadLeftStickY();
+    const Input* input = ctx_->systems.input;
+    float moveX = input->GetGamepadLeftStickX();
+    float moveZ = input->GetGamepadLeftStickY();
 
-    if (ctx_->systems.input->IsKeyPress(DIK_A)) {
+    if (input->IsKeyPress(DIK_A)) {
         moveX -= 1.0f;
     }
-    if (ctx_->systems.input->IsKeyPress(DIK_D)) {
+    if (input->IsKeyPress(DIK_D)) {
         moveX += 1.0f;
     }
-    if (ctx_->systems.input->IsKeyPress(DIK_W)) {
+    if (input->IsKeyPress(DIK_W)) {
         moveZ += 1.0f;
     }
-    if (ctx_->systems.input->IsKeyPress(DIK_S)) {
+    if (input->IsKeyPress(DIK_S)) {
         moveZ -= 1.0f;
     }
 
-    const float lenSq = LengthSq(moveX, moveZ);
-    walkTimeScale_ = lenSq > 0.04f ? 1.0f : 0.0f;
+    float length = std::sqrt(LengthSq(moveX, moveZ));
+    if (length > 1.0f) {
+        moveX /= length;
+        moveZ /= length;
+        length = 1.0f;
+    }
+    walkTimeScale_ = length > 0.2f ? length : 0.0f;
 
     if (manualSneakBlend_ >= 0.0f) {
         sneakBlend_ = std::clamp(manualSneakBlend_, 0.0f, 1.0f);
     } else {
-        const bool sneakHeld = ctx_->systems.input->IsKeyPress(DIK_LSHIFT) ||
-                               ctx_->systems.input->IsKeyPress(DIK_RSHIFT);
+        const bool sneakHeld = input->IsKeyPress(DIK_LSHIFT) ||
+                               input->IsKeyPress(DIK_RSHIFT) ||
+                               input->GetGamepadLeftTrigger() > 0.2f;
         const float targetBlend = sneakHeld ? 1.0f : 0.0f;
         constexpr float blendSpeed = 9.0f;
         sneakBlend_ += (targetBlend - sneakBlend_) *
@@ -529,13 +540,10 @@ void GameScene::UpdateMovement(float deltaTime) {
         }
     }
 
-    if (lenSq <= 0.04f) {
+    if (length <= 0.2f) {
         return;
     }
 
-    const float invLen = 1.0f / std::sqrt(lenSq);
-    moveX *= invLen;
-    moveZ *= invLen;
     characterTransform_.position.x += moveX * kMoveSpeed * deltaTime;
     characterTransform_.position.z += moveZ * kMoveSpeed * deltaTime;
     characterYaw_ = std::atan2(moveX, moveZ);
@@ -549,19 +557,23 @@ void GameScene::UpdateDebugControls() {
     }
 
     const Input *input = ctx_->systems.input;
-    if (input->IsKeyTrigger(DIK_F1)) {
+    if (IsKeyOrGamepadButtonTriggered(*input, DIK_F1,
+                                      XINPUT_GAMEPAD_DPAD_UP)) {
         debugRigEnabled_ = !debugRigEnabled_;
     }
-    if (input->IsKeyTrigger(DIK_F3)) {
+    if (IsKeyOrGamepadButtonTriggered(*input, DIK_F3,
+                                      XINPUT_GAMEPAD_DPAD_RIGHT)) {
         debugLabelsEnabled_ = !debugLabelsEnabled_;
     }
-    if (input->IsKeyTrigger(DIK_F5)) {
+    if (IsKeyOrGamepadButtonTriggered(*input, DIK_F5,
+                                      XINPUT_GAMEPAD_DPAD_DOWN)) {
         debugBindPoseEnabled_ = !debugBindPoseEnabled_;
     }
-    if (input->IsKeyTrigger(DIK_F6)) {
+    if (IsKeyOrGamepadButtonTriggered(*input, DIK_F6,
+                                      XINPUT_GAMEPAD_DPAD_LEFT)) {
         debugMajorBonesOnly_ = !debugMajorBonesOnly_;
     }
-    if (input->IsKeyTrigger(DIK_F7)) {
+    if (IsKeyOrGamepadButtonTriggered(*input, DIK_F7, XINPUT_GAMEPAD_Y)) {
         lookAtIkEnabled_ = !lookAtIkEnabled_;
     }
 
@@ -576,11 +588,13 @@ void GameScene::UpdateDebugControls() {
         selectedBoneIndex_ = 0;
     }
 
-    if (input->IsKeyTrigger(DIK_RBRACKET)) {
+    if (IsKeyOrGamepadButtonTriggered(*input, DIK_RBRACKET,
+                                      XINPUT_GAMEPAD_RIGHT_SHOULDER)) {
         selectedBoneIndex_ =
             (selectedBoneIndex_ + 1) % static_cast<int>(model->bones.size());
     }
-    if (input->IsKeyTrigger(DIK_LBRACKET)) {
+    if (IsKeyOrGamepadButtonTriggered(*input, DIK_LBRACKET,
+                                      XINPUT_GAMEPAD_LEFT_SHOULDER)) {
         selectedBoneIndex_ =
             (selectedBoneIndex_ + static_cast<int>(model->bones.size()) - 1) %
             static_cast<int>(model->bones.size());
@@ -1097,6 +1111,19 @@ void GameScene::DrawControlsTab() {
                                          "Toggle Head LookAt IK"));
     ImGui::BulletText("[ / ] : %s", UiText("前後のボーンを選択",
                                             "Select previous / next bone"));
+
+    ImGui::SeparatorText(UiText("ゲームパッド（XInput）", "Gamepad (XInput)"));
+    ImGui::BulletText("%s", UiText("左スティック: 移動（倒し方で速度変化）",
+                                     "Left stick: Move (analog speed)"));
+    ImGui::BulletText("LT : %s", UiText("スニークアニメーションへ補間",
+                                         "Blend to sneak animation"));
+    ImGui::BulletText("D-Pad Up / Right / Down / Left : %s",
+                      UiText("骨格 / ボーン名 / バインド姿勢 / 主要ボーン",
+                             "Skeleton / Labels / Bind pose / Major bones"));
+    ImGui::BulletText("Y : %s", UiText("Head LookAt IKの切り替え",
+                                        "Toggle Head LookAt IK"));
+    ImGui::BulletText("LB / RB : %s", UiText("前後のボーンを選択",
+                                              "Select previous / next bone"));
 
     ImGui::SeparatorText(UiText("ImGuiパネル", "ImGui Panel"));
     ImGui::BulletText("%s", UiText("上部のタブで評価機能を切り替えます。",
