@@ -84,6 +84,14 @@ class GameScene final : public BaseScene {
     void UpdateModelAnimation(float deltaTime);
 
     /// <summary>
+    /// アニメーション姿勢へ首と頭のLookAt IK補正を適用する。
+    /// </summary>
+    /// <param name="model">補正対象のスケルトンを保持するモデル。</param>
+    /// <param name="localMatrices">補正するボーンのローカル姿勢行列。</param>
+    void ApplyHeadLookAtIk(const Model& model,
+                           std::vector<DirectX::XMMATRIX>& localMatrices) const;
+
+    /// <summary>
     /// 手足のボーン位置からワールド空間のアタッチメント位置を更新する。
     /// </summary>
     void UpdateAttachmentPoints();
@@ -130,6 +138,11 @@ class GameScene final : public BaseScene {
     /// </summary>
     /// <param name="model">軸を描画するスケルトンを保持するモデル。</param>
     void DrawSelectedBoneAxes(const Model& model);
+
+    /// <summary>
+    /// 頭からLookAtターゲットまでの線とターゲットマーカーを描画する。
+    /// </summary>
+    void DrawLookAtDebug();
 
     /// <summary>
     /// ボーン選択とアニメーション操作用のデバッグパネルを描画する。
@@ -268,11 +281,18 @@ class GameScene final : public BaseScene {
     float animationTime_ = 0.0f;
     float sneakBlend_ = 0.0f;
     float manualSneakBlend_ = -1.0f;
+    bool lookAtIkEnabled_ = true;
+    float lookAtWeight_ = 0.85f;
+    float lookAtMaxAngleDegrees_ = 72.0f;
+    int lookAtForwardAxis_ = 4;
+    DirectX::XMFLOAT3 lookAtTarget_{1.2f, 1.55f, 2.0f};
 
     uint32_t rightHandBone_ = kInvalidResourceId;
     uint32_t leftHandBone_ = kInvalidResourceId;
     uint32_t rightFootBone_ = kInvalidResourceId;
     uint32_t leftFootBone_ = kInvalidResourceId;
+    uint32_t neckBone_ = kInvalidResourceId;
+    uint32_t headBone_ = kInvalidResourceId;
 
     DirectX::XMFLOAT3 rightHandWorld_{0.0f, 1.0f, 0.0f};
     DirectX::XMFLOAT3 leftHandWorld_{0.0f, 1.0f, 0.0f};

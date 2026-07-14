@@ -201,6 +201,74 @@ std::vector<ParticleMeshTriangle> MakeOctahedronParticleMesh() {
             {bottom, back, left},   {bottom, right, back}};
 }
 
+std::vector<XMMATRIX> BuildGlobalPoseMatrices(
+    const Model& model, const std::vector<XMMATRIX>& localMatrices) {
+    std::vector<XMMATRIX> globals(model.bones.size(), XMMatrixIdentity());
+    for (size_t i = 0; i < model.bones.size(); ++i) {
+        const XMMATRIX local = i < localMatrices.size()
+                                   ? localMatrices[i]
+                                   : XMLoadFloat4x4(&model.bones[i].localBindMatrix);
+        const int parentIndex = model.bones[i].parentIndex;
+        globals[i] = parentIndex >= 0 && parentIndex < static_cast<int>(i)
+                         ? local * globals[static_cast<size_t>(parentIndex)]
+                         : local;
+    }
+    return globals;
+}
+
+bool RotatePoseBoneToward(const Model& model, std::vector<XMMATRIX>& localMatrices,
+                          uint32_t boneIndex, const XMVECTOR& target,
+                          const XMVECTOR& localForward, float weight,
+                          float maxAngleRadians) {
+    if (boneIndex == kInvalidResourceId || boneIndex >= model.bones.size() ||
+        boneIndex >= localMatrices.size() || weight <= 0.0001f) {
+        return false;
+    }
+
+    const std::vector<XMMATRIX> globals = BuildGlobalPoseMatrices(model, localMatrices);
+    XMVECTOR scale{};
+    XMVECTOR rotation{};
+    XMVECTOR translation{};
+    if (!XMMatrixDecompose(&scale, &rotation, &translation, globals[boneIndex])) {
+        return false;
+    }
+
+    const XMVECTOR desiredOffset = XMVectorSubtract(target, translation);
+    if (XMVectorGetX(XMVector3LengthSq(desiredOffset)) <= 0.000001f) {
+        return false;
+    }
+    const XMVECTOR desired = XMVector3Normalize(desiredOffset);
+    const XMMATRIX currentRotation = XMMatrixRotationQuaternion(rotation);
+    const XMVECTOR current =
+        XMVector3Normalize(XMVector3TransformNormal(localForward, currentRotation));
+    const float dot = std::clamp(XMVectorGetX(XMVector3Dot(current, desired)), -1.0f, 1.0f);
+    float angle = std::acos(dot);
+    if (angle <= 0.0001f) {
+        return false;
+    }
+
+    XMVECTOR axis = XMVector3Cross(current, desired);
+    if (XMVectorGetX(XMVector3LengthSq(axis)) <= 0.000001f) {
+        axis = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+    } else {
+        axis = XMVector3Normalize(axis);
+    }
+    angle = (std::min)(angle, maxAngleRadians) * std::clamp(weight, 0.0f, 1.0f);
+    const XMMATRIX adjustedGlobal =
+        XMMatrixScalingFromVector(scale) * currentRotation *
+        XMMatrixRotationAxis(axis, angle) * XMMatrixTranslationFromVector(translation);
+
+    const int parentIndex = model.bones[boneIndex].parentIndex;
+    if (parentIndex < 0 || parentIndex >= static_cast<int>(globals.size())) {
+        localMatrices[boneIndex] = adjustedGlobal;
+        return true;
+    }
+    const XMMATRIX parentInverse =
+        XMMatrixInverse(nullptr, globals[static_cast<size_t>(parentIndex)]);
+    localMatrices[boneIndex] = adjustedGlobal * parentInverse;
+    return true;
+}
+
 } // namespace
 
 GameScene::~GameScene() {
@@ -301,6 +369,8 @@ void GameScene::InitializeModels() {
         leftHandBone_ = FindBoneIndex({"mixamorig:LeftHand", "LeftHand"});
         rightFootBone_ = FindBoneIndex({"mixamorig:RightFoot", "RightFoot"});
         leftFootBone_ = FindBoneIndex({"mixamorig:LeftFoot", "LeftFoot"});
+        neckBone_ = FindBoneIndex({"mixamorig:Neck", "Neck"});
+        headBone_ = FindBoneIndex({"mixamorig:Head", "Head"});
         selectedBoneIndex_ = rightHandBone_ != kInvalidResourceId
                                  ? static_cast<int>(rightHandBone_)
                                  : (model->bones.empty() ? -1 : 0);
@@ -490,6 +560,9 @@ void GameScene::UpdateDebugControls() {
     if (input->IsKeyTrigger(DIK_F6)) {
         debugMajorBonesOnly_ = !debugMajorBonesOnly_;
     }
+    if (input->IsKeyTrigger(DIK_F7)) {
+        lookAtIkEnabled_ = !lookAtIkEnabled_;
+    }
 
     const Model *model = ctx_->rendering.model->GetModel(humanModelId_);
     if (model == nullptr || model->bones.empty()) {
@@ -554,6 +627,7 @@ void GameScene::UpdateModelAnimation(float deltaTime) {
                                              sneakLocals);
 
     if (walkLocals.size() != sneakLocals.size()) {
+        ApplyHeadLookAtIk(*humanModel, walkLocals);
         SkeletonPoseBuilder::UpdateSkeleton(*humanModel, walkLocals);
         ctx_->rendering.model->GetRenderer()->UpdateSkinClusters(*humanModel);
         humanModel->animationTime = walkTime;
@@ -566,11 +640,42 @@ void GameScene::UpdateModelAnimation(float deltaTime) {
         blendedLocals[i] = BlendLocalMatrix(walkLocals[i], sneakLocals[i], blend);
     }
 
+    ApplyHeadLookAtIk(*humanModel, blendedLocals);
     SkeletonPoseBuilder::UpdateSkeleton(*humanModel, blendedLocals);
     ctx_->rendering.model->GetRenderer()->UpdateSkinClusters(*humanModel);
     humanModel->animationTime = walkTime;
     humanModel->hasRootAnimation = false;
     XMStoreFloat4x4(&humanModel->rootAnimationMatrix, XMMatrixIdentity());
+}
+
+void GameScene::ApplyHeadLookAtIk(
+    const Model& model, std::vector<XMMATRIX>& localMatrices) const {
+    if (!lookAtIkEnabled_ || localMatrices.size() != model.bones.size() ||
+        (headBone_ == kInvalidResourceId && neckBone_ == kInvalidResourceId)) {
+        return;
+    }
+
+    const XMMATRIX inverseCharacter = XMMatrixInverse(nullptr, CharacterWorldMatrix());
+    const XMVECTOR target =
+        XMVector3TransformCoord(XMLoadFloat3(&lookAtTarget_), inverseCharacter);
+    const XMVECTOR forwardAxes[] = {
+        XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f),
+        XMVectorSet(-1.0f, 0.0f, 0.0f, 0.0f),
+        XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f),
+        XMVectorSet(0.0f, -1.0f, 0.0f, 0.0f),
+        XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f),
+        XMVectorSet(0.0f, 0.0f, -1.0f, 0.0f),
+    };
+    const int forwardAxis = std::clamp(lookAtForwardAxis_, 0, 5);
+    const XMVECTOR forward = forwardAxes[forwardAxis];
+    const float maxAngle = XMConvertToRadians(
+        std::clamp(lookAtMaxAngleDegrees_, 1.0f, 120.0f));
+    const float weight = std::clamp(lookAtWeight_, 0.0f, 1.0f);
+
+    RotatePoseBoneToward(model, localMatrices, neckBone_, target, forward,
+                         weight * 0.35f, maxAngle * 0.55f);
+    RotatePoseBoneToward(model, localMatrices, headBone_, target, forward,
+                         weight * 0.80f, maxAngle);
 }
 
 void GameScene::UpdateAttachmentPoints() {
@@ -627,6 +732,7 @@ void GameScene::DrawTransparent() {
 
 void GameScene::DrawPostProcessOverlay() {
     DrawBoneDebugOverlay();
+    DrawLookAtDebug();
     DrawBoneLabels();
     DrawDebugPanel();
     DrawParticleEditor();
@@ -835,6 +941,36 @@ void GameScene::DrawSelectedBoneAxes(const Model& model) {
 #endif
 }
 
+void GameScene::DrawLookAtDebug() {
+#ifdef _DEBUG
+    if (!lookAtIkEnabled_ || headBone_ == kInvalidResourceId) {
+        return;
+    }
+
+    const XMFLOAT3 headPosition = BoneWorldPosition(headBone_);
+    DrawScreenBoneLine(headPosition, lookAtTarget_, IM_COL32(255, 80, 220, 220), 2.0f);
+
+    XMFLOAT2 targetScreen{};
+    if (!ProjectWorldToScreen(lookAtTarget_, targetScreen)) {
+        return;
+    }
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    if (drawList == nullptr) {
+        return;
+    }
+    const ImVec2 center(targetScreen.x, targetScreen.y);
+    drawList->AddCircle(center, 9.0f, IM_COL32(255, 80, 220, 255), 0, 2.5f);
+    drawList->AddLine(ImVec2(center.x - 13.0f, center.y),
+                      ImVec2(center.x + 13.0f, center.y),
+                      IM_COL32(255, 80, 220, 255), 2.0f);
+    drawList->AddLine(ImVec2(center.x, center.y - 13.0f),
+                      ImVec2(center.x, center.y + 13.0f),
+                      IM_COL32(255, 80, 220, 255), 2.0f);
+    drawList->AddText(ImVec2(center.x + 14.0f, center.y - 22.0f),
+                      IM_COL32(255, 180, 240, 255), "LookAt Target");
+#endif
+}
+
 void GameScene::DrawDebugPanel() {
 #ifdef _DEBUG
     if (ctx_ == nullptr || ctx_->rendering.model == nullptr) {
@@ -843,7 +979,7 @@ void GameScene::DrawDebugPanel() {
 
     const Model *model = ctx_->rendering.model->GetModel(humanModelId_);
     ImGui::SetNextWindowPos(ImVec2(16.0f, 16.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(340.0f, 430.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(360.0f, 560.0f), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Bone Debug")) {
         ImGui::End();
         return;
@@ -870,8 +1006,17 @@ void GameScene::DrawDebugPanel() {
 
     ImGui::Separator();
     ImGui::TextUnformatted(
-        "Keys: Shift Sneak / F1 Rig / F3 Name / F5 Bind / F6 Filter");
+        "Keys: Shift Sneak / F1 Rig / F3 Name / F5 Bind / F6 Filter / F7 IK");
     ImGui::TextUnformatted("Keys: [ ] Select bone");
+
+    ImGui::SeparatorText("Head LookAt IK");
+    ImGui::Checkbox("Enabled##LookAt", &lookAtIkEnabled_);
+    ImGui::DragFloat3("Target", &lookAtTarget_.x, 0.02f, -8.0f, 8.0f);
+    ImGui::SliderFloat("Weight", &lookAtWeight_, 0.0f, 1.0f);
+    ImGui::SliderFloat("Max angle", &lookAtMaxAngleDegrees_, 1.0f, 120.0f, "%.0f deg");
+    constexpr const char* kForwardAxes[] = {"+X", "-X", "+Y", "-Y", "+Z", "-Z"};
+    ImGui::Combo("Head forward", &lookAtForwardAxis_, kForwardAxes,
+                 IM_ARRAYSIZE(kForwardAxes));
 
     if (model == nullptr || model->bones.empty()) {
         ImGui::TextUnformatted("No bones loaded.");
