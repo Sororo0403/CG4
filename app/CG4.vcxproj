@@ -79,6 +79,8 @@
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/utf-8 /FS %(AdditionalOptions)</AdditionalOptions>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <ProgramDataBaseFileName>$(IntDir)$(ProjectName).pdb</ProgramDataBaseFileName>
       <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)include;$(MSBuildThisFileDirectory)..\engine\public;$(MSBuildThisFileDirectory)..\engine\include;$(MSBuildThisFileDirectory)..\engine\externals;$(MSBuildThisFileDirectory)..\engine\externals\assimp\include;$(MSBuildThisFileDirectory)..\engine\externals\assimp\include\assimp;$(MSBuildThisFileDirectory)..\engine\externals\DirectX-Headers;$(MSBuildThisFileDirectory)..\engine\externals\DirectXTex;$(MSBuildThisFileDirectory)..\engine\externals\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
