@@ -482,6 +482,7 @@ void GameScene::Update() {
     UpdateDebugControls();
     UpdateMovement(deltaTime);
     UpdateModelAnimation(deltaTime);
+    UpdateBrainStemDisplay(deltaTime);
     UpdateAttachmentPoints();
     UpdateParticleEmitters();
 
@@ -548,9 +549,6 @@ void GameScene::UpdateDebugControls() {
     }
 
     const Input *input = ctx_->systems.input;
-    if (input->IsKeyTrigger(DIK_F2)) {
-        evaluationPanelVisible_ = !evaluationPanelVisible_;
-    }
     if (input->IsKeyTrigger(DIK_F1)) {
         debugRigEnabled_ = !debugRigEnabled_;
     }
@@ -649,6 +647,27 @@ void GameScene::UpdateModelAnimation(float deltaTime) {
     humanModel->animationTime = walkTime;
     humanModel->hasRootAnimation = false;
     XMStoreFloat4x4(&humanModel->rootAnimationMatrix, XMMatrixIdentity());
+}
+
+void GameScene::UpdateBrainStemDisplay(float deltaTime) {
+    if (!std::isfinite(deltaTime) || deltaTime <= 0.0f) {
+        return;
+    }
+
+    brainStemDisplayTime_ =
+        std::fmod(brainStemDisplayTime_ + deltaTime, 4096.0f);
+    if (ctx_ != nullptr && ctx_->rendering.model != nullptr &&
+        brainStemModelId_ != kInvalidResourceId) {
+        ctx_->rendering.model->UpdateAnimation(brainStemModelId_,
+                                               deltaTime * 0.72f);
+        Model* brainStemModel =
+            ctx_->rendering.model->GetModel(brainStemModelId_);
+        if (brainStemModel != nullptr) {
+            brainStemModel->hasRootAnimation = false;
+            XMStoreFloat4x4(&brainStemModel->rootAnimationMatrix,
+                            XMMatrixIdentity());
+        }
+    }
 }
 
 void GameScene::ApplyHeadLookAtIk(
@@ -825,8 +844,26 @@ void GameScene::DrawSceneProps() {
 
     if (brainStemModelId_ != kInvalidResourceId) {
         Transform brainStem{};
-        brainStem.position = {1.65f, 0.0f, 0.15f};
-        brainStem.scale = {0.75f, 0.75f, 0.75f};
+        const float driftPhase = brainStemDisplayTime_ * 0.55f;
+        const float hoverPhase = brainStemDisplayTime_ * 1.25f;
+        brainStem.position = {
+            1.65f + std::sin(driftPhase) * 0.10f,
+            0.08f + std::sin(hoverPhase) * 0.06f,
+            0.15f + std::cos(driftPhase) * 0.05f};
+
+        const XMFLOAT3 cameraPosition = camera_.GetPosition();
+        const float toCameraX = cameraPosition.x - brainStem.position.x;
+        const float toCameraZ = cameraPosition.z - brainStem.position.z;
+        const float faceCameraYaw = std::atan2(toCameraX, toCameraZ);
+        const float pitch = std::sin(brainStemDisplayTime_ * 0.70f) * 0.018f;
+        const float roll = std::sin(brainStemDisplayTime_ * 0.90f) * 0.025f;
+        XMStoreFloat4(
+            &brainStem.rotation,
+            XMQuaternionRotationRollPitchYaw(pitch, faceCameraYaw, roll));
+
+        const float pulse = 0.76f +
+                            std::sin(brainStemDisplayTime_ * 1.60f) * 0.012f;
+        brainStem.scale = {pulse, pulse, pulse};
         ctx_->rendering.model->Draw(brainStemModelId_, brainStem, camera_);
     }
 }
@@ -981,21 +1018,11 @@ void GameScene::DrawDebugPanel() {
         return;
     }
 
-    if (!evaluationPanelVisible_) {
-        const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
-        ImGui::GetForegroundDrawList()->AddText(
-            ImVec2(16.0f, (std::max)(16.0f, displaySize.y - 28.0f)),
-            IM_COL32(190, 198, 215, 190),
-            UiText("F2: 評価パネル", "F2: Evaluation Panel"));
-        return;
-    }
-
     const Model* model = ctx_->rendering.model->GetModel(humanModelId_);
     ImGui::SetNextWindowPos(ImVec2(16.0f, 16.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(440.0f, 650.0f), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin(UiText("CG4 評価パネル###CG4Evaluation",
-                             "CG4 Evaluation###CG4Evaluation"),
-                      &evaluationPanelVisible_)) {
+                             "CG4 Evaluation###CG4Evaluation"))) {
         ImGui::End();
         return;
     }

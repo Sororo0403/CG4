@@ -100,12 +100,6 @@
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
-    <PostBuildEvent>
-      <Command>if not exist "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\" mkdir "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"
-if exist "$(MSBuildThisFileDirectory)externals\assimp\bin\assimp-vc145-mt.dll" copy /Y "$(MSBuildThisFileDirectory)externals\assimp\bin\assimp-vc145-mt.dll" "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"
-if exist "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxcompiler.dll" copy /Y "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxcompiler.dll" "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"
-if exist "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxil.dll" copy /Y "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxil.dll" "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"</Command>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">
     <ClCompile>
@@ -125,12 +119,6 @@ if exist "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxil.dll" copy /Y "$(WindowsSdk
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
-    <PostBuildEvent>
-      <Command>if not exist "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\" mkdir "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"
-if exist "$(MSBuildThisFileDirectory)externals\assimp\bin\assimp-vc145-mt.dll" copy /Y "$(MSBuildThisFileDirectory)externals\assimp\bin\assimp-vc145-mt.dll" "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"
-if exist "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxcompiler.dll" copy /Y "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxcompiler.dll" "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"
-if exist "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxil.dll" copy /Y "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxil.dll" "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"</Command>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -146,12 +134,6 @@ if exist "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxil.dll" copy /Y "$(WindowsSdk
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
-    <PostBuildEvent>
-      <Command>if not exist "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\" mkdir "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"
-if exist "$(MSBuildThisFileDirectory)externals\assimp\bin\assimp-vc145-mt.dll" copy /Y "$(MSBuildThisFileDirectory)externals\assimp\bin\assimp-vc145-mt.dll" "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"
-if exist "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxcompiler.dll" copy /Y "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxcompiler.dll" "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"
-if exist "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxil.dll" copy /Y "$(WindowsSdkDir)Redist\D3D\$(Platform)\dxil.dll" "$(SolutionDir)generated\outputs\$(Platform)\$(Configuration)\App\"</Command>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\graphics\DxUtils.cpp" />

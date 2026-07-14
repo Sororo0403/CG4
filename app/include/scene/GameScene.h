@@ -84,6 +84,12 @@ class GameScene final : public BaseScene {
     void UpdateModelAnimation(float deltaTime);
 
     /// <summary>
+    /// BrainStemの内蔵アニメーションと展示用の経過時間を更新する。
+    /// </summary>
+    /// <param name="deltaTime">前フレームからの経過秒数。</param>
+    void UpdateBrainStemDisplay(float deltaTime);
+
+    /// <summary>
     /// アニメーション姿勢へ首と頭のLookAt IK補正を適用する。
     /// </summary>
     /// <param name="model">補正対象のスケルトンを保持するモデル。</param>
@@ -315,6 +321,7 @@ class GameScene final : public BaseScene {
     float characterYaw_ = 0.0f;
     float walkTimeScale_ = 1.0f;
     float animationTime_ = 0.0f;
+    float brainStemDisplayTime_ = 0.0f;
     float sneakBlend_ = 0.0f;
     float manualSneakBlend_ = -1.0f;
     bool lookAtIkEnabled_ = true;
@@ -335,13 +342,12 @@ class GameScene final : public BaseScene {
     DirectX::XMFLOAT3 rightFootWorld_{0.0f, 0.0f, 0.0f};
     DirectX::XMFLOAT3 leftFootWorld_{0.0f, 0.0f, 0.0f};
 
-    bool evaluationPanelVisible_ = false;
     int evaluationTabRequest_ = -1;
     bool japaneseUiEnabled_ = true;
-    bool debugRigEnabled_ = false;
+    bool debugRigEnabled_ = true;
     bool debugLabelsEnabled_ = false;
     bool debugLocalAxesEnabled_ = false;
-    bool debugLookAtTargetEnabled_ = false;
+    bool debugLookAtTargetEnabled_ = true;
     bool debugBindPoseEnabled_ = false;
     bool debugMajorBonesOnly_ = false;
     int selectedBoneIndex_ = -1;
