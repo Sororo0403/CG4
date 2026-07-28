@@ -40,6 +40,9 @@ Material MakeDebugMaterial(const XMFLOAT4 &color) {
     XMFLOAT4 visibleColor = color;
     visibleColor.w = 1.0f;
     Material material = MakeMaterial(visibleColor, 0.0f, 0.32f);
+    material.enableTexture = 0;
+    material.reflectionStrength = 0.0f;
+    material.reflectionFresnelStrength = 0.0f;
     material.blendMode = static_cast<int32_t>(BlendMode::Opaque);
     material.depthWrite = 0;
     material.cullMode = static_cast<int32_t>(MaterialCullMode::None);
@@ -331,17 +334,25 @@ void GameScene::InitializeModels() {
         MakeMaterial({0.86f, 0.66f, 0.28f, 1.0f}, 0.65f, 0.25f);
     Material bladeMaterial =
         MakeMaterial({0.72f, 0.82f, 0.92f, 1.0f}, 0.9f, 0.18f);
-    Material boneMaterial = MakeDebugMaterial({0.2f, 1.0f, 0.36f, 0.82f});
+    Material boneMaterial = MakeDebugMaterial({1.0f, 1.0f, 1.0f, 1.0f});
     Material boneCenterMaterial =
-        MakeDebugMaterial({0.82f, 0.84f, 0.88f, 0.72f});
+        MakeDebugMaterial({1.0f, 1.0f, 1.0f, 1.0f});
     Material boneLeftMaterial =
-        MakeDebugMaterial({0.22f, 0.48f, 1.0f, 0.78f});
+        MakeDebugMaterial({1.0f, 1.0f, 1.0f, 1.0f});
     Material boneRightMaterial =
-        MakeDebugMaterial({1.0f, 0.24f, 0.18f, 0.78f});
+        MakeDebugMaterial({1.0f, 1.0f, 1.0f, 1.0f});
     Material boneBindMaterial =
-        MakeDebugMaterial({1.0f, 0.92f, 0.30f, 0.34f});
+        MakeDebugMaterial({1.0f, 1.0f, 1.0f, 1.0f});
     Material boneSelectedMaterial =
-        MakeDebugMaterial({1.0f, 0.88f, 0.18f, 0.94f});
+        MakeDebugMaterial({1.0f, 1.0f, 1.0f, 1.0f});
+    Material axisXMaterial =
+        MakeDebugMaterial({1.0f, 0.20f, 0.20f, 1.0f});
+    Material axisYMaterial =
+        MakeDebugMaterial({0.20f, 1.0f, 0.30f, 1.0f});
+    Material axisZMaterial =
+        MakeDebugMaterial({0.20f, 0.45f, 1.0f, 1.0f});
+    Material lookAtMaterial =
+        MakeDebugMaterial({1.0f, 0.20f, 0.78f, 1.0f});
 
     weaponHandleModelId_ = ctx_->rendering.model->CreateCylinder(
         whiteTextureId_, gripMaterial, 16u, 0.035f, 0.035f, kWeaponHandleLength);
@@ -363,6 +374,16 @@ void GameScene::InitializeModels() {
         whiteTextureId_, boneBindMaterial, 8u, 0.010f, 0.010f, 1.0f);
     boneSelectedModelId_ = ctx_->rendering.model->CreateSphere(
         whiteTextureId_, boneSelectedMaterial, 16u, 8u, 1.0f);
+    boneAxisXModelId_ = ctx_->rendering.model->CreateCylinder(
+        whiteTextureId_, axisXMaterial, 8u, 0.018f, 0.018f, 1.0f);
+    boneAxisYModelId_ = ctx_->rendering.model->CreateCylinder(
+        whiteTextureId_, axisYMaterial, 8u, 0.018f, 0.018f, 1.0f);
+    boneAxisZModelId_ = ctx_->rendering.model->CreateCylinder(
+        whiteTextureId_, axisZMaterial, 8u, 0.018f, 0.018f, 1.0f);
+    lookAtLineModelId_ = ctx_->rendering.model->CreateCylinder(
+        whiteTextureId_, lookAtMaterial, 8u, 0.012f, 0.012f, 1.0f);
+    lookAtTargetModelId_ = ctx_->rendering.model->CreateSphere(
+        whiteTextureId_, lookAtMaterial, 16u, 8u, 1.0f);
 
     characterTransform_.position = {0.0f, 0.0f, 0.0f};
     characterTransform_.scale = {1.0f, 1.0f, 1.0f};
@@ -411,6 +432,7 @@ void GameScene::InitializeParticles() {
 
     particleMaterial_.blendMode = GPUParticleMaterialSettings::BlendMode::Additive;
     particleMaterial_.params0 = {0.0f, 1.0f, 0.0f, 0.0f};
+    particleMaterial_.params1.x = particleTrailEnabled_ ? 4.0f : 0.0f;
     handParticles_.SetMaterialSettings(particleMaterial_);
     handParticles_.SetLightingSettings(particleLighting_);
 
@@ -760,6 +782,28 @@ void GameScene::Draw() {
     DrawWeapon();
 }
 
+void GameScene::DrawForeground3D() {
+    if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
+        ctx_->rendering.lightingScene == nullptr) {
+        return;
+    }
+
+    const SceneLighting sceneLighting =
+        ctx_->rendering.lightingScene->GetSceneLighting();
+    SceneLighting debugLighting = sceneLighting;
+    debugLighting.keyLightColor = {0.30f, 0.30f, 0.30f, 1.0f};
+    debugLighting.fillLightColor = {0.20f, 0.20f, 0.20f, 1.0f};
+    debugLighting.ambientColor = {1.0f, 1.0f, 1.0f, 1.0f};
+    debugLighting.pointLights = {};
+    debugLighting.spotLight = {};
+    ctx_->rendering.model->SetSceneLighting(debugLighting);
+
+    DrawBoneDebugOverlay();
+    DrawLookAtDebug();
+
+    ctx_->rendering.model->SetSceneLighting(sceneLighting);
+}
+
 void GameScene::DrawTransparent() {
     if (handParticlesReady_) {
         handParticles_.Draw(camera_);
@@ -767,10 +811,8 @@ void GameScene::DrawTransparent() {
 }
 
 void GameScene::DrawPostProcessOverlay() {
-    DrawBoneDebugOverlay();
-    DrawLookAtDebug();
     DrawBoneLabels();
-    DrawDebugPanel();
+    DrawEvaluationHud();
 }
 
 void GameScene::DrawCharacter() {
@@ -883,7 +925,6 @@ void GameScene::DrawSceneProps() {
 }
 
 void GameScene::DrawBoneDebugOverlay() {
-#ifdef ENABLE_IMGUI
     if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
         humanModelId_ == kInvalidResourceId) {
         return;
@@ -894,10 +935,6 @@ void GameScene::DrawBoneDebugOverlay() {
         return;
     }
 
-    if (ImGui::GetForegroundDrawList() == nullptr) {
-        return;
-    }
-
     if (debugBindPoseEnabled_) {
         DrawBindPoseBoneOverlay(*model);
     }
@@ -905,11 +942,9 @@ void GameScene::DrawBoneDebugOverlay() {
     if (debugRigEnabled_) {
         DrawAnimatedBoneOverlay(*model);
     }
-#endif
 }
 
 void GameScene::DrawBindPoseBoneOverlay(const Model& model) {
-#ifdef ENABLE_IMGUI
     for (uint32_t i = 0; i < static_cast<uint32_t>(model.bones.size()); ++i) {
         const BoneInfo& bone = model.bones[i];
         if ((debugMajorBonesOnly_ && !IsMajorDebugBone(bone.name) &&
@@ -917,17 +952,13 @@ void GameScene::DrawBindPoseBoneOverlay(const Model& model) {
             bone.parentIndex < 0 || bone.parentIndex >= static_cast<int>(model.bones.size())) {
             continue;
         }
-        DrawScreenBoneLine(BindBoneWorldPosition(static_cast<uint32_t>(bone.parentIndex)),
-                           BindBoneWorldPosition(i), IM_COL32(255, 220, 40, 120), 1.5f);
+        DrawDebugSegment(
+            BindBoneWorldPosition(static_cast<uint32_t>(bone.parentIndex)),
+            BindBoneWorldPosition(i), boneBindModelId_);
     }
-#else
-    (void)model;
-#endif
 }
 
 void GameScene::DrawAnimatedBoneOverlay(const Model& model) {
-#ifdef ENABLE_IMGUI
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
     for (uint32_t i = 0; i < static_cast<uint32_t>(model.bones.size()); ++i) {
         const BoneInfo& bone = model.bones[i];
         const bool selected = static_cast<int>(i) == selectedBoneIndex_;
@@ -936,33 +967,33 @@ void GameScene::DrawAnimatedBoneOverlay(const Model& model) {
         }
 
         const XMFLOAT3 child = BoneWorldPosition(i);
-        XMFLOAT2 jointScreen{};
-        if (ProjectWorldToScreen(child, jointScreen)) {
-            drawList->AddCircleFilled(ImVec2(jointScreen.x, jointScreen.y),
-                                      selected ? 5.5f : 3.0f,
-                                      selected ? IM_COL32(255, 228, 40, 255)
-                                               : IM_COL32(90, 255, 120, 230));
+        Transform joint{};
+        joint.position = child;
+        const float jointScale = selected ? 0.042f : 0.024f;
+        joint.scale = {jointScale, jointScale, jointScale};
+        const uint32_t jointModel =
+            selected ? boneSelectedModelId_ : boneJointModelId_;
+        if (jointModel != kInvalidResourceId) {
+            ctx_->rendering.model->Draw(jointModel, joint, camera_);
         }
         if (bone.parentIndex < 0 || bone.parentIndex >= static_cast<int>(model.bones.size())) {
             continue;
         }
 
-        const ImU32 color = bone.name.find("Left") != std::string::npos
-                                ? IM_COL32(70, 135, 255, 235)
-                            : bone.name.find("Right") != std::string::npos
-                                ? IM_COL32(255, 80, 65, 235)
-                                : IM_COL32(225, 230, 238, 225);
-        DrawScreenBoneLine(BoneWorldPosition(static_cast<uint32_t>(bone.parentIndex)), child,
-                           color, selected ? 4.0f : 2.5f);
+        const uint32_t segmentModel =
+            bone.name.find("Left") != std::string::npos
+                ? boneLeftModelId_
+                : (bone.name.find("Right") != std::string::npos
+                       ? boneRightModelId_
+                       : boneCenterModelId_);
+        DrawDebugSegment(
+            BoneWorldPosition(static_cast<uint32_t>(bone.parentIndex)), child,
+            segmentModel, selected ? 1.55f : 1.0f);
     }
     DrawSelectedBoneAxes(model);
-#else
-    (void)model;
-#endif
 }
 
 void GameScene::DrawSelectedBoneAxes(const Model& model) {
-#ifdef ENABLE_IMGUI
     if (!debugLocalAxesEnabled_ || selectedBoneIndex_ < 0 ||
         selectedBoneIndex_ >= static_cast<int>(model.bones.size())) {
         return;
@@ -976,54 +1007,121 @@ void GameScene::DrawSelectedBoneAxes(const Model& model) {
         XMVectorSet(0.0f, kAxisLength, 0.0f, 0.0f),
         XMVectorSet(0.0f, 0.0f, kAxisLength, 0.0f),
     };
-    constexpr ImU32 kColors[] = {
-        IM_COL32(255, 70, 70, 255),
-        IM_COL32(70, 255, 100, 255),
-        IM_COL32(80, 145, 255, 255),
-    };
+    const uint32_t axisModels[] = {
+        boneAxisXModelId_, boneAxisYModelId_, boneAxisZModelId_};
 
     XMFLOAT3 start{};
     XMStoreFloat3(&start, origin);
     for (size_t i = 0; i < std::size(localAxes); ++i) {
         XMFLOAT3 end{};
         XMStoreFloat3(&end, XMVector3TransformCoord(localAxes[i], world));
-        DrawScreenBoneLine(start, end, kColors[i], 3.0f);
+        DrawDebugSegment(start, end, axisModels[i], 1.35f);
     }
-#else
-    (void)model;
-#endif
 }
 
 void GameScene::DrawLookAtDebug() {
-#ifdef ENABLE_IMGUI
     if (!debugLookAtTargetEnabled_ || !lookAtIkEnabled_ ||
         headBone_ == kInvalidResourceId) {
         return;
     }
 
     const XMFLOAT3 headPosition = BoneWorldPosition(headBone_);
-    DrawScreenBoneLine(headPosition, lookAtTarget_, IM_COL32(255, 80, 220, 220), 2.0f);
+    DrawDebugSegment(headPosition, lookAtTarget_, lookAtLineModelId_);
+    if (ctx_ != nullptr && ctx_->rendering.model != nullptr &&
+        lookAtTargetModelId_ != kInvalidResourceId) {
+        Transform marker{};
+        marker.position = lookAtTarget_;
+        marker.scale = {0.075f, 0.075f, 0.075f};
+        ctx_->rendering.model->Draw(lookAtTargetModelId_, marker, camera_);
+    }
+}
 
-    XMFLOAT2 targetScreen{};
-    if (!ProjectWorldToScreen(lookAtTarget_, targetScreen)) {
+void GameScene::DrawDebugSegment(const XMFLOAT3& start, const XMFLOAT3& end,
+                                 uint32_t modelId, float thicknessScale) {
+    if (ctx_ == nullptr || ctx_->rendering.model == nullptr ||
+        modelId == kInvalidResourceId) {
         return;
     }
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
-    if (drawList == nullptr) {
+
+    const XMFLOAT3 offset = Sub(end, start);
+    const float length =
+        std::sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z);
+    if (!std::isfinite(length) || length <= 0.0001f) {
         return;
     }
-    const ImVec2 center(targetScreen.x, targetScreen.y);
-    drawList->AddCircle(center, 9.0f, IM_COL32(255, 80, 220, 255), 0, 2.5f);
-    drawList->AddLine(ImVec2(center.x - 13.0f, center.y),
-                      ImVec2(center.x + 13.0f, center.y),
-                      IM_COL32(255, 80, 220, 255), 2.0f);
-    drawList->AddLine(ImVec2(center.x, center.y - 13.0f),
-                      ImVec2(center.x, center.y + 13.0f),
-                      IM_COL32(255, 80, 220, 255), 2.0f);
-    drawList->AddText(ImVec2(center.x + 14.0f, center.y - 22.0f),
-                      IM_COL32(255, 180, 240, 255),
-                      UiText("LookAt 注視点", "LookAt Target"));
-#endif
+
+    Transform segment{};
+    segment.position = start;
+    segment.rotation = AlignYAxisTo(Scale(offset, 1.0f / length));
+    segment.scale = {thicknessScale, length, thicknessScale};
+    ctx_->rendering.model->Draw(modelId, segment, camera_);
+}
+
+void GameScene::DrawEvaluationHud() {
+    if (ctx_ == nullptr || ctx_->rendering.text == nullptr ||
+        !ctx_->rendering.text->IsReady()) {
+        return;
+    }
+
+    const Model* model =
+        ctx_->rendering.model != nullptr
+            ? ctx_->rendering.model->GetModel(humanModelId_)
+            : nullptr;
+    const size_t boneCount = model != nullptr ? model->bones.size() : 0u;
+    const size_t meshCount = model != nullptr ? model->subMeshes.size() : 0u;
+
+    char status[1024]{};
+    std::snprintf(
+        status, sizeof(status),
+        "CG4 評価課題2  |  Compute Skinning / Animation Blend / GPU Particle\n"
+        "WASD: 移動   Shift/LT: スニーク   F1: 骨格   F3: ボーン名   "
+        "F5: バインド姿勢\n"
+        "F6: 主要ボーン   F7/Y: Head LookAt IK   [ ] / LB RB: ボーン選択\n"
+        "Blend %.2f   Skeleton %s   Labels %s   Bind %s   LookAt %s   "
+        "GPU Particle %s\n"
+        "Bones %zu   SubMeshes %zu   Emitters 2   Fields %zu   Trail %s",
+        sneakBlend_, debugRigEnabled_ ? "ON" : "OFF",
+        debugLabelsEnabled_ ? "ON" : "OFF",
+        debugBindPoseEnabled_ ? "ON" : "OFF",
+        lookAtIkEnabled_ ? "ON" : "OFF",
+        handParticlesReady_ ? "ON" : "OFF", boneCount, meshCount,
+        particleFields_.size(), particleTrailEnabled_ ? "ON" : "OFF");
+
+    TextStyle shadow{};
+    shadow.pixelSize = 17.0f;
+    shadow.color = {0.0f, 0.0f, 0.0f, 0.88f};
+    shadow.lineSpacing = 3.0f;
+    ctx_->rendering.text->DrawText(status, {19.0f, 19.0f}, shadow);
+
+    TextStyle text = shadow;
+    text.color = {0.94f, 0.97f, 1.0f, 1.0f};
+    ctx_->rendering.text->DrawText(status, {17.0f, 17.0f}, text);
+
+    if (model != nullptr && selectedBoneIndex_ >= 0 &&
+        selectedBoneIndex_ < static_cast<int>(model->bones.size())) {
+        const BoneInfo& selected =
+            model->bones[static_cast<size_t>(selectedBoneIndex_)];
+        const XMFLOAT3 position =
+            BoneWorldPosition(static_cast<uint32_t>(selectedBoneIndex_));
+        char selectedText[256]{};
+        std::snprintf(selectedText, sizeof(selectedText),
+                      "Selected Bone: %s  [%d/%zu]  Parent %d  "
+                      "Pos %.2f, %.2f, %.2f",
+                      DisplayBoneName(selected.name).c_str(), selectedBoneIndex_,
+                      model->bones.size(), selected.parentIndex, position.x,
+                      position.y, position.z);
+
+        const float screenHeight =
+            ctx_->systems.winApp != nullptr
+                ? static_cast<float>(ctx_->systems.winApp->GetHeight())
+                : 720.0f;
+        TextStyle selectedStyle = text;
+        selectedStyle.pixelSize = 18.0f;
+        selectedStyle.color = {1.0f, 0.88f, 0.22f, 1.0f};
+        ctx_->rendering.text->DrawText(selectedText,
+                                      {17.0f, screenHeight - 38.0f},
+                                      selectedStyle);
+    }
 }
 
 void GameScene::DrawDebugPanel() {
@@ -1551,29 +1649,26 @@ void GameScene::DrawParticleEditor() {
 }
 
 void GameScene::DrawBoneLabels() {
-    if (!debugLabelsEnabled_ || ctx_ == nullptr || ctx_->rendering.model == nullptr) {
+    if (!debugLabelsEnabled_ || ctx_ == nullptr ||
+        ctx_->rendering.model == nullptr || ctx_->rendering.text == nullptr ||
+        !ctx_->rendering.text->IsReady()) {
         return;
     }
 
-#ifdef ENABLE_IMGUI
     const Model *model = ctx_->rendering.model->GetModel(humanModelId_);
     if (model == nullptr) {
         return;
     }
 
-    if (ImGui::GetForegroundDrawList() == nullptr) {
-        return;
+    for (uint32_t i = 0; i < static_cast<uint32_t>(model->bones.size()); ++i) {
+        const bool selected = static_cast<int>(i) == selectedBoneIndex_;
+        if (!selected &&
+            (debugMajorBonesOnly_ || model->bones.size() > 48u) &&
+            !IsMajorDebugBone(model->bones[i].name)) {
+            continue;
+        }
+        DrawBoneLabel(*model, i, selected);
     }
-
-    const int hoveredBoneIndex = FindHoveredBone(*model);
-    if (hoveredBoneIndex >= 0 && hoveredBoneIndex != selectedBoneIndex_) {
-        DrawBoneLabel(*model, static_cast<uint32_t>(hoveredBoneIndex), false);
-    }
-    if (selectedBoneIndex_ >= 0 &&
-        selectedBoneIndex_ < static_cast<int>(model->bones.size())) {
-        DrawBoneLabel(*model, static_cast<uint32_t>(selectedBoneIndex_), true);
-    }
-#endif
 }
 
 int GameScene::FindHoveredBone(const Model& model) const {
@@ -1608,8 +1703,8 @@ int GameScene::FindHoveredBone(const Model& model) const {
 }
 
 void GameScene::DrawBoneLabel(const Model& model, uint32_t boneIndex, bool selected) {
-#ifdef ENABLE_IMGUI
-    if (boneIndex >= model.bones.size()) {
+    if (boneIndex >= model.bones.size() || ctx_ == nullptr ||
+        ctx_->rendering.text == nullptr) {
         return;
     }
 
@@ -1618,32 +1713,21 @@ void GameScene::DrawBoneLabel(const Model& model, uint32_t boneIndex, bool selec
         return;
     }
 
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
     const std::string label = DisplayBoneName(model.bones[boneIndex].name);
-    const ImVec2 textSize = ImGui::CalcTextSize(label.c_str());
-    const ImVec2 jointPosition(screen.x, screen.y);
-    const ImVec2 textPosition = selected
-                                    ? ImVec2(screen.x + 12.0f, screen.y - textSize.y - 12.0f)
-                                    : ImVec2(screen.x + 12.0f, screen.y + 10.0f);
-    constexpr float kPadding = 4.0f;
-    const ImVec2 backgroundMin(textPosition.x - kPadding, textPosition.y - kPadding);
-    const ImVec2 backgroundMax(textPosition.x + textSize.x + kPadding,
-                               textPosition.y + textSize.y + kPadding);
-    const ImU32 accentColor = selected ? IM_COL32(255, 230, 45, 255)
-                                       : IM_COL32(100, 220, 255, 255);
+    const XMFLOAT2 position = selected
+                                  ? XMFLOAT2{screen.x + 11.0f, screen.y - 25.0f}
+                                  : XMFLOAT2{screen.x + 8.0f, screen.y + 5.0f};
 
-    drawList->AddLine(jointPosition,
-                      ImVec2(backgroundMin.x, selected ? backgroundMax.y : backgroundMin.y),
-                      accentColor, selected ? 2.0f : 1.5f);
-    drawList->AddCircleFilled(jointPosition, selected ? 4.5f : 3.5f, accentColor);
-    drawList->AddRectFilled(backgroundMin, backgroundMax, IM_COL32(10, 12, 18, 220), 3.0f);
-    drawList->AddRect(backgroundMin, backgroundMax, accentColor, 3.0f, 0, 1.0f);
-    drawList->AddText(textPosition, IM_COL32(245, 248, 255, 255), label.c_str());
-#else
-    (void)model;
-    (void)boneIndex;
-    (void)selected;
-#endif
+    TextStyle shadow{};
+    shadow.pixelSize = selected ? 17.0f : 13.0f;
+    shadow.color = {0.0f, 0.0f, 0.0f, 0.95f};
+    ctx_->rendering.text->DrawText(label, {position.x + 1.5f, position.y + 1.5f},
+                                   shadow);
+
+    TextStyle text = shadow;
+    text.color = selected ? XMFLOAT4{1.0f, 0.90f, 0.22f, 1.0f}
+                          : XMFLOAT4{0.62f, 0.90f, 1.0f, 1.0f};
+    ctx_->rendering.text->DrawText(label, position, text);
 }
 
 uint32_t

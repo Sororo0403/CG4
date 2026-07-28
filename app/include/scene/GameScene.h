@@ -41,12 +41,24 @@ class GameScene final : public BaseScene {
     void Draw() override;
 
     /// <summary>
+    /// 深度を無視して骨格とLookAtの3Dデバッグ形状を描画する。
+    /// </summary>
+    void DrawForeground3D() override;
+
+    /// <summary>
+    /// 骨格デバッグ形状を常に手前へ表示するためForeground3Dを有効にする。
+    /// </summary>
+    bool UsesForeground3DPass() const override {
+        return true;
+    }
+
+    /// <summary>
     /// GPUパーティクルなどの半透明オブジェクトを描画する。
     /// </summary>
     void DrawTransparent() override;
 
     /// <summary>
-    /// ポストプロセス後にボーンデバッグと編集UIを描画する。
+    /// ポストプロセス後に評価HUDとボーン名を描画する。
     /// </summary>
     void DrawPostProcessOverlay() override;
 
@@ -149,6 +161,18 @@ class GameScene final : public BaseScene {
     /// 頭からLookAtターゲットまでの線とターゲットマーカーを描画する。
     /// </summary>
     void DrawLookAtDebug();
+
+    /// <summary>
+    /// ImGuiに依存しない常時表示の評価情報と操作ガイドを描画する。
+    /// </summary>
+    void DrawEvaluationHud();
+
+    /// <summary>
+    /// 2点間へ円柱のデバッグモデルを配置する。
+    /// </summary>
+    void DrawDebugSegment(const DirectX::XMFLOAT3& start,
+                          const DirectX::XMFLOAT3& end, uint32_t modelId,
+                          float thicknessScale = 1.0f);
 
     /// <summary>
     /// 評価機能をタブ別に整理した統合デバッグパネルを描画する。
@@ -319,6 +343,11 @@ class GameScene final : public BaseScene {
     uint32_t boneRightModelId_ = kInvalidResourceId;
     uint32_t boneBindModelId_ = kInvalidResourceId;
     uint32_t boneSelectedModelId_ = kInvalidResourceId;
+    uint32_t boneAxisXModelId_ = kInvalidResourceId;
+    uint32_t boneAxisYModelId_ = kInvalidResourceId;
+    uint32_t boneAxisZModelId_ = kInvalidResourceId;
+    uint32_t lookAtLineModelId_ = kInvalidResourceId;
+    uint32_t lookAtTargetModelId_ = kInvalidResourceId;
     uint32_t whiteTextureId_ = kInvalidResourceId;
     std::vector<DirectX::XMFLOAT4X4> bindPoseMatrices_;
 
@@ -351,7 +380,7 @@ class GameScene final : public BaseScene {
     bool japaneseUiEnabled_ = true;
     bool debugRigEnabled_ = true;
     bool debugLabelsEnabled_ = false;
-    bool debugLocalAxesEnabled_ = false;
+    bool debugLocalAxesEnabled_ = true;
     bool debugLookAtTargetEnabled_ = true;
     bool debugBindPoseEnabled_ = false;
     bool debugMajorBonesOnly_ = false;
@@ -368,5 +397,5 @@ class GameScene final : public BaseScene {
     GPUParticleLightingSettings particleLighting_{};
     bool rightParticleEmitterEnabled_ = true;
     bool leftParticleEmitterEnabled_ = true;
-    bool particleTrailEnabled_ = false;
+    bool particleTrailEnabled_ = true;
 };
